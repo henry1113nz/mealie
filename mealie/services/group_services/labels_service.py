@@ -1,5 +1,9 @@
+from tortoise.transactions import in_transaction
+
+from mealie.db.tortoise import models as tm
 from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
+from mealie.repos.tortoise_factory import AsyncRepositories
 from mealie.schema.household.group_shopping_list import ShoppingListMultiPurposeLabelCreate
 from mealie.schema.labels.multi_purpose_label import (
     MultiPurposeLabelCreate,
@@ -45,3 +49,27 @@ class MultiPurposeLabelService:
         )
         self._update_shopping_list_label_references(labels)
         return labels
+
+
+class AsyncMultiPurposeLabelService:
+    """Tortoise version of MultiPurposeLabelService, used by the migrated labels routes."""
+
+    def __init__(self, repos: AsyncRepositories):
+        self.repos = repos
+        self.labels = repos.group_multi_purpose_labels
+
+    async def _update_shopping_list_label_references(self, new_labels: list[MultiPurposeLabelOut]) -> None:
+        # every shopping list in the group, across households, gets the new labels at the end
+        shopping_lists = await tm.ShoppingList.filter(group_id=self.repos.group_id)
+        for shopping_list in shopping_lists:
+            position = await tm.ShoppingListMultiPurposeLabel.filter(shopping_list_id=shopping_list.id).count()
+            for label in new_labels:
+                await tm.ShoppingListMultiPurposeLabel.create(
+                    shopping_list_id=shopping_list.id, label_id=label.id, position=position
+                )
+
+    async def create_one(self, data: MultiPurposeLabelCreate) -> MultiPurposeLabelOut:
+        async with in_transaction():
+            label = await self.labels.create(data.cast(MultiPurposeLabelSave, group_id=self.repos.group_id))
+            await self._update_shopping_list_label_references([label])
+        return label

@@ -22,6 +22,7 @@ from mealie.lang.locale_config import LocaleConfig
 from mealie.lang.providers import Translator
 from mealie.repos._utils import NOT_SET, NotSet
 from mealie.repos.all_repositories import AllRepositories, get_repositories
+from mealie.repos.tortoise_factory import AsyncRepositories
 from mealie.routes._base.checks import OperationChecks
 from mealie.schema.household.household import HouseholdInDB
 from mealie.schema.user.user import GroupInDB, PrivateUser
@@ -48,6 +49,11 @@ class _BaseController(ABC):  # noqa: B024
         if not self._repos:
             self._repos = AllRepositories(self.session, group_id=self.group_id, household_id=self.household_id)
         return self._repos
+
+    @property
+    def arepos(self) -> AsyncRepositories:
+        """Repositories already migrated to Tortoise ORM."""
+        return AsyncRepositories(group_id=self.group_id, household_id=self.household_id)
 
     @property
     def logger(self) -> Logger:

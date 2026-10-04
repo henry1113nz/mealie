@@ -3,11 +3,13 @@ from collections.abc import Callable
 from logging import Logger
 
 import sqlalchemy.exc
+import tortoise.exceptions
 from fastapi import HTTPException, status
 from pydantic import UUID4, BaseModel
 
 from mealie.core.config import get_app_settings
 from mealie.repos.repository_generic import RepositoryGeneric
+from mealie.repos.tortoise_repository import AsyncRepositoryGeneric
 from mealie.schema.response import ErrorResponse
 
 
@@ -154,4 +156,98 @@ class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
         except Exception as ex:
             self.handle_exception(ex)
 
+        return item
+
+
+class AsyncHttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
+    """HttpRepo for repositories that have been migrated to Tortoise ORM (async)."""
+
+    def __init__(
+        self,
+        repo: AsyncRepositoryGeneric,
+        logger: Logger,
+        exception_msgs: Callable[[type[Exception]], str] | None = None,
+        default_message: str | None = None,
+    ) -> None:
+        self.repo = repo
+        self.logger = logger
+        self.exception_msgs = exception_msgs
+        self.default_message = default_message or HttpRepo.default_message
+
+    def get_exception_message(self, ext: Exception) -> str:
+        if self.exception_msgs:
+            return self.exception_msgs(type(ext))
+        return self.default_message
+
+    def handle_exception(self, ex: Exception) -> None:
+        self.logger.exception(ex)
+        msg = self.get_exception_message(ex)
+
+        if isinstance(ex, tortoise.exceptions.DoesNotExist):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message=msg, exception=str(ex)),
+            )
+        elif isinstance(ex, tortoise.exceptions.IntegrityError):
+            if "UNIQUE" in str(ex).upper() or "23505" in str(ex):
+                msg = "This item already exists."
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=ErrorResponse.respond(message=msg, exception=str(ex)),
+            )
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=ErrorResponse.respond(message=msg, exception=str(ex)),
+            )
+
+    async def create_one(self, data: C) -> R | None:
+        try:
+            return await self.repo.create(data)
+        except Exception as ex:
+            self.handle_exception(ex)
+        return None
+
+    async def get_one(self, item_id: int | str | UUID4, key: str | None = None) -> R:
+        item = await self.repo.get_one(item_id, key)
+        if not item:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message="Not found."),
+            )
+        return item
+
+    async def update_one(self, data: U, item_id: int | str | UUID4) -> R:
+        item = await self.repo.get_one(item_id)
+        if not item:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message="Not found."),
+            )
+        try:
+            item = await self.repo.update(item_id, data)
+        except Exception as ex:
+            self.handle_exception(ex)
+        return item
+
+    async def patch_one(self, data: U, item_id: int | str | UUID4) -> R:
+        item = await self.repo.get_one(item_id)
+        if not item:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message="Not found."),
+            )
+        try:
+            item = await self.repo.patch(item_id, data.model_dump(exclude_unset=True, exclude_defaults=True))
+        except Exception as ex:
+            self.handle_exception(ex)
+        return item
+
+    async def delete_one(self, item_id: int | str | UUID4) -> R | None:
+        item: R | None = None
+        try:
+            item = await self.repo.delete(item_id)
+            self.logger.info(f"Deleting item with id {item_id}")
+        except Exception as ex:
+            self.handle_exception(ex)
         return item

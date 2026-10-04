@@ -32,7 +32,10 @@ def tortoise_config() -> dict[str, Any]:
 
 
 async def init_tortoise() -> None:
-    await Tortoise.init(config=tortoise_config())
+    # The app lifespan runs in its own task, separate from the tasks that handle requests.
+    # Tortoise 1.x keeps its state in a context variable, so it has to be told to also keep a
+    # global fallback, otherwise requests see "No TortoiseContext is currently active".
+    await Tortoise.init(config=tortoise_config(), _enable_global_fallback=True)
 
 
 async def close_tortoise() -> None:
