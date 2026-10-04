@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 import sqlalchemy.orm as orm
@@ -37,6 +37,9 @@ if TYPE_CHECKING:
     from ..household import Household, ShoppingListItemRecipeReference, ShoppingListRecipeReference
     from ..users import User
     from . import Category, Tag, Tool
+
+# Distinguishes "not passed" from an explicit None, so a partial update leaves these alone
+_UNSET: Any = object()
 
 
 class RecipeModel(SqlAlchemyBase, BaseMixins):
@@ -199,13 +202,14 @@ class RecipeModel(SqlAlchemyBase, BaseMixins):
         description: str | None = None,
         assets: list | None = None,
         notes: list[dict] | None = None,
-        nutrition: dict | None = None,
+        nutrition: dict | None = _UNSET,
         recipe_ingredient: list[dict] | None = None,
         recipe_instructions: list[dict] | None = None,
-        settings: dict | None = None,
+        settings: dict | None = _UNSET,
         **_,
     ) -> None:
-        self.nutrition = Nutrition(**(nutrition or {}))
+        if nutrition is not _UNSET or self.nutrition is None:
+            self.nutrition = Nutrition(**(nutrition or {}))
 
         if recipe_instructions is not None:
             self.recipe_instructions = [RecipeInstruction(**step, session=session) for step in recipe_instructions]
@@ -220,7 +224,8 @@ class RecipeModel(SqlAlchemyBase, BaseMixins):
         if assets:
             self.assets = [RecipeAsset(**a) for a in assets]
 
-        self.settings = RecipeSettings(**(settings or {}))
+        if settings is not _UNSET or self.settings is None:
+            self.settings = RecipeSettings(**(settings or {}))
 
         if notes:
             self.notes = [Note(**n) for n in notes]

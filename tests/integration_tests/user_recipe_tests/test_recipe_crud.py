@@ -4,6 +4,7 @@ import os
 import random
 import tempfile
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
@@ -2219,3 +2220,75 @@ def test_create_recipe_slug_length_validation(api_client: TestClient, unique_use
 
     response = api_client.get(api_routes.recipes_slug(created_slug), headers=unique_user.token)
     assert response.status_code == 200
+
+
+def test_concurrent_patch_does_not_duplicate_ingredients_or_steps(api_client: TestClient, unique_user: TestUser):
+    """https://github.com/mealie-recipes/mealie/issues/2808"""
+    slug = random_string(10)
+    response = api_client.post(api_routes.recipes, json={"name": slug}, headers=unique_user.token)
+    assert response.status_code == 201
+
+    response = api_client.get(api_routes.recipes_slug(slug), headers=unique_user.token)
+    assert response.status_code == 200
+    recipe = response.json()
+    ingredient_count = len(recipe["recipeIngredient"])
+    step_count = len(recipe["recipeInstructions"])
+    assert ingredient_count > 0
+    assert step_count > 0
+
+    def patch_description():
+        return api_client.patch(
+            api_routes.recipes_slug(slug), json={"description": random_string()}, headers=unique_user.token
+        )
+
+    request_count = 10
+    with ThreadPoolExecutor(max_workers=request_count) as executor:
+        futures = [executor.submit(patch_description) for _ in range(request_count)]
+        for future in as_completed(futures):
+            assert future.result().status_code == 200
+
+    response = api_client.get(api_routes.recipes_slug(slug), headers=unique_user.token)
+    assert response.status_code == 200
+    recipe = response.json()
+    assert len(recipe["recipeIngredient"]) == ingredient_count
+    assert len(recipe["recipeInstructions"]) == step_count
+
+
+def test_patch_leaves_fields_it_does_not_send_unchanged(api_client: TestClient, unique_user: TestUser):
+    slug = random_string(10)
+    response = api_client.post(api_routes.recipes, json={"name": slug}, headers=unique_user.token)
+    assert response.status_code == 201
+
+    recipe_url = api_routes.recipes_slug(slug)
+    recipe = api_client.get(recipe_url, headers=unique_user.token).json()
+    recipe["tags"] = [{"name": random_string()}]
+    recipe["recipeCategory"] = [{"name": random_string()}]
+    recipe["tools"] = [{"name": random_string()}]
+    recipe["nutrition"] = {"calories": "250", "proteinContent": "12"}
+    recipe["settings"]["public"] = False
+    recipe["settings"]["showNutrition"] = True
+    recipe["notes"] = [{"title": random_string(), "text": random_string()}]
+    recipe["recipeIngredient"] = [{"note": random_string()}, {"note": random_string()}]
+    recipe["recipeInstructions"] = [{"text": random_string()}]
+    response = api_client.put(recipe_url, json=utils.jsonify(recipe), headers=unique_user.token)
+    assert response.status_code == 200
+    before = api_client.get(recipe_url, headers=unique_user.token).json()
+
+    response = api_client.patch(recipe_url, json={"description": "only this changes"}, headers=unique_user.token)
+    assert response.status_code == 200
+    after = api_client.get(recipe_url, headers=unique_user.token).json()
+
+    assert after["description"] == "only this changes"
+    for field in (
+        "name",
+        "slug",
+        "tags",
+        "recipeCategory",
+        "tools",
+        "nutrition",
+        "settings",
+        "notes",
+        "recipeIngredient",
+        "recipeInstructions",
+    ):
+        assert after[field] == before[field], field

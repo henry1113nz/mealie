@@ -259,6 +259,10 @@ class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe
         # in the group if needed. A client-supplied id from another group is never trusted as-is.
         organizer_models = {"tags": Tag, "recipe_category": Category, "tools": Tool}
         for field, model in organizer_models.items():
+            if field not in new_data:
+                # a partial update that does not mention this field leaves it as it is
+                continue
+
             resolved = []
             for organizer in new_data.get(field) or []:
                 existing = None
@@ -290,6 +294,14 @@ class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe
         entry.update(session=self.session, **new_data)
         self.session.commit()
         return self.schema.model_validate(entry)
+
+    def patch(self, match_value: str | int | UUID4, new_data: dict | Recipe) -> Recipe:
+        # The generic patch merges the changes into the whole stored recipe and writes all of it
+        # back, which deletes and re-inserts every ingredient and step. Two patches arriving
+        # together then each delete the same rows and each insert their own copy (#2808).
+        # Writing only the fields that were sent leaves the child rows untouched.
+        new_data = new_data if isinstance(new_data, dict) else new_data.model_dump(exclude_unset=True)
+        return self.update(match_value, new_data)
 
     def page_all(  # type: ignore
         self,
