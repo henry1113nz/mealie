@@ -10,6 +10,7 @@ import enum
 from pathlib import Path
 
 import sqlalchemy as sa
+from sqlalchemy.orm import MANYTOONE, ONETOMANY
 
 import mealie.db.models._all_models  # noqa: F401  (registers every mapper)
 from mealie.db.models._model_base import SqlAlchemyBase
@@ -102,12 +103,36 @@ def scalar_field(col: sa.Column, is_pk: bool, warnings: list[str], where: str) -
     return f"{kind}({', '.join(args)})"
 
 
+def relationship_names() -> tuple[dict[tuple[str, str], str], dict[tuple[str, str], tuple[str, bool]]]:
+    """Names the SQLAlchemy models already use for each foreign key, in both directions.
+
+    Reusing them keeps attribute names the same as in mealie/schema, so the Pydantic schemas
+    can read nested data from Tortoise objects the way they did from SQLAlchemy ones.
+    """
+    forward: dict[tuple[str, str], str] = {}
+    reverse: dict[tuple[str, str], tuple[str, bool]] = {}
+    for mapper in SqlAlchemyBase.registry.mappers:
+        for rel in mapper.relationships:
+            if rel.secondary is not None:
+                continue
+            if rel.direction is MANYTOONE and len(rel.local_columns) == 1:
+                col = next(iter(rel.local_columns))
+                forward.setdefault((col.table.name, col.name), rel.key)
+            elif rel.direction is ONETOMANY and len(rel.remote_side) == 1:
+                col = next(iter(rel.remote_side))
+                reverse.setdefault((col.table.name, col.name), (rel.key, rel.uselist))
+    return forward, reverse
+
+
 def main() -> None:
     metadata = SqlAlchemyBase.metadata
+    forward_names, reverse_names = relationship_names()
     mappers = sorted(SqlAlchemyBase.registry.mappers, key=lambda m: m.class_.__tablename__)
     class_for_table = {m.class_.__tablename__: m.class_.__name__ for m in mappers}
     warnings: list[str] = []
     lines: list[str] = []
+    cascade_delete: dict[str, list[str]] = {}
+    nullify_on_delete: dict[str, list[str]] = {}
     m2m_done: set[str] = set()
 
     for mapper in mappers:
@@ -128,13 +153,20 @@ def main() -> None:
             fks = list(col.foreign_keys)
             if fks and col.name != "id":
                 target_table = fks[0].column.table.name
-                name = fk_field_name(col.name, taken)
+                name = forward_names.get((table.name, col.name)) or ""
+                if not name or name in taken:
+                    name = fk_field_name(col.name, taken)
                 taken.add(name)
                 col_to_field[col.name] = f"{name}_id"
+                reverse_name, reverse_is_list = reverse_names.get(
+                    (table.name, col.name), (f"{table.name}_{name}_rev", True)
+                )
+                field_kind = "ForeignKeyField" if reverse_is_list else "OneToOneField"
+                relation_kind = "ForeignKeyRelation" if reverse_is_list else "OneToOneRelation"
                 args = [
                     f'"models.{class_for_table[target_table]}"',
                     f'source_field="{col.name}"',
-                    f'related_name="{table.name}_{name}_rev"',
+                    f'related_name="{reverse_name}"',
                     f"on_delete={ON_DELETE[fks[0].ondelete]}",
                 ]
                 if col.nullable:
@@ -142,14 +174,20 @@ def main() -> None:
                 if col.index:
                     args.append("db_index=True")
                 body.append(
-                    f"    {name}: fields.ForeignKeyRelation[{class_for_table[target_table]}] = "
-                    f"fields.ForeignKeyField({', '.join(args)})"
+                    f"    {name}: fields.{relation_kind}[{class_for_table[target_table]}] = "
+                    f"fields.{field_kind}({', '.join(args)})"
                 )
             else:
                 col_to_field[col.name] = col.name
                 body.append(f"    {col.name} = {scalar_field(col, col.name == 'id', warnings, where)}")
 
         for rel in mapper.relationships:
+            if rel.secondary is None and rel.direction is ONETOMANY and not rel.viewonly:
+                # SQLAlchemy applies these in Python when the parent is deleted
+                if "delete" in rel.cascade:
+                    cascade_delete.setdefault(cls.__name__, []).append(rel.key)
+                elif not rel.passive_deletes:
+                    nullify_on_delete.setdefault(cls.__name__, []).append(rel.key)
             sec = rel.secondary
             if sec is None or sec.name in m2m_done:
                 continue
@@ -200,7 +238,14 @@ def main() -> None:
         "",
         "",
     ]
-    OUT.write_text("\n".join(header + lines))
+    footer = [
+        "# What SQLAlchemy did through relationship settings when a row was deleted: delete these",
+        "# children, or clear their foreign key. Tortoise does neither, so the repositories apply it.",
+        f"CASCADE_DELETE: dict[str, list[str]] = {dict(sorted(cascade_delete.items()))!r}",
+        f"NULLIFY_ON_DELETE: dict[str, list[str]] = {dict(sorted(nullify_on_delete.items()))!r}",
+        "",
+    ]
+    OUT.write_text("\n".join(header + lines + footer))
     print(f"wrote {OUT}: {len(mappers)} models, {len(m2m_done)} many-to-many tables")  # noqa: T201
     for w in warnings:
         print("warning:", w)  # noqa: T201

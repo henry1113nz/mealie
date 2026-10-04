@@ -3,27 +3,14 @@
 from functools import cached_property
 
 from pydantic import UUID4
-from tortoise.transactions import in_transaction
 
 from mealie.db.tortoise import models as tm
+from mealie.schema.household.group_events import GroupEventNotifierOut
+from mealie.schema.household.group_recipe_action import GroupRecipeActionOut
 from mealie.schema.labels import MultiPurposeLabelOut
+from mealie.schema.reports.reports import ReportOut
 
-from .tortoise_repository import AsyncGroupRepositoryGeneric
-
-
-class AsyncLabelRepository(AsyncGroupRepositoryGeneric[MultiPurposeLabelOut, tm.MultiPurposeLabel]):
-    async def delete(self, value, match_key=None) -> MultiPurposeLabelOut:
-        # SQLAlchemy did this through relationship settings on the model: the label's shopping
-        # list settings were deleted (delete-orphan) and foods / list items lost the label
-        # (default nulling of the foreign key). Tortoise does neither, so it is done here.
-        async with in_transaction():
-            label = await self._query_one(value, match_key)
-            await tm.ShoppingListMultiPurposeLabel.filter(label_id=label.id).delete()
-            await tm.ShoppingListItem.filter(label_id=label.id).update(label_id=None)
-            await tm.IngredientFoodModel.filter(label_id=label.id).update(label_id=None)
-            result = self._to_schema(label)
-            await label.delete()
-        return result
+from .tortoise_repository import AsyncGroupRepositoryGeneric, AsyncRepositoryGeneric
 
 
 class AsyncRepositories:
@@ -32,5 +19,21 @@ class AsyncRepositories:
         self.household_id = household_id
 
     @cached_property
-    def group_multi_purpose_labels(self) -> AsyncLabelRepository:
-        return AsyncLabelRepository(tm.MultiPurposeLabel, MultiPurposeLabelOut, group_id=self.group_id)
+    def group_multi_purpose_labels(self) -> AsyncGroupRepositoryGeneric[MultiPurposeLabelOut, tm.MultiPurposeLabel]:
+        return AsyncGroupRepositoryGeneric(tm.MultiPurposeLabel, MultiPurposeLabelOut, group_id=self.group_id)
+
+    @cached_property
+    def group_reports(self) -> AsyncGroupRepositoryGeneric[ReportOut, tm.ReportModel]:
+        return AsyncGroupRepositoryGeneric(tm.ReportModel, ReportOut, group_id=self.group_id)
+
+    @cached_property
+    def group_recipe_actions(self) -> AsyncRepositoryGeneric[GroupRecipeActionOut, tm.GroupRecipeAction]:
+        return AsyncRepositoryGeneric(
+            tm.GroupRecipeAction, GroupRecipeActionOut, group_id=self.group_id, household_id=self.household_id
+        )
+
+    @cached_property
+    def group_event_notifier(self) -> AsyncRepositoryGeneric[GroupEventNotifierOut, tm.GroupEventNotifierModel]:
+        return AsyncRepositoryGeneric(
+            tm.GroupEventNotifierModel, GroupEventNotifierOut, group_id=self.group_id, household_id=self.household_id
+        )

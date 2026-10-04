@@ -15,7 +15,7 @@ class AIProviderHeaders(Model):
     provider: fields.ForeignKeyRelation[AIProvider] = fields.ForeignKeyField(
         "models.AIProvider",
         source_field="provider_id",
-        related_name="ai_provider_headers_provider_rev",
+        related_name="request_headers",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -33,7 +33,7 @@ class AIProviderParams(Model):
     provider: fields.ForeignKeyRelation[AIProvider] = fields.ForeignKeyField(
         "models.AIProvider",
         source_field="provider_id",
-        related_name="ai_provider_params_provider_rev",
+        related_name="request_params",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -49,10 +49,10 @@ class AIProviderParams(Model):
 
 class AIProviderSettings(Model):
     id = GUIDField(primary_key=True)
-    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+    group: fields.OneToOneRelation[Group] = fields.OneToOneField(
         "models.Group",
         source_field="group_id",
-        related_name="ai_provider_settings_group_rev",
+        related_name="ai_provider_settings",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -92,7 +92,7 @@ class AIProvider(Model):
     settings: fields.ForeignKeyRelation[AIProviderSettings] = fields.ForeignKeyField(
         "models.AIProviderSettings",
         source_field="settings_id",
-        related_name="ai_providers_settings_rev",
+        related_name="providers",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -118,7 +118,7 @@ class ApiExtras(Model):
     recipee: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipee_id",
-        related_name="api_extras_recipee_rev",
+        related_name="extras",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -170,7 +170,7 @@ class CookBook(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="cookbooks_group_rev",
+        related_name="cookbooks",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -178,7 +178,7 @@ class CookBook(Model):
     household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
         "models.Household",
         source_field="household_id",
-        related_name="cookbooks_household_rev",
+        related_name="cookbooks",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -230,7 +230,7 @@ class GroupDataExportsModel(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="group_data_exports_group_rev",
+        related_name="data_exports",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -249,10 +249,10 @@ class GroupDataExportsModel(Model):
 
 class GroupEventNotifierOptionsModel(Model):
     id = GUIDField(primary_key=True)
-    event_notifier: fields.ForeignKeyRelation[GroupEventNotifierModel] = fields.ForeignKeyField(
+    event_notifier: fields.OneToOneRelation[GroupEventNotifierModel] = fields.OneToOneField(
         "models.GroupEventNotifierModel",
         source_field="event_notifier_id",
-        related_name="group_events_notifier_options_event_notifier_rev",
+        related_name="options",
         on_delete=fields.NO_ACTION,
     )
     recipe_created = fields.BooleanField(default=False)
@@ -295,7 +295,7 @@ class GroupEventNotifierModel(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="group_events_notifiers_group_rev",
+        related_name="group_event_notifiers",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -303,7 +303,7 @@ class GroupEventNotifierModel(Model):
     household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
         "models.Household",
         source_field="household_id",
-        related_name="group_events_notifiers_household_rev",
+        related_name="group_event_notifiers",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -371,7 +371,7 @@ class GroupMealPlan(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="group_meal_plans_group_rev",
+        related_name="mealplans",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -379,7 +379,7 @@ class GroupMealPlan(Model):
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
         "models.User",
         source_field="user_id",
-        related_name="group_meal_plans_user_rev",
+        related_name="mealplans",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -387,7 +387,7 @@ class GroupMealPlan(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="group_meal_plans_recipe_rev",
+        related_name="meal_entries",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -402,12 +402,8 @@ class GroupMealPlan(Model):
 
 class GroupPreferencesModel(Model):
     id = GUIDField(primary_key=True)
-    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="group_preferences_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+    group: fields.OneToOneRelation[Group] = fields.OneToOneField(
+        "models.Group", source_field="group_id", related_name="preferences", on_delete=fields.NO_ACTION, db_index=True
     )
     private_group = fields.BooleanField(null=True, default=True)
     show_announcements = fields.BooleanField(default=True)
@@ -432,11 +428,7 @@ class ReportModel(Model):
     category = fields.CharField(max_length=255, db_index=True)
     timestamp = NaiveUTCDatetimeField(default=get_utc_now)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="group_reports_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="group_reports", on_delete=fields.NO_ACTION, db_index=True
     )
     created_at = NaiveUTCDatetimeField(null=True, db_index=True, default=get_utc_now)
     update_at = NaiveUTCDatetimeField(auto_now=True, null=True)
@@ -465,10 +457,10 @@ class Group(Model):
 
 class HouseholdPreferencesModel(Model):
     id = GUIDField(primary_key=True)
-    household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
+    household: fields.OneToOneRelation[Household] = fields.OneToOneField(
         "models.Household",
         source_field="household_id",
-        related_name="household_preferences_household_rev",
+        related_name="preferences",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -494,11 +486,7 @@ class Household(Model):
     name = fields.CharField(max_length=255, db_index=True)
     slug = fields.CharField(max_length=255, null=True, db_index=True)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="households_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="households", on_delete=fields.NO_ACTION, db_index=True
     )
     created_at = NaiveUTCDatetimeField(null=True, db_index=True, default=get_utc_now)
     update_at = NaiveUTCDatetimeField(auto_now=True, null=True)
@@ -522,11 +510,11 @@ class Household(Model):
         unique_together = (
             (
                 "group_id",
-                "name",
+                "slug",
             ),
             (
                 "group_id",
-                "slug",
+                "name",
             ),
         )
 
@@ -565,7 +553,7 @@ class IngredientFoodExtras(Model):
     ingredient_food: fields.ForeignKeyRelation[IngredientFoodModel] = fields.ForeignKeyField(
         "models.IngredientFoodModel",
         source_field="ingredient_food_id",
-        related_name="ingredient_food_extras_ingredient_food_rev",
+        related_name="extras",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -585,7 +573,7 @@ class IngredientFoodModel(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="ingredient_foods_group_rev",
+        related_name="ingredient_foods",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -595,7 +583,7 @@ class IngredientFoodModel(Model):
     label: fields.ForeignKeyRelation[MultiPurposeLabel] = fields.ForeignKeyField(
         "models.MultiPurposeLabel",
         source_field="label_id",
-        related_name="ingredient_foods_label_rev",
+        related_name="foods",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -613,10 +601,7 @@ class IngredientFoodModel(Model):
 class IngredientFoodAliasModel(Model):
     id = GUIDField(primary_key=True)
     food: fields.ForeignKeyRelation[IngredientFoodModel] = fields.ForeignKeyField(
-        "models.IngredientFoodModel",
-        source_field="food_id",
-        related_name="ingredient_foods_aliases_food_rev",
-        on_delete=fields.NO_ACTION,
+        "models.IngredientFoodModel", source_field="food_id", related_name="aliases", on_delete=fields.NO_ACTION
     )
     name = fields.TextField()
     name_normalized = fields.CharField(max_length=255, null=True, db_index=True)
@@ -632,14 +617,14 @@ class IngredientFoodSubstitutionModel(Model):
     food: fields.ForeignKeyRelation[IngredientFoodModel] = fields.ForeignKeyField(
         "models.IngredientFoodModel",
         source_field="food_id",
-        related_name="ingredient_foods_substitutions_food_rev",
+        related_name="substitutions",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
     substitute_food: fields.ForeignKeyRelation[IngredientFoodModel] = fields.ForeignKeyField(
         "models.IngredientFoodModel",
         source_field="substitute_food_id",
-        related_name="ingredient_foods_substitutions_substitute_food_rev",
+        related_name="substitution_references",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -664,7 +649,7 @@ class IngredientUnitModel(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="ingredient_units_group_rev",
+        related_name="ingredient_units",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -691,10 +676,7 @@ class IngredientUnitModel(Model):
 class IngredientUnitAliasModel(Model):
     id = GUIDField(primary_key=True)
     unit: fields.ForeignKeyRelation[IngredientUnitModel] = fields.ForeignKeyField(
-        "models.IngredientUnitModel",
-        source_field="unit_id",
-        related_name="ingredient_units_aliases_unit_rev",
-        on_delete=fields.NO_ACTION,
+        "models.IngredientUnitModel", source_field="unit_id", related_name="aliases", on_delete=fields.NO_ACTION
     )
     name = fields.TextField()
     name_normalized = fields.CharField(max_length=255, null=True, db_index=True)
@@ -711,7 +693,7 @@ class GroupInviteToken(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="invite_tokens_group_rev",
+        related_name="invite_tokens",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -719,7 +701,7 @@ class GroupInviteToken(Model):
     household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
         "models.Household",
         source_field="household_id",
-        related_name="invite_tokens_household_rev",
+        related_name="invite_tokens",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -738,7 +720,7 @@ class LongLiveToken(Model):
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
         "models.User",
         source_field="user_id",
-        related_name="long_live_tokens_user_rev",
+        related_name="tokens",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -756,11 +738,7 @@ class MultiPurposeLabel(Model):
     name = fields.CharField(max_length=255)
     color = fields.CharField(max_length=10, default="")
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="multi_purpose_labels_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="labels", on_delete=fields.NO_ACTION, db_index=True
     )
     created_at = NaiveUTCDatetimeField(null=True, db_index=True, default=get_utc_now)
     update_at = NaiveUTCDatetimeField(auto_now=True, null=True)
@@ -780,7 +758,7 @@ class Note(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="notes_recipe_rev",
+        related_name="notes",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -799,7 +777,7 @@ class PasswordResetModel(Model):
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
         "models.User",
         source_field="user_id",
-        related_name="password_reset_tokens_user_rev",
+        related_name="password_reset_tokens",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -817,14 +795,14 @@ class GroupRecipeAction(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="recipe_actions_group_rev",
+        related_name="recipe_actions",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
     household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
         "models.Household",
         source_field="household_id",
-        related_name="recipe_actions_household_rev",
+        related_name="recipe_actions",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -844,7 +822,7 @@ class RecipeAsset(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_assets_recipe_rev",
+        related_name="assets",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -865,16 +843,12 @@ class RecipeComment(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_comments_recipe_rev",
+        related_name="comments",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
-        "models.User",
-        source_field="user_id",
-        related_name="recipe_comments_user_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.User", source_field="user_id", related_name="comments", on_delete=fields.NO_ACTION, db_index=True
     )
     created_at = NaiveUTCDatetimeField(null=True, db_index=True, default=get_utc_now)
     update_at = NaiveUTCDatetimeField(auto_now=True, null=True)
@@ -887,7 +861,7 @@ class RecipeIngredientRefLink(Model):
     instruction: fields.ForeignKeyRelation[RecipeInstruction] = fields.ForeignKeyField(
         "models.RecipeInstruction",
         source_field="instruction_id",
-        related_name="recipe_ingredient_ref_link_instruction_rev",
+        related_name="ingredient_references",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -906,7 +880,7 @@ class RecipeInstruction(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_instructions_recipe_rev",
+        related_name="recipe_instructions",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -927,7 +901,7 @@ class RecipeNoteRefLink(Model):
     instruction: fields.ForeignKeyRelation[RecipeInstruction] = fields.ForeignKeyField(
         "models.RecipeInstruction",
         source_field="instruction_id",
-        related_name="recipe_note_ref_link_instruction_rev",
+        related_name="note_references",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -943,10 +917,10 @@ class RecipeNoteRefLink(Model):
 
 class Nutrition(Model):
     id = fields.IntField(primary_key=True)
-    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+    recipe: fields.OneToOneRelation[RecipeModel] = fields.OneToOneField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_nutrition_recipe_rev",
+        related_name="nutrition",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -971,10 +945,10 @@ class Nutrition(Model):
 
 class RecipeSettings(Model):
     id = fields.IntField(primary_key=True)
-    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+    recipe: fields.OneToOneRelation[RecipeModel] = fields.OneToOneField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_settings_recipe_rev",
+        related_name="settings",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1005,7 +979,7 @@ class RecipeShareTokenModel(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_share_tokens_recipe_rev",
+        related_name="share_tokens",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -1022,14 +996,14 @@ class RecipeTimelineEvent(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipe_timeline_events_recipe_rev",
+        related_name="timeline_events",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
         "models.User",
         source_field="user_id",
-        related_name="recipe_timeline_events_user_rev",
+        related_name="recipe_timeline_events",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -1049,11 +1023,7 @@ class RecipeModel(Model):
     id = GUIDField(primary_key=True)
     slug = fields.CharField(max_length=255, null=True, db_index=True)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="recipes_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="recipes", on_delete=fields.NO_ACTION, db_index=True
     )
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
         "models.User",
@@ -1114,7 +1084,7 @@ class RecipeIngredientModel(Model):
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="recipes_ingredients_recipe_rev",
+        related_name="recipe_ingredient",
         on_delete=fields.NO_ACTION,
         null=True,
     )
@@ -1123,7 +1093,7 @@ class RecipeIngredientModel(Model):
     unit: fields.ForeignKeyRelation[IngredientUnitModel] = fields.ForeignKeyField(
         "models.IngredientUnitModel",
         source_field="unit_id",
-        related_name="recipes_ingredients_unit_rev",
+        related_name="ingredients",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1131,7 +1101,7 @@ class RecipeIngredientModel(Model):
     food: fields.ForeignKeyRelation[IngredientFoodModel] = fields.ForeignKeyField(
         "models.IngredientFoodModel",
         source_field="food_id",
-        related_name="recipes_ingredients_food_rev",
+        related_name="ingredients",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1142,7 +1112,7 @@ class RecipeIngredientModel(Model):
     referenced_recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="referenced_recipe_id",
-        related_name="recipes_ingredients_referenced_recipe_rev",
+        related_name="referenced_ingredients",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1161,14 +1131,14 @@ class RecipeIngredientSubstitutionModel(Model):
     ingredient: fields.ForeignKeyRelation[RecipeIngredientModel] = fields.ForeignKeyField(
         "models.RecipeIngredientModel",
         source_field="ingredient_id",
-        related_name="recipes_ingredients_substitutions_ingredient_rev",
+        related_name="substitutions",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
     substitute_food: fields.ForeignKeyRelation[IngredientFoodModel] = fields.ForeignKeyField(
         "models.IngredientFoodModel",
         source_field="substitute_food_id",
-        related_name="recipes_ingredients_substitutions_substitute_food_rev",
+        related_name="recipe_substitution_references",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1191,7 +1161,7 @@ class ReportEntryModel(Model):
     report: fields.ForeignKeyRelation[ReportModel] = fields.ForeignKeyField(
         "models.ReportModel",
         source_field="report_id",
-        related_name="report_entries_report_rev",
+        related_name="entries",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
@@ -1208,11 +1178,7 @@ class ServerTaskModel(Model):
     status = fields.TextField()
     log = fields.TextField(null=True)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="server_tasks_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="server_tasks", on_delete=fields.NO_ACTION, db_index=True
     )
     id = fields.IntField(primary_key=True)
     created_at = NaiveUTCDatetimeField(null=True, db_index=True, default=get_utc_now)
@@ -1226,7 +1192,7 @@ class ShoppingListExtras(Model):
     shopping_list: fields.ForeignKeyRelation[ShoppingList] = fields.ForeignKeyField(
         "models.ShoppingList",
         source_field="shopping_list_id",
-        related_name="shopping_list_extras_shopping_list_rev",
+        related_name="extras",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1245,7 +1211,7 @@ class ShoppingListItemExtras(Model):
     shopping_list_item: fields.ForeignKeyRelation[ShoppingListItem] = fields.ForeignKeyField(
         "models.ShoppingListItem",
         source_field="shopping_list_item_id",
-        related_name="shopping_list_item_extras_shopping_list_item_rev",
+        related_name="extras",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1265,13 +1231,13 @@ class ShoppingListItemRecipeReference(Model):
     shopping_list_item: fields.ForeignKeyRelation[ShoppingListItem] = fields.ForeignKeyField(
         "models.ShoppingListItem",
         source_field="shopping_list_item_id",
-        related_name="shopping_list_item_recipe_reference_shopping_list_item_rev",
+        related_name="recipe_references",
         on_delete=fields.NO_ACTION,
     )
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="shopping_list_item_recipe_reference_recipe_rev",
+        related_name="shopping_list_item_refs",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1291,7 +1257,7 @@ class ShoppingListItem(Model):
     shopping_list: fields.ForeignKeyRelation[ShoppingList] = fields.ForeignKeyField(
         "models.ShoppingList",
         source_field="shopping_list_id",
-        related_name="shopping_list_items_shopping_list_rev",
+        related_name="list_items",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1318,7 +1284,7 @@ class ShoppingListItem(Model):
     label: fields.ForeignKeyRelation[MultiPurposeLabel] = fields.ForeignKeyField(
         "models.MultiPurposeLabel",
         source_field="label_id",
-        related_name="shopping_list_items_label_rev",
+        related_name="shopping_list_items",
         on_delete=fields.NO_ACTION,
         null=True,
     )
@@ -1335,13 +1301,13 @@ class ShoppingListRecipeReference(Model):
     shopping_list: fields.ForeignKeyRelation[ShoppingList] = fields.ForeignKeyField(
         "models.ShoppingList",
         source_field="shopping_list_id",
-        related_name="shopping_list_recipe_reference_shopping_list_rev",
+        related_name="recipe_references",
         on_delete=fields.NO_ACTION,
     )
     recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
         "models.RecipeModel",
         source_field="recipe_id",
-        related_name="shopping_list_recipe_reference_recipe_rev",
+        related_name="shopping_list_refs",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1359,16 +1325,12 @@ class ShoppingList(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="shopping_lists_group_rev",
+        related_name="shopping_lists",
         on_delete=fields.NO_ACTION,
         db_index=True,
     )
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
-        "models.User",
-        source_field="user_id",
-        related_name="shopping_lists_user_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.User", source_field="user_id", related_name="shopping_lists", on_delete=fields.NO_ACTION, db_index=True
     )
     name = fields.TextField(null=True)
     created_at = NaiveUTCDatetimeField(null=True, db_index=True, default=get_utc_now)
@@ -1383,13 +1345,13 @@ class ShoppingListMultiPurposeLabel(Model):
     shopping_list: fields.ForeignKeyRelation[ShoppingList] = fields.ForeignKeyField(
         "models.ShoppingList",
         source_field="shopping_list_id",
-        related_name="shopping_lists_multi_purpose_labels_shopping_list_rev",
+        related_name="label_settings",
         on_delete=fields.NO_ACTION,
     )
     label: fields.ForeignKeyRelation[MultiPurposeLabel] = fields.ForeignKeyField(
         "models.MultiPurposeLabel",
         source_field="label_id",
-        related_name="shopping_lists_multi_purpose_labels_label_rev",
+        related_name="shopping_lists_label_settings",
         on_delete=fields.NO_ACTION,
     )
     position = fields.IntField(default=0)
@@ -1409,11 +1371,7 @@ class ShoppingListMultiPurposeLabel(Model):
 class Tag(Model):
     id = GUIDField(primary_key=True)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="tags_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="tags", on_delete=fields.NO_ACTION, db_index=True
     )
     name = fields.CharField(max_length=255, db_index=True)
     slug = fields.CharField(max_length=255, db_index=True)
@@ -1433,11 +1391,7 @@ class Tag(Model):
 class Tool(Model):
     id = GUIDField(primary_key=True)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="tools_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="tools", on_delete=fields.NO_ACTION, db_index=True
     )
     name = fields.CharField(max_length=255, db_index=True)
     slug = fields.CharField(max_length=255, db_index=True)
@@ -1465,16 +1419,12 @@ class User(Model):
     admin = fields.BooleanField(null=True, default=False)
     advanced = fields.BooleanField(null=True, default=False)
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
-        "models.Group",
-        source_field="group_id",
-        related_name="users_group_rev",
-        on_delete=fields.NO_ACTION,
-        db_index=True,
+        "models.Group", source_field="group_id", related_name="users", on_delete=fields.NO_ACTION, db_index=True
     )
     household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
         "models.Household",
         source_field="household_id",
-        related_name="users_household_rev",
+        related_name="users",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1540,7 +1490,7 @@ class GroupWebhooksModel(Model):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group",
         source_field="group_id",
-        related_name="webhook_urls_group_rev",
+        related_name="webhooks",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1548,7 +1498,7 @@ class GroupWebhooksModel(Model):
     household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
         "models.Household",
         source_field="household_id",
-        related_name="webhook_urls_household_rev",
+        related_name="webhooks",
         on_delete=fields.NO_ACTION,
         null=True,
         db_index=True,
@@ -1564,3 +1514,72 @@ class GroupWebhooksModel(Model):
 
     class Meta:
         table = "webhook_urls"
+
+
+# What SQLAlchemy did through relationship settings when a row was deleted: delete these
+# children, or clear their foreign key. Tortoise does neither, so the repositories apply it.
+CASCADE_DELETE: dict[str, list[str]] = {
+    "AIProvider": ["request_headers", "request_params"],
+    "AIProviderSettings": ["providers"],
+    "Group": [
+        "households",
+        "invite_tokens",
+        "preferences",
+        "ai_provider_settings",
+        "recipes",
+        "labels",
+        "mealplans",
+        "webhooks",
+        "recipe_actions",
+        "cookbooks",
+        "server_tasks",
+        "data_exports",
+        "shopping_lists",
+        "group_reports",
+        "group_event_notifiers",
+        "ingredient_units",
+        "ingredient_foods",
+        "tools",
+        "tags",
+    ],
+    "GroupEventNotifierModel": ["options"],
+    "Household": ["invite_tokens", "preferences", "recipe_actions", "cookbooks", "webhooks", "group_event_notifiers"],
+    "IngredientFoodModel": [
+        "aliases",
+        "substitutions",
+        "substitution_references",
+        "recipe_substitution_references",
+        "extras",
+    ],
+    "IngredientUnitModel": ["aliases"],
+    "MultiPurposeLabel": ["shopping_lists_label_settings"],
+    "RecipeIngredientModel": ["substitutions"],
+    "RecipeInstruction": ["ingredient_references", "note_references"],
+    "RecipeModel": [
+        "meal_entries",
+        "assets",
+        "nutrition",
+        "recipe_ingredient",
+        "recipe_instructions",
+        "share_tokens",
+        "comments",
+        "timeline_events",
+        "settings",
+        "notes",
+        "extras",
+        "shopping_list_refs",
+        "shopping_list_item_refs",
+    ],
+    "ReportModel": ["entries"],
+    "ShoppingList": ["list_items", "recipe_references", "label_settings", "extras"],
+    "ShoppingListItem": ["extras", "recipe_references"],
+    "User": ["tokens", "comments", "recipe_timeline_events", "password_reset_tokens", "mealplans", "shopping_lists"],
+}
+NULLIFY_ON_DELETE: dict[str, list[str]] = {
+    "Group": ["users"],
+    "Household": ["users"],
+    "IngredientFoodModel": ["ingredients"],
+    "IngredientUnitModel": ["ingredients"],
+    "MultiPurposeLabel": ["shopping_list_items", "foods"],
+    "RecipeModel": ["referenced_ingredients"],
+}

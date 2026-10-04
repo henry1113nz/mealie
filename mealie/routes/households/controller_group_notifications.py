@@ -5,7 +5,7 @@ from pydantic import UUID4
 
 from mealie.routes._base.base_controllers import BaseUserController
 from mealie.routes._base.controller import controller
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.routes._base.routers import MealieCrudRoute
 from mealie.schema.household.group_events import (
     GroupEventNotifierCreate,
@@ -42,18 +42,18 @@ class GroupEventsNotifierController(BaseUserController):
         if not self.user:
             raise Exception("No user is logged in.")
 
-        return self.repos.group_event_notifier
+        return self.arepos.group_event_notifier
 
     # =======================================================================
     # CRUD Operations
 
     @property
-    def mixins(self) -> HttpRepo:
-        return HttpRepo(self.repo, self.logger, self.registered_exceptions, self.t("generic.server-error"))
+    def mixins(self) -> AsyncHttpRepo:
+        return AsyncHttpRepo(self.repo, self.logger, self.registered_exceptions, self.t("generic.server-error"))
 
     @router.get("", response_model=GroupEventPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
-        response = self.repo.page_all(
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+        response = await self.repo.page_all(
             pagination=q,
             override=GroupEventNotifierOut,
         )
@@ -62,35 +62,35 @@ class GroupEventsNotifierController(BaseUserController):
         return response
 
     @router.post("", response_model=GroupEventNotifierOut, status_code=201)
-    def create_one(self, data: GroupEventNotifierCreate):
+    async def create_one(self, data: GroupEventNotifierCreate):
         save_data = cast(data, GroupEventNotifierSave, group_id=self.group_id, household_id=self.household_id)
-        return self.mixins.create_one(save_data)
+        return await self.mixins.create_one(save_data)
 
     @router.get("/{item_id}", response_model=GroupEventNotifierOut)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=GroupEventNotifierOut)
-    def update_one(self, item_id: UUID4, data: GroupEventNotifierUpdate):
+    async def update_one(self, item_id: UUID4, data: GroupEventNotifierUpdate):
         if data.apprise_url is None:
-            current_data: GroupEventNotifierPrivate = self.repo.get_one(
+            current_data: GroupEventNotifierPrivate = await self.repo.get_one(
                 item_id, override_schema=GroupEventNotifierPrivate
             )
             data.apprise_url = current_data.apprise_url
 
-        return self.mixins.update_one(data, item_id)
+        return await self.mixins.update_one(data, item_id)
 
     @router.delete("/{item_id}", status_code=204)
-    def delete_one(self, item_id: UUID4):
-        self.mixins.delete_one(item_id)  # type: ignore
+    async def delete_one(self, item_id: UUID4):
+        await self.mixins.delete_one(item_id)
 
     # =======================================================================
     # Test Event Notifications
 
     #  TODO: properly re-implement this with new event listeners
     @router.post("/{item_id}/test", status_code=204)
-    def test_notification(self, item_id: UUID4):
-        item: GroupEventNotifierPrivate = self.repo.get_one(item_id, override_schema=GroupEventNotifierPrivate)
+    async def test_notification(self, item_id: UUID4):
+        item: GroupEventNotifierPrivate = await self.repo.get_one(item_id, override_schema=GroupEventNotifierPrivate)
 
         event_type = EventTypes.test_message
         test_event = Event(
