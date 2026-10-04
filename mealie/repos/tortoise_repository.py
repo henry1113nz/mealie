@@ -159,17 +159,18 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
             condition |= Q(**{f"{prop}__icontains": search})
         return query.filter(condition)
 
-    async def _apply_order(self, query: QuerySet[TModel], pagination: PaginationQuery) -> QuerySet[TModel]:
+    async def _apply_order(
+        self, query: QuerySet[TModel], pagination: PaginationQuery
+    ) -> tuple[QuerySet[TModel], list[Any] | None]:
+        """Returns the ordered query, or for random ordering the shuffled ids to page through."""
         if not pagination.order_by:
-            return query
+            return query, None
         if pagination.order_by == "random":
-            ids = await query.values_list("id", flat=True)
-            order = list(ids)
+            # shuffled outside the database so the order is stable for a given seed
+            order = list(await query.values_list("id", flat=True))
             random.seed(pagination.pagination_seed)
             random.shuffle(order)
-            # applied after fetching; see page_all
-            self._random_order = order
-            return query
+            return query, order
 
         terms: list[str] = []
         for part in pagination.order_by.split(","):
@@ -186,7 +187,7 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
                     status_code=400, detail=f'Invalid order_by statement "{pagination.order_by}": "{part}" is invalid'
                 ) from e
             terms.append(field if direction is OrderDirection.asc else f"-{field}")
-        return query.order_by(*terms)
+        return query.order_by(*terms), None
 
     async def page_all(
         self, pagination: PaginationQuery, override: Any = None, search: str | None = None
@@ -218,12 +219,11 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
         if result.page < 1:
             result.page = 1
 
-        self._random_order: list[Any] | None = None
-        query = await self._apply_order(query, result)
+        query, random_order = await self._apply_order(query, result)
         offset = (result.page - 1) * result.per_page
 
-        if self._random_order is not None:
-            ids = self._random_order[offset : offset + limit if limit is not None else None]
+        if random_order is not None:
+            ids = random_order[offset : offset + limit if limit is not None else None]
             by_id = {o.id: o for o in await self.model.filter(id__in=ids)}
             items = [by_id[i] for i in ids if i in by_id]
         else:

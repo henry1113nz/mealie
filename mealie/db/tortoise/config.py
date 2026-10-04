@@ -20,10 +20,36 @@ def tortoise_db_url(sqlalchemy_url: str) -> str:
     raise ValueError("Unsupported database URL for Tortoise ORM")
 
 
+def _sqlite_connection(url: str) -> dict[str, Any]:
+    """SQLite pragmas that match what mealie.db.db_setup sets for SQLAlchemy connections.
+
+    Tortoise defaults to journal_mode=WAL. Left alone, it would switch every user's database to
+    WAL (which Mealie only does when SQLITE_MIGRATE_JOURNAL_WAL is set), and changing the
+    journal mode while SQLAlchemy is connected fails with "database is locked".
+    Foreign keys stay on, as Tortoise sets them, so SQLite behaves like PostgreSQL.
+    """
+    settings = get_app_settings()
+    pragmas: dict[str, Any] = {"foreign_keys": "ON"}
+    if settings.SQLITE_MIGRATE_JOURNAL_WAL:
+        pragmas["journal_mode"] = "WAL"
+    elif settings.TESTING:
+        pragmas["journal_mode"] = "MEMORY"
+    else:
+        pragmas["journal_mode"] = "DELETE"
+    if settings.TESTING:
+        pragmas["synchronous"] = "OFF"
+    return {
+        "engine": "tortoise.backends.sqlite",
+        "credentials": {"file_path": url.removeprefix("sqlite://"), **pragmas},
+    }
+
+
 def tortoise_config() -> dict[str, Any]:
     settings = get_app_settings()
+    url = tortoise_db_url(settings.DB_URL)  # type: ignore[arg-type]
+    connection: str | dict[str, Any] = _sqlite_connection(url) if url.startswith("sqlite://") else url
     return {
-        "connections": {"default": tortoise_db_url(settings.DB_URL)},  # type: ignore[arg-type]
+        "connections": {"default": connection},
         "apps": {"models": {"models": [MODELS_MODULE, "aerich.models"], "default_connection": "default"}},
         # datetimes are handled by NaiveUTCDatetimeField, not by Tortoise's timezone support
         "use_tz": False,
