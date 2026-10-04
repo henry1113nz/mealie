@@ -20,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from mealie.core.config import get_app_settings
 from mealie.core.root_logger import get_logger
 from mealie.core.settings.static import APP_VERSION
+from mealie.db.tortoise.config import close_tortoise, init_tortoise
 from mealie.middleware.locale_context import LocaleContextMiddleware
 from mealie.routes import router, spa, utility_routes
 from mealie.routes.handlers import register_debug_handler
@@ -64,9 +65,12 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
     import mealie.db.init_db as init_db
 
     init_db.main()
+    await init_tortoise()
     logger.info("end: database initialization")
 
-    await start_scheduler()
+    # the tests call scheduled tasks directly; running the scheduler would race with them
+    if not settings.TESTING:
+        await start_scheduler()
 
     logger.info("-----SYSTEM STARTUP-----")
     logger.info("------APP SETTINGS------")
@@ -92,6 +96,7 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
+    await close_tortoise()
     logger.info("-----SYSTEM SHUTDOWN----- \n")
 
 
