@@ -20,9 +20,11 @@ from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
 from mealie.core.root_logger import get_logger
-from mealie.db.tortoise.models import CASCADE_DELETE, NULLIFY_ON_DELETE
+from mealie.db.tortoise.models import CASCADE_DELETE, NULLIFY_ON_DELETE, PROXIES
 from mealie.schema._mealie import MealieModel
 from mealie.schema.response.pagination import OrderDirection, PaginationBase, PaginationQuery
+from mealie.services.query_filter.builder import NonFilterableValueError
+from mealie.services.query_filter.tortoise_filter import TortoiseQueryFilter, order_term
 
 _CAMEL = re.compile(r"(?<!^)(?=[A-Z])")
 
@@ -146,9 +148,18 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
         self.group_id = group_id
         self.household_id = household_id
         self.logger = get_logger()
-        # never silently drop a group or household filter
+        # Several models reach their group or household through a relationship (an association
+        # proxy in the SQLAlchemy models), e.g. a recipe's household is its user's household.
+        # Never silently drop a scope that cannot be resolved.
+        self._scope_paths: dict[str, str] = {}
         for key, value in (("group_id", group_id), ("household_id", household_id)):
-            if value and key not in model._meta.fields_map:
+            if not value:
+                continue
+            if key in model._meta.fields_map:
+                self._scope_paths[key] = key
+            elif key in PROXIES.get(model.__name__, {}):
+                self._scope_paths[key] = PROXIES[model.__name__][key]
+            else:
                 raise ValueError(f"{model.__name__} has no {key}; it cannot be scoped by it")
 
     # ------------------------------------------------------------------ helpers
@@ -156,25 +167,14 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
     def _scope(self, **kwargs: Any) -> dict[str, Any]:
         scope: dict[str, Any] = {}
         if self.group_id:
-            scope["group_id"] = self.group_id
+            scope[self._scope_paths["group_id"]] = self.group_id
         if self.household_id:
-            scope["household_id"] = self.household_id
+            scope[self._scope_paths["household_id"]] = self.household_id
         scope.update(kwargs)
         return scope
 
     def _query(self) -> QuerySet[TModel]:
         return self.model.filter(**self._scope())
-
-    def _field_name(self, name: str) -> str:
-        """Maps an API field name (camelCase or snake_case) to a model field, or raises ValueError."""
-        snake = _to_snake(name)
-        if snake == "updated_at":
-            snake = "update_at"
-        if snake in self.model._meta.fields_map or snake in self.model._meta.fk_fields:
-            return snake
-        if snake.endswith("_id") and snake[:-3] in self.model._meta.fk_fields:
-            return snake
-        raise ValueError(name)
 
     async def _to_schema(self, obj: TModel, schema: type[BaseModel] | None = None) -> Any:
         schema = schema or self.schema
@@ -238,7 +238,8 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
     async def create(self, data: Schema | BaseModel | dict) -> Schema:
         raw = self._as_dict(data)
         values = self._writable(raw)
-        values.update(self._scope())
+        # only real columns can be written; a proxied scope comes from the related row instead
+        values.update({k: v for k, v in self._scope().items() if "__" not in k})
         async with in_transaction():
             obj = await self.model.create(**values)
             await write_children(obj, raw)
@@ -314,12 +315,16 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
             else:
                 name, direction = part, pagination.order_direction
             try:
-                field = self._field_name(name)
+                query, term = order_term(query, self.model, name, descending=direction is OrderDirection.desc)
+            except NonFilterableValueError as e:
+                raise HTTPException(
+                    status_code=400, detail=f'Invalid order_by statement "{pagination.order_by}": {e}'
+                ) from e
             except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail=f'Invalid order_by statement "{pagination.order_by}": "{part}" is invalid'
                 ) from e
-            terms.append(field if direction is OrderDirection.asc else f"-{field}")
+            terms.append(term)
         return query.order_by(*terms), None
 
     async def page_all(
@@ -328,11 +333,14 @@ class AsyncRepositoryGeneric[Schema: MealieModel, TModel: Model]:
         eff_schema = override or self.schema
         result = pagination.model_copy()
 
-        if result.query_filter:
-            # The query filter language is still built on SQLAlchemy expressions.
-            raise HTTPException(status_code=400, detail="queryFilter is not supported on this endpoint yet")
-
         query = self._query()
+        if result.query_filter:
+            try:
+                query = TortoiseQueryFilter(result.query_filter).apply(query, self.model)
+            except ValueError as e:
+                self.logger.error(e)
+                raise HTTPException(status_code=400, detail=str(e)) from e
+
         if search:
             query = self._apply_search(query, eff_schema, search)
         if not result.order_by and not search:

@@ -10,6 +10,7 @@ import enum
 from pathlib import Path
 
 import sqlalchemy as sa
+from sqlalchemy.ext.associationproxy import AssociationProxy
 from sqlalchemy.orm import MANYTOONE, ONETOMANY
 
 import mealie.db.models._all_models  # noqa: F401  (registers every mapper)
@@ -133,6 +134,8 @@ def main() -> None:
     lines: list[str] = []
     cascade_delete: dict[str, list[str]] = {}
     nullify_on_delete: dict[str, list[str]] = {}
+    filterable: dict[str, list[str]] = {}
+    proxies: dict[str, dict[str, str]] = {}
     m2m_done: set[str] = set()
 
     for mapper in mappers:
@@ -216,6 +219,13 @@ def main() -> None:
         if uniques:
             groups = ", ".join("(" + ", ".join(f'"{col_to_field[c.name]}"' for c in u.columns) + ",)" for u in uniques)
             meta.append(f"        unique_together = ({groups},)")
+        filterable[cls.__name__] = sorted(
+            col_to_field[c.name] for c in table.columns if c.info.get("filterable") and c.name in col_to_field
+        )
+        for attr, value in vars(cls).items():
+            if isinstance(value, AssociationProxy):
+                # e.g. RecipeModel.household_id is really user.household_id
+                proxies.setdefault(cls.__name__, {})[attr] = f"{value.target_collection}__{value.value_attr}"
         lines.append(f"class {cls.__name__}(Model):")
         lines.extend(body)
         lines.append("")
@@ -243,6 +253,11 @@ def main() -> None:
         "# children, or clear their foreign key. Tortoise does neither, so the repositories apply it.",
         f"CASCADE_DELETE: dict[str, list[str]] = {dict(sorted(cascade_delete.items()))!r}",
         f"NULLIFY_ON_DELETE: dict[str, list[str]] = {dict(sorted(nullify_on_delete.items()))!r}",
+        "# Columns that may be used in query filters (FilterableColumn in the SQLAlchemy models).",
+        f"FILTERABLE: dict[str, list[str]] = {dict(sorted(filterable.items()))!r}",
+        "# SQLAlchemy association proxies. Several group_id / household_id attributes are proxies, so",
+        "# scoping a query by group or household has to follow these paths.",
+        f"PROXIES: dict[str, dict[str, str]] = {dict(sorted(proxies.items()))!r}",
         "",
     ]
     OUT.write_text("\n".join(header + lines + footer))
