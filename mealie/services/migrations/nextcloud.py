@@ -63,7 +63,7 @@ class NextcloudMigrator(BaseMigrator):
         else:
             return potential_path
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         # Unzip File into temp directory
 
         # get potential recipe dirs
@@ -78,7 +78,7 @@ class NextcloudMigrator(BaseMigrator):
             all_recipes = []
             for _, nc_dir in nextcloud_dirs.items():
                 try:
-                    recipe = self.clean_recipe_dictionary(nc_dir.recipe)
+                    recipe = await self.clean_recipe_dictionary(nc_dir.recipe)
                     all_recipes.append(recipe)
                 except Exception as e:
                     self.logger.exception(e)
@@ -91,10 +91,10 @@ class NextcloudMigrator(BaseMigrator):
                         )
                     )
 
-            all_statuses = self.import_recipes_to_database(all_recipes)
+            all_statuses = await self.import_recipes_to_database(all_recipes)
 
             for slug, recipe_id, status in all_statuses:
                 if status:
                     nc_dir = nextcloud_dirs[slug]
                     if nc_dir.image:
-                        self.import_image(slug, nc_dir.image, recipe_id, extraction_root=base_dir)
+                        (await self.import_image(slug, nc_dir.image, recipe_id, extraction_root=base_dir))

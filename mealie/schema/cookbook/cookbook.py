@@ -1,13 +1,9 @@
 from typing import Annotated
 
-import sqlalchemy as sa
 from pydantic import UUID4, ConfigDict, Field, ValidationInfo, field_validator
 from slugify import slugify
-from sqlalchemy.orm import joinedload
-from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.root_logger import get_logger
-from mealie.db.models.household.cookbook import CookBook
 from mealie.db.models.recipe import RecipeModel
 from mealie.schema._mealie import MealieModel
 from mealie.schema.response.pagination import PaginationBase
@@ -53,7 +49,7 @@ class CreateCookBook(MealieModel):
         builder = QueryFilterBuilder(value)
 
         try:
-            builder.filter_query(sa.select(RecipeModel), RecipeModel)
+            builder.filter_query(RecipeModel.all(), RecipeModel)
         except Exception as e:
             raise ValueError("Invalid query filter string") from e
 
@@ -91,8 +87,8 @@ class ReadCookBook(UpdateCookBook):
             return QueryFilterJSON()
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(CookBook.household)]
+    def loader_options(cls) -> list[str]:
+        return ["household"]
 
 
 class CookBookPagination(PaginationBase):

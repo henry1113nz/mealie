@@ -14,6 +14,7 @@ from mealie.schema.household.group_shopping_list import (
 )
 from mealie.schema.recipe.recipe_ingredient import IngredientUnit, SaveIngredientFood
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -114,7 +115,9 @@ def test_shopping_list_items_auto_assign_label_with_food_without_label(
     api_client: TestClient, unique_user: TestUser, shopping_list: ShoppingListOut
 ):
     database = unique_user.repos
-    food = database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+    food = run_db(
+        database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+    )
 
     item = create_item(shopping_list.id, food_id=str(food.id))
     response = api_client.post(api_routes.households_shopping_items, json=item, headers=unique_user.token)
@@ -130,9 +133,13 @@ def test_shopping_list_items_auto_assign_label_with_food_with_label(
     api_client: TestClient, unique_user: TestUser, shopping_list: ShoppingListOut
 ):
     database = unique_user.repos
-    label = database.group_multi_purpose_labels.create({"name": random_string(10), "group_id": unique_user.group_id})
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id, label_id=label.id)
+    label = run_db(
+        database.group_multi_purpose_labels.create({"name": random_string(10), "group_id": unique_user.group_id})
+    )
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id, label_id=label.id)
+        )
     )
 
     item = create_item(shopping_list.id, food_id=str(food.id))
@@ -154,9 +161,13 @@ def test_shopping_list_items_auto_assign_label_with_food_search(
     use_fuzzy_name: bool,
 ):
     database = unique_user.repos
-    label = database.group_multi_purpose_labels.create({"name": random_string(10), "group_id": unique_user.group_id})
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(name=random_string(20), group_id=unique_user.group_id, label_id=label.id)
+    label = run_db(
+        database.group_multi_purpose_labels.create({"name": random_string(10), "group_id": unique_user.group_id})
+    )
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(name=random_string(20), group_id=unique_user.group_id, label_id=label.id)
+        )
     )
 
     item = create_item(shopping_list.id)
@@ -779,18 +790,20 @@ def test_shopping_list_item_extras(
 
 def _create_list_with_items(user: TestUser, item_count: int = 3) -> ShoppingListOut:
     repos = user.repos
-    shopping_list = repos.group_shopping_lists.create(
-        ShoppingListSave(
-            name=random_string(10),
-            group_id=user.group_id,
-            user_id=user.user_id,
-        ),
+    shopping_list = run_db(
+        repos.group_shopping_lists.create(
+            ShoppingListSave(
+                name=random_string(10),
+                group_id=user.group_id,
+                user_id=user.user_id,
+            ),
+        )
     )
 
     for _ in range(item_count):
-        repos.group_shopping_list_item.create(ShoppingListItemCreate(**create_item(shopping_list.id)))
+        run_db(repos.group_shopping_list_item.create(ShoppingListItemCreate(**create_item(shopping_list.id))))
 
-    return repos.group_shopping_lists.get_one(shopping_list.id)  # type: ignore
+    return run_db(repos.group_shopping_lists.get_one(shopping_list.id))  # type: ignore
 
 
 def test_shopping_list_items_cannot_update_other_household_items(
@@ -825,7 +838,7 @@ def test_shopping_list_items_cannot_update_other_household_items(
     assert collection["updatedItems"] == []
 
     # the item is unchanged when read back by its owner
-    persisted = h2_user.repos.group_shopping_list_item.get_one(target.id)
+    persisted = run_db(h2_user.repos.group_shopping_list_item.get_one(target.id))
     assert persisted is not None
     assert persisted.note == original_note
 
@@ -855,5 +868,5 @@ def test_shopping_list_items_cannot_delete_other_household_items(
     assert response.status_code == 200
 
     # both items still exist for their owner
-    assert h2_user.repos.group_shopping_list_item.get_one(single_target.id) is not None
-    assert h2_user.repos.group_shopping_list_item.get_one(bulk_target.id) is not None
+    assert run_db(h2_user.repos.group_shopping_list_item.get_one(single_target.id)) is not None
+    assert run_db(h2_user.repos.group_shopping_list_item.get_one(bulk_target.id)) is not None

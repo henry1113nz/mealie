@@ -3,6 +3,7 @@ from requests import Response
 from mealie.schema.recipe.recipe import RecipeTool
 from mealie.schema.recipe.recipe_tool import RecipeToolSave
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.multitenant_tests.case_abc import ABCMultiTenantTestCase
 from tests.utils import api_routes
 
@@ -13,10 +14,12 @@ class ToolsTestCase(ABCMultiTenantTestCase):
     def seed_action(self, group_id: str) -> set[str]:
         tool_ids: set[str] = set()
         for _ in range(10):
-            tool = self.database.tools.create(
-                RecipeToolSave(
-                    group_id=group_id,
-                    name=utils.random_string(10),
+            tool = run_db(
+                self.database.tools.create(
+                    RecipeToolSave(
+                        group_id=group_id,
+                        name=utils.random_string(10),
+                    )
                 )
             )
 
@@ -32,10 +35,12 @@ class ToolsTestCase(ABCMultiTenantTestCase):
         for _ in range(10):
             name = utils.random_string(10)
             for group_id, item_ids in [(group1_id, g1_item_ids), (group2_id, g2_item_ids)]:
-                tool = self.database.tools.create(
-                    RecipeToolSave(
-                        group_id=group_id,
-                        name=name,
+                tool = run_db(
+                    self.database.tools.create(
+                        RecipeToolSave(
+                            group_id=group_id,
+                            name=name,
+                        )
                     )
                 )
                 item_ids.add(str(tool.id))
@@ -48,4 +53,4 @@ class ToolsTestCase(ABCMultiTenantTestCase):
 
     def cleanup(self) -> None:
         for item in self.items:
-            self.database.tools.delete(item.id)
+            run_db(self.database.tools.delete(item.id))

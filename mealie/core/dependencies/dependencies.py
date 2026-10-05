@@ -10,7 +10,8 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import PyJWTError
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
+from tortoise.transactions import in_transaction
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_dirs, get_app_settings
@@ -52,7 +53,7 @@ async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=De
 
         if long_token is not None:
             try:
-                if validate_long_live_token(session, token, payload.get("id")):
+                if await validate_long_live_token(session, token, payload.get("id")):
                     return True
             except Exception:
                 return False
@@ -65,7 +66,7 @@ async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=De
 
 async def get_public_group(group_slug: str = fastapi.Path(...), session=Depends(generate_session)) -> GroupInDB:
     repos = get_repositories(session)
-    group = repos.groups.get_by_slug_or_id(group_slug)
+    group = await repos.groups.get_by_slug_or_id(group_slug)
 
     if not group or group.preferences.private_group:
         raise HTTPException(404, "group not found")
@@ -109,7 +110,7 @@ async def get_current_user(
         long_token: str | None = payload.get("long_token")
 
         if long_token is not None:
-            return validate_long_live_token(session, token, payload.get("id"))
+            return await validate_long_live_token(session, token, payload.get("id"))
 
         if user_id is None:
             raise credentials_exception
@@ -120,11 +121,8 @@ async def get_current_user(
 
     repos = get_repositories(session, group_id=None, household_id=None)
 
-    user = repos.users.get_one(token_data.user_id, "id", any_case=False)
+    user = await repos.users.get_one(token_data.user_id, "id", any_case=False)
 
-    # If we don't commit here, lazy-loads from user relationships will leave some table lock in postgres
-    # which can cause quite a bit of pain further down the line
-    session.commit()
     if user is None:
         raise credentials_exception
 
@@ -156,23 +154,14 @@ async def get_admin_user(current_user: PrivateUser = Depends(get_current_user)) 
     return current_user
 
 
-def validate_long_live_token(session: Session, client_token: str, user_id: str) -> PrivateUser:
-    repos = get_repositories(session, group_id=None, household_id=None)
-
-    token = repos.api_tokens.multi_query({"token": client_token, "user_id": user_id})
-
-    try:
-        user = token[0].user
-        # Match get_current_user(): end the read transaction opened during auth
-        # immediately, otherwise long-lived/API-token auth can hold a DB
-        # connection idle-in-transaction until request teardown. Browsers/PWAs
-        # and automation issuing many concurrent requests can then exhaust
-        # SQLAlchemy's connection pool.
-        session.commit()
-        return user
-    except IndexError as e:
-        session.rollback()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED) from e
+async def validate_long_live_token(session: Session, client_token: str, user_id: str) -> PrivateUser:
+    # Complete the short authentication transaction before running the endpoint.
+    async with in_transaction(session.connection_name) as connection:
+        repos = get_repositories(connection, group_id=None, household_id=None)
+        tokens = await repos.api_tokens.multi_query({"token": client_token, "user_id": user_id})
+        if not tokens:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED)
+        return tokens[0].user
 
 
 def validate_file_token(token: str | None = None) -> Path:

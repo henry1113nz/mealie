@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -16,6 +16,7 @@ from mealie.services.scraper.scraper_strategies import (
     RecipeScraperOpenAITranscription,
     RecipeScraperOpenGraph,
 )
+from tests.fixtures.fixture_database import run_db
 
 SHARE_URL = "https://www.facebook.com/share/r/1DWziuVHRi/"
 REEL_URL = "https://www.facebook.com/reel/1433866715330175/"
@@ -52,7 +53,7 @@ def test_transcription_classifies_the_landing_url(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(transcription, "is_video_url", lambda url: classified.append(url) or True)
 
     repos = MagicMock()
-    repos.group_ai_provider_settings.get_one.return_value = MagicMock(audio_provider_enabled=True)
+    repos.group_ai_provider_settings.get_one = AsyncMock(return_value=MagicMock(audio_provider_enabled=True))
 
     strategy = RecipeScraperOpenAITranscription(
         SHARE_URL,
@@ -61,7 +62,7 @@ def test_transcription_classifies_the_landing_url(monkeypatch: pytest.MonkeyPatc
         resolved_url=REEL_URL,
     )
 
-    assert strategy.can_scrape() is True
+    assert run_db(strategy.can_scrape()) is True
     assert classified == [REEL_URL]
 
 
@@ -129,7 +130,7 @@ async def test_scrape_passes_landing_url_to_strategies(monkeypatch: pytest.Monke
     seen: list[str | None] = []
 
     class CaptureStrategy(ABCScraperStrategy):
-        def can_scrape(self) -> bool:
+        async def can_scrape(self) -> bool:
             seen.append(self.resolved_url)
             return False
 
@@ -155,7 +156,7 @@ async def test_scrape_without_fetch_does_not_invent_a_landing_url():
     seen: list[str | None] = []
 
     class CaptureStrategy(ABCScraperStrategy):
-        def can_scrape(self) -> bool:
+        async def can_scrape(self) -> bool:
             seen.append(self.resolved_url)
             return False
 

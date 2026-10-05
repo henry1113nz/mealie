@@ -6,6 +6,7 @@ from pydantic import UUID4
 
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.recipe.recipe import Recipe
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -105,11 +106,11 @@ def test_admin_can_delete(
     admin_user: TestUser,
 ):
     # Make sure admin belongs to same group/household as user
-    admin_data = unfiltered_database.users.get_one(admin_user.user_id)
+    admin_data = run_db(unfiltered_database.users.get_one(admin_user.user_id))
     assert admin_data
     admin_data.group_id = UUID(unique_user.group_id)
     admin_data.household_id = UUID(unique_user.household_id)
-    unfiltered_database.users.update(admin_user.user_id, admin_data)
+    run_db(unfiltered_database.users.update(admin_user.user_id, admin_data))
 
     # Create Comment
     create_data = random_comment(unique_recipe.id)

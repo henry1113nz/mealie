@@ -18,7 +18,7 @@ class RegistrationController(BasePublicController):
     event_bus: EventBusService = Depends(EventBusService.as_dependency)
 
     @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-    def register_new_user(self, data: CreateUserRegistration):
+    async def register_new_user(self, data: CreateUserRegistration):
         settings = get_app_settings()
 
         if not settings.ALLOW_SIGNUP and data.group_token is None or data.group_token == "":
@@ -33,14 +33,16 @@ class RegistrationController(BasePublicController):
             self.translator,
         )
 
-        result = registration_service.register_user(data)
+        result = await registration_service.register_user(data)
 
-        self.event_bus.dispatch(
-            integration_id="registration",
-            group_id=result.group_id,
-            household_id=result.household_id,
-            event_type=EventTypes.user_signup,
-            document_data=EventUserSignupData(username=result.username, email=result.email),
+        (
+            await self.event_bus.dispatch(
+                integration_id="registration",
+                group_id=result.group_id,
+                household_id=result.household_id,
+                event_type=EventTypes.user_signup,
+                document_data=EventUserSignupData(username=result.username, email=result.email),
+            )
         )
 
         return result

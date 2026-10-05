@@ -1,7 +1,7 @@
 import abc
 from datetime import timedelta
 
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.security.tokens import create_access_token
 from mealie.repos.all_repositories import get_repositories
@@ -30,21 +30,21 @@ class AuthProvider[T](metaclass=abc.ABCMeta):
         """
         return create_access_token({"sub": str(user.id), "rme": remember_me})
 
-    def try_get_user(self, username: str) -> PrivateUser | None:
+    async def try_get_user(self, username: str) -> PrivateUser | None:
         """Try to get a user from the database, first trying username, then trying email"""
         if self.__has_tried_user:
             return self.user
 
         db = get_repositories(self.session, group_id=None, household_id=None)
 
-        user = user = db.users.get_one(username, "username", any_case=True)
+        user = user = await db.users.get_one(username, "username", any_case=True)
         if not user:
-            user = db.users.get_one(username, "email", any_case=True)
+            user = await db.users.get_one(username, "email", any_case=True)
 
         self.user = user
         return user
 
     @abc.abstractmethod
-    def authenticate(self) -> tuple[str, timedelta] | None:
+    async def authenticate(self) -> tuple[str, timedelta] | None:
         """Attempt to authenticate a user"""
         raise NotImplementedError

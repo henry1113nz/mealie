@@ -9,7 +9,7 @@ Create Date: 2025-02-09 15:31:00.772295
 import sqlalchemy as sa
 from sqlalchemy import orm
 from alembic import op
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.guid import GUID
 from mealie.core.root_logger import get_logger
 
 # revision identifiers, used by Alembic.

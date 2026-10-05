@@ -1,56 +1,62 @@
-from datetime import datetime
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from pydantic import ConfigDict
-from sqlalchemy import ForeignKey, orm
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql.sqltypes import Boolean, String
+from tortoise import fields
 
-from mealie.db.models._model_base import BaseMixins, SqlAlchemyBase
-
-from .._model_utils.auto_init import auto_init
-from .._model_utils.datetime import NaiveDateTime, get_utc_now
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
+from mealie.db.models._model_utils.datetime import get_utc_now
+from mealie.db.models._model_utils.string import StringField
 
 if TYPE_CHECKING:
-    from .group import Group
+    from mealie.db.models.group.group import Group
 
 
-class ReportEntryModel(SqlAlchemyBase, BaseMixins):
+class ReportEntryModel(TortoiseModel):
     __tablename__ = "report_entries"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    success: Mapped[bool | None] = mapped_column(Boolean, default=False)
-    message: Mapped[str] = mapped_column(String, nullable=True)
-    exception: Mapped[str] = mapped_column(String, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(NaiveDateTime, nullable=False, default=get_utc_now)
-
-    report_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("group_reports.id"), nullable=False, index=True)
-    report: Mapped[ReportModel] = orm.relationship("ReportModel", back_populates="entries")
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-
-class ReportModel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "group_reports"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    category: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(NaiveDateTime, nullable=False, default=get_utc_now)
-
-    entries: Mapped[list[ReportEntryModel]] = orm.relationship(
-        ReportEntryModel, back_populates="report", cascade="all, delete-orphan"
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    success = fields.BooleanField(null=True, default=False)
+    message = fields.TextField(null=True)
+    exception = fields.TextField(null=True)
+    timestamp = fields.DatetimeField(null=False, default=get_utc_now)
+    report_id: UUID
+    report: fields.ForeignKeyRelation[ReportModel] = fields.ForeignKeyField(
+        "models.ReportModel",
+        related_name="entries",
+        source_field="report_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
 
-    # Relationships
-    group_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="group_reports", single_parent=True)
-    model_config = ConfigDict(exclude=["entries"])
+    class Meta:
+        table = "report_entries"
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+
+class ReportModel(TortoiseModel):
+    __tablename__ = "group_reports"
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
+    model_config = {"exclude": ["entries"]}
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    name = fields.TextField(null=False)
+    status = fields.TextField(null=False)
+    category = StringField(null=False, db_index=True)
+    timestamp = fields.DatetimeField(null=False, default=get_utc_now)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="group_reports",
+        source_field="group_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+
+    class Meta:
+        table = "group_reports"

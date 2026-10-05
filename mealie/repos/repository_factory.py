@@ -2,10 +2,10 @@ from collections.abc import Sequence
 from functools import cached_property
 
 from pydantic import UUID4
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import Session, with_expression
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
+from tortoise.functions import Count
+from tortoise.transactions import in_transaction
 
-from mealie.db.models._model_utils.guid import GUID
 from mealie.db.models.group import Group, ReportEntryModel, ReportModel
 from mealie.db.models.group.ai_providers import AIProvider, AIProviderSettings
 from mealie.db.models.group.exports import GroupDataExportsModel
@@ -26,14 +26,14 @@ from mealie.db.models.household.shopping_list import (
     ShoppingListRecipeReference,
 )
 from mealie.db.models.household.webhooks import GroupWebhooksModel
-from mealie.db.models.recipe.category import Category, recipes_to_categories
+from mealie.db.models.recipe.category import Category
 from mealie.db.models.recipe.comment import RecipeComment
 from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
 from mealie.db.models.recipe.labels import MultiPurposeLabel
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.recipe_timeline import RecipeTimelineEvent
 from mealie.db.models.recipe.shared import RecipeShareTokenModel
-from mealie.db.models.recipe.tag import Tag, recipes_to_tags
+from mealie.db.models.recipe.tag import Tag
 from mealie.db.models.recipe.tool import Tool
 from mealie.db.models.users import LongLiveToken, User
 from mealie.db.models.users.password_reset import PasswordResetModel
@@ -89,83 +89,34 @@ PK_GROUP_ID = "group_id"
 PK_HOUSEHOLD_ID = "household_id"
 
 
-class RepositoryCategories(GroupRepositoryGeneric[CategoryOut, Category]):
+class OrganizerRepository(GroupRepositoryGeneric):
     def _query(self, override_schema=None, with_options=True):
-        q = super()._query(override_schema=override_schema, with_options=with_options)
-        count_sq = (
-            select(func.count(recipes_to_categories.c.recipe_id))
-            .where(recipes_to_categories.c.category_id == Category.id)
-            .correlate(Category)
-            .scalar_subquery()
-        )
-        return q.options(with_expression(Category.recipe_count, count_sq))
+        return super()._query(override_schema, with_options).annotate(recipe_count=Count("recipes", distinct=True))
 
-    def get_empty(self) -> Sequence[Category]:
-        stmt = select(Category).filter(~Category.recipes.any())
+    async def get_empty(self) -> Sequence:
+        return await self._query().filter(recipe_count=0, **self._filter_builder())
 
-        return self.session.execute(stmt).scalars().all()
-
-    def merge(self, from_category: UUID4, to_category: UUID4) -> CategoryOut | None:
-        already_in_to = select(recipes_to_categories.c.recipe_id).where(
-            recipes_to_categories.c.category_id == to_category
-        )
-
-        try:
-            self.session.execute(
-                update(recipes_to_categories)
-                .where(recipes_to_categories.c.category_id == from_category)
-                .where(recipes_to_categories.c.recipe_id.not_in(already_in_to))
-                .values(category_id=to_category)
-            )
-            self.session.execute(
-                delete(recipes_to_categories).where(recipes_to_categories.c.category_id == from_category)
-            )
-
-            from_model = self._query_one(from_category)
-            self.session.delete(from_model)
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-        return self.get_one(to_category)
+    async def merge(self, source_id: UUID4, target_id: UUID4):
+        source = await self._query_one(source_id)
+        target = await self._query_one(target_id)
+        if source_id == target_id:
+            return await self.get_one(target_id)
+        async with in_transaction(self.session.connection_name) as connection:
+            recipes = await source.recipes.all().using_db(connection)
+            if recipes:
+                await target.recipes.add(*recipes, using_db=connection)
+            await source.delete(using_db=connection)
+        return await self.get_one(target_id)
 
 
-class RepositoryTags(GroupRepositoryGeneric[TagOut, Tag]):
-    def _query(self, override_schema=None, with_options=True):
-        q = super()._query(override_schema=override_schema, with_options=with_options)
-        count_sq = (
-            select(func.count(recipes_to_tags.c.recipe_id))
-            .where(recipes_to_tags.c.tag_id == Tag.id)
-            .correlate(Tag)
-            .scalar_subquery()
-        )
-        return q.options(with_expression(Tag.recipe_count, count_sq))
+class RepositoryCategories(OrganizerRepository):
+    async def merge(self, from_category: UUID4, to_category: UUID4) -> CategoryOut | None:
+        return await super().merge(from_category, to_category)
 
-    def get_empty(self) -> Sequence[Tag]:
-        stmt = select(Tag).filter(~Tag.recipes.any())
-        return self.session.execute(stmt).scalars().all()
 
-    def merge(self, from_tag: UUID4, to_tag: UUID4) -> TagOut | None:
-        already_in_to = select(recipes_to_tags.c.recipe_id).where(recipes_to_tags.c.tag_id == to_tag)
-
-        try:
-            self.session.execute(
-                update(recipes_to_tags)
-                .where(recipes_to_tags.c.tag_id == from_tag)
-                .where(recipes_to_tags.c.recipe_id.not_in(already_in_to))
-                .values(tag_id=to_tag)
-            )
-            self.session.execute(delete(recipes_to_tags).where(recipes_to_tags.c.tag_id == from_tag))
-
-            from_model = self._query_one(from_tag)
-            self.session.delete(from_model)
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-        return self.get_one(to_tag)
+class RepositoryTags(OrganizerRepository):
+    async def merge(self, from_tag: UUID4, to_tag: UUID4) -> TagOut | None:
+        return await super().merge(from_tag, to_tag)
 
 
 class AllRepositories:
@@ -190,8 +141,7 @@ class AllRepositories:
     def uuid_to_str(self, val: UUID4) -> str:
         """Helper method to convert a UUID into a database-safe string"""
 
-        dialect = self.session.bind.dialect
-        return GUID.convert_value_to_guid(val, dialect) or ""
+        return str(val)
 
     # ================================================================
     # Recipe

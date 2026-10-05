@@ -81,7 +81,7 @@ class RecipeScraper:
                 include_categories=include_categories,
                 resolved_url=resolved_url,
             )
-            if not scraper.can_scrape():
+            if not (await scraper.can_scrape()):
                 self.logger.debug(f"Skipping {scraper.__class__.__name__}")
                 continue
 
@@ -91,10 +91,12 @@ class RecipeScraper:
                 self.logger.exception(f"Failed to scrape HTML with {scraper.__class__.__name__}")
                 result = None
 
-            if result is None or result[0] is None:
+            if result is None:
                 continue
 
             recipe_result, extras = result
+            if recipe_result is None or extras is None:
+                continue
             try:
                 recipe = cleaner.clean(recipe_result, self.translator)
             except Exception:

@@ -30,46 +30,60 @@ if _WORKER_ID:
 
     if os.environ.get("DB_ENGINE") == "postgres":
         # Postgres workers get their own database too, because test_database_restore drops every table.
-        from sqlalchemy import create_engine, text
+        import asyncio
+        from urllib.parse import urlsplit
+
+        import asyncpg
 
         from mealie.core.settings.db_providers import PostgresProvider
 
         provider = PostgresProvider()
         worker_db = f"{provider.POSTGRES_DB}_{_WORKER_ID}"
-        with create_engine(provider.db_url, isolation_level="AUTOCOMMIT").connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{worker_db}"'))
-            conn.execute(text(f'CREATE DATABASE "{worker_db}"'))
+
+        async def create_worker_database() -> None:
+            connection = await asyncpg.connect(provider.db_url)
+            quoted_name = worker_db.replace('"', '""')
+            try:
+                await connection.execute(f'DROP DATABASE IF EXISTS "{quoted_name}"')
+                await connection.execute(f'CREATE DATABASE "{quoted_name}"')
+            finally:
+                await connection.close()
+
+        asyncio.run(create_worker_database())
         mp.setenv("POSTGRES_DB", worker_db)
+        if provider.POSTGRES_URL_OVERRIDE:
+            # Keep raw credentials unchanged: the provider encodes them when
+            # constructing its URL. Overrides must also select the worker DB.
+            credentials, separator, address = provider.POSTGRES_URL_OVERRIDE.rpartition("@")
+            if separator:
+                prefix = credentials + separator
+            else:
+                prefix = "postgresql://"
+                address = provider.POSTGRES_URL_OVERRIDE.removeprefix(prefix)
+            worker_url = urlsplit("postgresql://" + address)._replace(path="/" + worker_db).geturl()
+            mp.setenv("POSTGRES_URL_OVERRIDE", prefix + worker_url.removeprefix("postgresql://"))
 
 from fastapi.testclient import TestClient
 
 from mealie.app import app
 from mealie.core import config
-from mealie.db.db_setup import SessionLocal, generate_session
-from mealie.db.init_db import main
 from tests import data as test_data
 from tests.fixtures import *  # noqa: F403 F401
-
-main()
-
-
-def override_get_db():
-    try:
-        db = SessionLocal()
-        yield db
-    finally:
-        db.close()
+from tests.fixtures import fixture_database
 
 
 @fixture(scope="session")
 def api_client():
-    app.dependency_overrides[generate_session] = override_get_db
-
-    yield TestClient(app)
+    with TestClient(app) as client:
+        fixture_database._portal = client.portal
+        try:
+            yield client
+        finally:
+            fixture_database._portal = None
 
     with contextlib.suppress(Exception):
         settings = config.get_app_settings()
-        settings.DB_PROVIDER.db_path.unlink()  # Handle SQLite Provider
+        settings.DB_PROVIDER.db_path.unlink()
 
 
 @fixture(autouse=True)

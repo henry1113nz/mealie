@@ -1,10 +1,11 @@
 import asyncio
+import inspect
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings
-from mealie.services.scheduler.runner import repeat_every
+from mealie.services.scheduler.runner import SCHEDULED_TASKS, register_task, repeat_every
 
 from .scheduler_registry import SchedulerRegistry
 
@@ -24,7 +25,16 @@ class SchedulerService:
         await run_hourly()
 
         # Wait to trigger our daily run until our given "daily time", so having asyncio handle it.
-        asyncio.create_task(schedule_daily())
+        register_task(schedule_daily())
+
+    @staticmethod
+    async def stop() -> None:
+        tasks = list(SCHEDULED_TASKS)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        SCHEDULED_TASKS.clear()
 
 
 async def schedule_daily():
@@ -53,29 +63,34 @@ async def schedule_daily():
     await run_daily()
 
 
-def _scheduled_task_wrapper(callable):
+async def _scheduled_task_wrapper(callable):
     try:
-        callable()
+        if inspect.iscoroutinefunction(callable):
+            await callable()
+        else:
+            result = await asyncio.to_thread(callable)
+            if inspect.isawaitable(result):
+                await result
     except Exception as e:
         logger.error("Error in scheduled task func='%s': exception='%s'", callable.__name__, e)
 
 
 @repeat_every(minutes=MINUTES_DAY, wait_first=False, logger=logger)
-def run_daily():
+async def run_daily():
     logger.debug("Running daily callbacks")
     for func in SchedulerRegistry._daily:
-        _scheduled_task_wrapper(func)
+        await _scheduled_task_wrapper(func)
 
 
 @repeat_every(minutes=MINUTES_HOUR, wait_first=True, logger=logger)
-def run_hourly():
+async def run_hourly():
     logger.debug("Running hourly callbacks")
     for func in SchedulerRegistry._hourly:
-        _scheduled_task_wrapper(func)
+        await _scheduled_task_wrapper(func)
 
 
 @repeat_every(minutes=MINUTES_5, wait_first=True, logger=logger)
-def run_minutely():
+async def run_minutely():
     logger.debug("Running minutely callbacks")
     for func in SchedulerRegistry._minutely:
-        _scheduled_task_wrapper(func)
+        await _scheduled_task_wrapper(func)

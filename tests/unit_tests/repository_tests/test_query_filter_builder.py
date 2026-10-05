@@ -1,5 +1,4 @@
 import pytest
-import sqlalchemy as sa
 
 from mealie.db.models.recipe.ingredient import IngredientFoodModel
 from mealie.db.models.recipe.recipe import RecipeModel
@@ -139,7 +138,7 @@ def test_deep_traversal_user_password_raises():
 
 def test_filter_query_user_email_raises():
     """filter_query on user.email should raise ValueError."""
-    query = sa.select(RecipeModel)
+    query = RecipeModel.all()
     builder = QueryFilterBuilder('user.email = "test@example.com"')
     with pytest.raises(NonFilterableValueError):
         builder.filter_query(query, RecipeModel)
@@ -147,7 +146,7 @@ def test_filter_query_user_email_raises():
 
 def test_filter_query_user_password_raises():
     """filter_query on user.password should raise ValueError."""
-    query = sa.select(RecipeModel)
+    query = RecipeModel.all()
     builder = QueryFilterBuilder('user.password = "secret"')
     with pytest.raises(NonFilterableValueError):
         builder.filter_query(query, RecipeModel)
@@ -173,9 +172,9 @@ def test_filter_query_by_food_label_joins_through_ingredients():
     """Filtering recipes by food label should join recipes -> ingredients -> foods."""
     label_id = "a5f1c6d2-0000-4000-8000-000000000001"
     builder = QueryFilterBuilder(f'recipe_ingredient.food.label_id IN ["{label_id}"]')
-    query = builder.filter_query(sa.select(RecipeModel.id), RecipeModel)
+    query = builder.filter_query(RecipeModel.all(), RecipeModel).values("id")
 
-    sql = " ".join(str(query.compile(compile_kwargs={"literal_binds": True})).split())
+    sql = " ".join(query.sql(params_inline=True).replace('"', "").replace("=", " = ").split())
     # The builder correlates through the relationship chain with EXISTS rather than joining, so a
     # recipe comes back once no matter how many of its ingredients carry the label.
     assert "EXISTS (SELECT 1 FROM recipes_ingredients" in sql
@@ -192,9 +191,9 @@ def test_filter_query_excluding_food_label_excludes_the_whole_recipe():
     """
     label_id = "a5f1c6d2-0000-4000-8000-000000000001"
     builder = QueryFilterBuilder(f'recipe_ingredient.food.label_id NOT IN ["{label_id}"]')
-    query = builder.filter_query(sa.select(RecipeModel.id), RecipeModel)
+    query = builder.filter_query(RecipeModel.all(), RecipeModel).values("id")
 
-    sql = " ".join(str(query.compile(compile_kwargs={"literal_binds": True})).split())
+    sql = " ".join(query.sql(params_inline=True).replace('"', "").replace("=", " = ").split())
     # NOT wraps the whole correlated EXISTS, so the recipe drops out as soon as one of its
     # ingredients carries the label, rather than being matched on its other ingredients.
     assert "NOT (EXISTS (SELECT 1 FROM recipes_ingredients" in sql

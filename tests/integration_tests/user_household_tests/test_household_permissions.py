@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_bool
 from tests.utils.fixture_schemas import TestUser
@@ -21,10 +22,10 @@ def test_set_member_permissions(api_client: TestClient, user_tuple: list[TestUse
     usr_1, usr_2 = user_tuple
 
     # Set Acting User
-    acting_user = usr_1.repos.users.get_one(usr_1.user_id)
+    acting_user = run_db(usr_1.repos.users.get_one(usr_1.user_id))
     assert acting_user
     acting_user.can_manage = True
-    usr_1.repos.users.update(acting_user.id, acting_user)
+    run_db(usr_1.repos.users.update(acting_user.id, acting_user))
 
     payload = get_permissions_payload(str(usr_2.user_id))
 
@@ -37,10 +38,10 @@ def test_set_member_permissions_unauthorized(api_client: TestClient, unique_user
     database = unique_user.repos
 
     # Setup
-    user = database.users.get_one(unique_user.user_id)
+    user = run_db(database.users.get_one(unique_user.user_id))
     assert user
     user.can_manage = False
-    database.users.update(user.id, user)
+    run_db(database.users.update(user.id, user))
 
     payload = get_permissions_payload(str(user.id))
     payload = {
@@ -62,10 +63,10 @@ def test_set_member_permissions_other_household(
 ):
     database = unique_user.repos
 
-    user = database.users.get_one(unique_user.user_id)
+    user = run_db(database.users.get_one(unique_user.user_id))
     assert user
     user.can_manage = True
-    database.users.update(user.id, user)
+    run_db(database.users.update(user.id, user))
 
     payload = get_permissions_payload(str(h2_user.user_id))
     response = api_client.put(api_routes.households_permissions, json=payload, headers=unique_user.token)
@@ -78,10 +79,10 @@ def test_set_member_permissions_no_user(
 ):
     database = unique_user.repos
 
-    user = database.users.get_one(unique_user.user_id)
+    user = run_db(database.users.get_one(unique_user.user_id))
     assert user
     user.can_manage = True
-    database.users.update(user.id, user)
+    run_db(database.users.update(user.id, user))
 
     payload = get_permissions_payload(str(uuid4()))
     response = api_client.put(api_routes.households_permissions, json=payload, headers=unique_user.token)
@@ -91,10 +92,10 @@ def test_set_member_permissions_no_user(
 def test_set_own_permissions(api_client: TestClient, unique_user: TestUser):
     database = unique_user.repos
 
-    user = database.users.get_one(unique_user.user_id)
+    user = run_db(database.users.get_one(unique_user.user_id))
     assert user
     user.can_manage = True
-    database.users.update(user.id, user)
+    run_db(database.users.update(user.id, user))
 
     form = {"user_id": str(unique_user.user_id), "canOrganize": not user.can_organize}
     response = api_client.put(api_routes.households_permissions, json=form, headers=unique_user.token)

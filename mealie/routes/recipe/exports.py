@@ -23,7 +23,7 @@ class RecipeExportController(BaseRecipeController):
         return TemplateService().templates
 
     @router.get("/{slug}/exports", response_class=FileResponse)
-    def get_recipe_as_format(self, slug: str, template_name: str):
+    async def get_recipe_as_format(self, slug: str, template_name: str):
         """
         ## Parameters
         `template_name`: The name of the template to use to use in the exports listed. Template type will automatically
@@ -32,6 +32,6 @@ class RecipeExportController(BaseRecipeController):
 
         """
         with get_temporary_path(auto_unlink=False) as temp_path:
-            recipe = self.mixins.get_one(slug)
+            recipe = await self.mixins.get_one(slug)
             file = self.service.render_template(recipe, temp_path, template_name)
             return FileResponse(file, background=BackgroundTask(rmtree, temp_path))

@@ -28,6 +28,7 @@ class RecipeImportWorkflow:
         self.logger = get_logger()
 
     async def run(self, ctx: WorkflowContext) -> WorkflowResult:
+        await ctx.ai.initialize()
         outcomes: dict[str, StepOutcome] = {}
 
         for step in self.steps:

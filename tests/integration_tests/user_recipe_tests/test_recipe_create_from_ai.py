@@ -27,6 +27,7 @@ from mealie.services.openai import OpenAINotEnabledException, OpenAIService
 from mealie.services.recipe.organizer_resolver import OrganizerResolver
 from mealie.services.recipe.recipe_data_service import RecipeDataService
 from mealie.services.scraper.cleaner import NO_IMAGE
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -47,23 +48,29 @@ def html_fetch_result(html: str, url: str) -> FetchResult:
 def ai_providers(unique_user: TestUser) -> Generator[None]:
     """Enable both the default and image providers, restoring the original settings afterwards."""
 
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(
-            default_provider_id=provider.id,
-            audio_provider_id=provider.id,
-            image_provider_id=provider.id,
-        ),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(
+                default_provider_id=provider.id,
+                audio_provider_id=provider.id,
+                image_provider_id=provider.id,
+            ),
+        )
     )
 
     yield
 
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
 
@@ -437,15 +444,17 @@ def test_create_from_video_url_without_audio_provider_falls_back_to_fetching(
     monkeypatch: pytest.MonkeyPatch,
     openai_recipe: OpenAIRecipe,
 ):
-    settings = unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id)
+    settings = run_db(unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id))
     assert settings
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(
-            default_provider_id=settings.default_provider_id,
-            audio_provider_id=None,
-            image_provider_id=settings.image_provider_id,
-        ),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(
+                default_provider_id=settings.default_provider_id,
+                audio_provider_id=None,
+                image_provider_id=settings.image_provider_id,
+            ),
+        )
     )
 
     AIResponses(recipe=openai_recipe).install(monkeypatch)
@@ -471,7 +480,7 @@ def test_organizers_are_skipped_when_there_is_nothing_to_do(
 ):
     """With no existing organizers and creation switched off, the step can't do anything."""
 
-    assert not any(OrganizerResolver(unique_user.repos).existing_names().values()), (
+    assert not any(run_db(OrganizerResolver(unique_user.repos).existing_names()).values()), (
         "this test needs a group that has no organizers yet"
     )
 
@@ -488,7 +497,9 @@ def test_existing_organizers_are_attached_without_creating_new_ones(
     monkeypatch: pytest.MonkeyPatch,
     openai_recipe: OpenAIRecipe,
 ):
-    existing_tag = unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.repos.group_id))
+    existing_tag = run_db(
+        unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.repos.group_id))
+    )
 
     new_name = random_string()
     organizers = OpenAIOrganizers(tags=[existing_tag.name, new_name], categories=[new_name], tools=[new_name])
@@ -505,7 +516,7 @@ def test_existing_organizers_are_attached_without_creating_new_ones(
     assert [tag["name"] for tag in recipe["tags"]] == [existing_tag.name]
     assert recipe["recipeCategory"] == []
     assert recipe["tools"] == []
-    assert not unique_user.repos.tags.get_one(slugify(new_name), "slug")
+    assert not run_db(unique_user.repos.tags.get_one(slugify(new_name), "slug"))
 
 
 def test_new_organizers_are_created_when_requested(
@@ -572,7 +583,9 @@ def test_existing_organizers_are_offered_to_the_provider(
     monkeypatch: pytest.MonkeyPatch,
     openai_recipe: OpenAIRecipe,
 ):
-    existing_tag = unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.repos.group_id))
+    existing_tag = run_db(
+        unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.repos.group_id))
+    )
 
     ai = AIResponses(recipe=openai_recipe, organizers=OpenAIOrganizers()).install(monkeypatch)
 
@@ -917,9 +930,11 @@ def test_provider_failures_are_reported_without_leaking_their_text(
 
 
 def test_create_with_ai_disabled(api_client: TestClient, unique_user: TestUser):
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     r = post_ai(api_client, unique_user, {"content": random_string()})
@@ -931,15 +946,17 @@ def test_create_with_images_but_no_image_provider(
     unique_user: TestUser,
     test_image_jpg: str,
 ):
-    settings = unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id)
+    settings = run_db(unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id))
     assert settings
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(
-            default_provider_id=settings.default_provider_id,
-            audio_provider_id=None,
-            image_provider_id=None,
-        ),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(
+                default_provider_id=settings.default_provider_id,
+                audio_provider_id=None,
+                image_provider_id=None,
+            ),
+        )
     )
 
     with open(test_image_jpg, "rb") as f:

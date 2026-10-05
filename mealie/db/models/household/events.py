@@ -1,81 +1,88 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, ForeignKey, String, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
 
 if TYPE_CHECKING:
-    from ..group import Group
-    from .household import Household
+    from mealie.db.models.group.group import Group
+    from mealie.db.models.household.household import Household
 
 
-class GroupEventNotifierOptionsModel(SqlAlchemyBase, BaseMixins):
+class GroupEventNotifierOptionsModel(TortoiseModel):
     __tablename__ = "group_events_notifier_options"
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    event_notifier_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("group_events_notifiers.id"), nullable=False)
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    event_notifier_id: UUID
+    event_notifier: fields.OneToOneRelation[GroupEventNotifierModel] = fields.OneToOneField(
+        "models.GroupEventNotifierModel",
+        related_name="options",
+        source_field="event_notifier_id",
+        null=False,
+        on_delete=fields.CASCADE,
+    )
+    recipe_created = fields.BooleanField(null=False, default=False)
+    recipe_updated = fields.BooleanField(null=False, default=False)
+    recipe_deleted = fields.BooleanField(null=False, default=False)
+    user_signup = fields.BooleanField(null=False, default=False)
+    data_migrations = fields.BooleanField(null=False, default=False)
+    data_export = fields.BooleanField(null=False, default=False)
+    data_import = fields.BooleanField(null=False, default=False)
+    mealplan_entry_created = fields.BooleanField(null=False, default=False)
+    mealplan_entry_updated = fields.BooleanField(null=False, default=False)
+    mealplan_entry_deleted = fields.BooleanField(null=False, default=False)
+    shopping_list_created = fields.BooleanField(null=False, default=False)
+    shopping_list_updated = fields.BooleanField(null=False, default=False)
+    shopping_list_deleted = fields.BooleanField(null=False, default=False)
+    cookbook_created = fields.BooleanField(null=False, default=False)
+    cookbook_updated = fields.BooleanField(null=False, default=False)
+    cookbook_deleted = fields.BooleanField(null=False, default=False)
+    tag_created = fields.BooleanField(null=False, default=False)
+    tag_updated = fields.BooleanField(null=False, default=False)
+    tag_deleted = fields.BooleanField(null=False, default=False)
+    category_created = fields.BooleanField(null=False, default=False)
+    category_updated = fields.BooleanField(null=False, default=False)
+    category_deleted = fields.BooleanField(null=False, default=False)
+    label_created = fields.BooleanField(null=False, default=False)
+    label_updated = fields.BooleanField(null=False, default=False)
+    label_deleted = fields.BooleanField(null=False, default=False)
 
-    recipe_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    recipe_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    recipe_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    user_signup: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    data_migrations: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    data_export: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    data_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    mealplan_entry_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    mealplan_entry_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    mealplan_entry_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    shopping_list_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    shopping_list_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    shopping_list_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    cookbook_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    cookbook_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    cookbook_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    tag_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    tag_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    tag_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    category_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    category_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    category_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    label_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    label_updated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    label_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "group_events_notifier_options"
 
 
-class GroupEventNotifierModel(SqlAlchemyBase, BaseMixins):
+class GroupEventNotifierModel(TortoiseModel):
     __tablename__ = "group_events_notifiers"
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    apprise_url: Mapped[str] = mapped_column(String, nullable=False)
-
-    group: Mapped[Group | None] = orm.relationship("Group", back_populates="group_event_notifiers", single_parent=True)
-    group_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("groups.id"), index=True)
-    household: Mapped[Household | None] = orm.relationship(
-        "Household", back_populates="group_event_notifiers", single_parent=True
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    name = fields.TextField(null=False)
+    enabled = fields.BooleanField(null=False, default=True)
+    apprise_url = fields.TextField(null=False)
+    group_id: UUID | None
+    group: fields.ForeignKeyNullableRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="group_event_notifiers",
+        source_field="group_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
-    household_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("households.id"), index=True)
-
-    options: Mapped[GroupEventNotifierOptionsModel] = orm.relationship(
-        GroupEventNotifierOptionsModel, uselist=False, cascade="all, delete-orphan"
+    household_id: UUID | None
+    household: fields.ForeignKeyNullableRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="group_event_notifiers",
+        source_field="household_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "group_events_notifiers"

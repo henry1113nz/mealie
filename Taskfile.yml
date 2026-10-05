@@ -109,7 +109,7 @@ tasks:
     desc: runs python tests in parallel across CPU cores (support args after '--')
     cmds:
       # --dist loadfile: each test file runs in order on a single worker
-      - uv run pytest -n auto --dist loadfile {{ .CLI_ARGS }}
+      - uv run pytest -n 4 --dist loadfile {{ .CLI_ARGS }}
 
   py:format:
     desc: runs python code formatter
@@ -232,8 +232,7 @@ tasks:
     desc: generates a new database migration file e.g. task py:migrate -- "add new
       column"
     cmds:
-      - uv run alembic --config mealie/alembic/alembic.ini revision
-        --autogenerate -m "{{ .CLI_ARGS }}"
+      - uv run aerich migrate --name "{{ .CLI_ARGS }}"
       - task: py:format
 
   ui:build:

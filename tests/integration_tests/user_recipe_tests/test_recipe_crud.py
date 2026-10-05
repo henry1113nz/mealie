@@ -39,6 +39,7 @@ from mealie.services.recipe.recipe_data_service import RecipeDataService
 from mealie.services.scraper.recipe_scraper import DEFAULT_SCRAPER_STRATEGIES
 from mealie.services.scraper.scraper import ParserErrors
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -408,7 +409,7 @@ def test_create_recipe_from_zip(api_client: TestClient, unique_user: TestUser, t
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
 
 
@@ -655,7 +656,7 @@ def test_create_recipe_from_zip_invalid_group(api_client: TestClient, unique_use
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
 
     # the group should always be set to the current user's group
@@ -676,7 +677,7 @@ def test_create_recipe_from_zip_invalid_user(api_client: TestClient, unique_user
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
 
     # invalid users should default to the current user
@@ -685,8 +686,10 @@ def test_create_recipe_from_zip_invalid_user(api_client: TestClient, unique_user
 
 def test_create_recipe_from_zip_existing_category(api_client: TestClient, unique_user: TestUser, tempdir: str):
     database = unique_user.repos
-    categories = database.categories.create_many(
-        [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+    categories = run_db(
+        database.categories.create_many(
+            [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+        )
     )
     category = random.choice(categories)
 
@@ -703,7 +706,7 @@ def test_create_recipe_from_zip_existing_category(api_client: TestClient, unique
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_category
     assert len(fetched_recipe.recipe_category) == 1
@@ -712,8 +715,10 @@ def test_create_recipe_from_zip_existing_category(api_client: TestClient, unique
 
 def test_create_recipe_from_zip_existing_tag(api_client: TestClient, unique_user: TestUser, tempdir: str):
     database = unique_user.repos
-    tags = database.tags.create_many(
-        [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+    tags = run_db(
+        database.tags.create_many(
+            [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+        )
     )
     tag = random.choice(tags)
 
@@ -730,7 +735,7 @@ def test_create_recipe_from_zip_existing_tag(api_client: TestClient, unique_user
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.tags
     assert len(fetched_recipe.tags) == 1
@@ -741,8 +746,10 @@ def test_create_recipe_from_zip_existing_category_wrong_ids(
     api_client: TestClient, unique_user: TestUser, tempdir: str
 ):
     database = unique_user.repos
-    categories = database.categories.create_many(
-        [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+    categories = run_db(
+        database.categories.create_many(
+            [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+        )
     )
     category = random.choice(categories)
     invalid_category = RecipeCategory(id=uuid4(), name=category.name, slug=category.slug)
@@ -760,7 +767,7 @@ def test_create_recipe_from_zip_existing_category_wrong_ids(
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_category
     assert len(fetched_recipe.recipe_category) == 1
@@ -769,8 +776,10 @@ def test_create_recipe_from_zip_existing_category_wrong_ids(
 
 def test_create_recipe_from_zip_existing_tag_wrong_ids(api_client: TestClient, unique_user: TestUser, tempdir: str):
     database = unique_user.repos
-    tags = database.tags.create_many(
-        [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+    tags = run_db(
+        database.tags.create_many(
+            [{"name": random_string(), "group_id": unique_user.group_id} for _ in range(random_int(5, 10))]
+        )
     )
     tag = random.choice(tags)
     invalid_tag = RecipeTag(id=uuid4(), name=tag.name, slug=tag.slug)
@@ -788,7 +797,7 @@ def test_create_recipe_from_zip_existing_tag_wrong_ids(api_client: TestClient, u
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.tags
     assert len(fetched_recipe.tags) == 1
@@ -813,7 +822,7 @@ def test_create_recipe_from_zip_invalid_category(api_client: TestClient, unique_
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_category
     assert len(fetched_recipe.recipe_category) == 1
@@ -841,7 +850,7 @@ def test_create_recipe_from_zip_invalid_tag(api_client: TestClient, unique_user:
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.tags
     assert len(fetched_recipe.tags) == 1
@@ -855,8 +864,12 @@ def test_create_recipe_from_zip_existing_food_and_unit_wrong_ids(
     api_client: TestClient, unique_user: TestUser, tempdir: str
 ):
     database = unique_user.repos
-    food = database.ingredient_foods.create(SaveIngredientFood(name=random_string(), group_id=unique_user.group_id))
-    unit = database.ingredient_units.create(SaveIngredientUnit(name=random_string(), group_id=unique_user.group_id))
+    food = run_db(
+        database.ingredient_foods.create(SaveIngredientFood(name=random_string(), group_id=unique_user.group_id))
+    )
+    unit = run_db(
+        database.ingredient_units.create(SaveIngredientUnit(name=random_string(), group_id=unique_user.group_id))
+    )
     invalid_food = IngredientFood(id=uuid4(), name=food.name)
     invalid_unit = IngredientUnit(id=uuid4(), name=unit.name)
 
@@ -873,7 +886,7 @@ def test_create_recipe_from_zip_existing_food_and_unit_wrong_ids(
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_ingredient
     assert len(fetched_recipe.recipe_ingredient) == 1
@@ -886,11 +899,13 @@ def test_create_recipe_from_zip_existing_food_and_unit_wrong_ids(
 def test_create_recipe_from_zip_existing_food_alias(api_client: TestClient, unique_user: TestUser, tempdir: str):
     database = unique_user.repos
     alias_name = random_string()
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(),
-            group_id=unique_user.group_id,
-            aliases=[CreateIngredientFoodAlias(name=alias_name)],
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(),
+                group_id=unique_user.group_id,
+                aliases=[CreateIngredientFoodAlias(name=alias_name)],
+            )
         )
     )
     invalid_food = IngredientFood(id=uuid4(), name=alias_name)
@@ -908,7 +923,7 @@ def test_create_recipe_from_zip_existing_food_alias(api_client: TestClient, uniq
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_ingredient
     assert fetched_recipe.recipe_ingredient[0].food
@@ -918,11 +933,13 @@ def test_create_recipe_from_zip_existing_food_alias(api_client: TestClient, uniq
 def test_create_recipe_from_zip_existing_unit_abbreviation(api_client: TestClient, unique_user: TestUser, tempdir: str):
     database = unique_user.repos
     abbreviation = random_string(5)
-    unit = database.ingredient_units.create(
-        SaveIngredientUnit(
-            name=random_string(),
-            abbreviation=abbreviation,
-            group_id=unique_user.group_id,
+    unit = run_db(
+        database.ingredient_units.create(
+            SaveIngredientUnit(
+                name=random_string(),
+                abbreviation=abbreviation,
+                group_id=unique_user.group_id,
+            )
         )
     )
     invalid_unit = IngredientUnit(id=uuid4(), name=abbreviation)
@@ -940,7 +957,7 @@ def test_create_recipe_from_zip_existing_unit_abbreviation(api_client: TestClien
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_ingredient
     assert fetched_recipe.recipe_ingredient[0].unit
@@ -970,7 +987,7 @@ def test_create_recipe_from_zip_invalid_food_and_unit(api_client: TestClient, un
     r = api_client.post(api_routes.recipes_create_zip, files=zip_recipe(tempdir, recipe), headers=unique_user.token)
     assert r.status_code == 201
 
-    fetched_recipe = database.recipes.get_by_slug(unique_user.group_id, recipe.slug)
+    fetched_recipe = run_db(database.recipes.get_by_slug(unique_user.group_id, recipe.slug))
     assert fetched_recipe
     assert fetched_recipe.recipe_ingredient
     assert len(fetched_recipe.recipe_ingredient) == 2
@@ -1057,46 +1074,54 @@ def test_recipe_recursion_valid_linear_chain(api_client: TestClient, unique_user
     """Test that valid deep nesting without cycles is allowed (a -> b -> c)."""
     database = unique_user.repos
 
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create recipe_c with just a food ingredient (base recipe)
-    recipe_c: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_c: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
     # Create recipe_b that references recipe_c (c -> b)
-    recipe_b = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_c),
-            ],
+    recipe_b = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_c),
+                ],
+            )
         )
     )
 
     # Update recipe_a to reference recipe_b (b -> a, creating chain c -> b -> a)
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
@@ -1119,34 +1144,40 @@ def test_recipe_recursion_cycle_two_level(api_client: TestClient, unique_user: T
     """Test that two-level cycles (a -> b -> a) are detected and rejected."""
     database = unique_user.repos
 
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create recipe_a
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
     # Create recipe_b that references recipe_a (a -> b)
-    recipe_b = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_a),
-            ],
+    recipe_b = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_a),
+                ],
+            )
         )
     )
 
@@ -1171,46 +1202,54 @@ def test_recipe_recursion_cycle_three_level(api_client: TestClient, unique_user:
     """Test that three-level cycles (a -> b -> c -> a) are detected and rejected."""
     database = unique_user.repos
 
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create recipe_a
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
     # Create recipe_b that references recipe_a (a -> b)
-    recipe_b = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_a),
-            ],
+    recipe_b = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_a),
+                ],
+            )
         )
     )
 
     # Create recipe_c that references recipe_b (b -> c, creating chain a -> b -> c)
-    recipe_c = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_b),
-            ],
+    recipe_c = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_b),
+                ],
+            )
         )
     )
 
@@ -1235,59 +1274,69 @@ def test_recipe_recursion_valid_branched_chain(api_client: TestClient, unique_us
     """Test that valid branched nesting without cycles is allowed (d -> b -> a, d -> c -> a)."""
     database = unique_user.repos
 
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create recipe_a
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
     # Create recipe_b
-    recipe_b: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_a),
-            ],
+    recipe_b: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_a),
+                ],
+            )
         )
     )
 
     # Create recipe_c
-    recipe_c: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_a),
-            ],
+    recipe_c: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_a),
+                ],
+            )
         )
     )
 
     # Create recipe_d to reference recipe_b and recipe_c
-    recipe_d: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", referenced_recipe=recipe_b),
-                RecipeIngredient(note="", referenced_recipe=recipe_c),
-            ],
+    recipe_d: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", referenced_recipe=recipe_b),
+                    RecipeIngredient(note="", referenced_recipe=recipe_c),
+                ],
+            )
         )
     )
     recipe_url = api_routes.recipes_slug(recipe_d.slug)
@@ -1307,35 +1356,41 @@ def test_recipe_recursion_same_recipe_twice(api_client: TestClient, unique_user:
     """
     database = unique_user.repos
 
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create a spice mix recipe
-    sub_recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    sub_recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
     # Create a main recipe that uses the spice mix twice
-    main_recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="For marinade", referenced_recipe=sub_recipe),
-                RecipeIngredient(note="For vegetables", referenced_recipe=sub_recipe),
-            ],
+    main_recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="For marinade", referenced_recipe=sub_recipe),
+                    RecipeIngredient(note="For vegetables", referenced_recipe=sub_recipe),
+                ],
+            )
         )
     )
 
@@ -1359,35 +1414,41 @@ def test_recipe_reference_deleted(api_client: TestClient, unique_user: TestUser)
     """Test that when a referenced recipe is deleted, the parent recipe remains intact."""
     database = unique_user.repos
 
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create recipe_b
-    recipe_b: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_b: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
     # Create recipe_a that references recipe_b
-    recipe_a = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="ingredient 1", referenced_recipe=recipe_b),
-                RecipeIngredient(note="ingredient 2", food=food),
-            ],
+    recipe_a = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="ingredient 1", referenced_recipe=recipe_b),
+                    RecipeIngredient(note="ingredient 2", food=food),
+                ],
+            )
         )
     )
 
@@ -1433,20 +1494,24 @@ def test_sub_recipe_resolves_within_same_group(api_client: TestClient, unique_us
     shared_slug = random_string(10)
 
     # Create sub-recipe in group 1 (unique_user's group)
-    sub_recipe_g1 = unique_user.repos.recipes.create(
-        Recipe(
-            name=shared_slug,
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
+    sub_recipe_g1 = run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                name=shared_slug,
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create sub-recipe in group 2 (g2_user's group) with the same name/slug
-    sub_recipe_g2 = g2_user.repos.recipes.create(
-        Recipe(
-            name=shared_slug,
-            user_id=g2_user.user_id,
-            group_id=g2_user.group_id,
+    sub_recipe_g2 = run_db(
+        g2_user.repos.recipes.create(
+            Recipe(
+                name=shared_slug,
+                user_id=g2_user.user_id,
+                group_id=g2_user.group_id,
+            )
         )
     )
 
@@ -1455,11 +1520,13 @@ def test_sub_recipe_resolves_within_same_group(api_client: TestClient, unique_us
     assert sub_recipe_g1.id != sub_recipe_g2.id
 
     # Create a parent recipe in group 1
-    parent_recipe = unique_user.repos.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
+    parent_recipe = run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+            )
         )
     )
 
@@ -1496,20 +1563,24 @@ def test_sub_recipe_not_found_in_other_group(api_client: TestClient, unique_user
     """
     # Create a sub-recipe ONLY in group 2
     sub_recipe_slug = random_string(10)
-    g2_user.repos.recipes.create(
-        Recipe(
-            name=sub_recipe_slug,
-            user_id=g2_user.user_id,
-            group_id=g2_user.group_id,
+    run_db(
+        g2_user.repos.recipes.create(
+            Recipe(
+                name=sub_recipe_slug,
+                user_id=g2_user.user_id,
+                group_id=g2_user.group_id,
+            )
         )
     )
 
     # Create a parent recipe in group 1
-    parent_recipe = unique_user.repos.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
+    parent_recipe = run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+            )
         )
     )
 
@@ -1539,22 +1610,26 @@ def test_update_with_non_existent_ingredient_references(api_client: TestClient, 
     database = unique_user.repos
 
     # Create a food
-    food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create a recipe_a
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food),
+                ],
+            )
         )
     )
 
@@ -1827,9 +1902,9 @@ def test_patch_recipe_after_name_changes_without_slug_update(api_client: TestCli
     original_slug = response.json()
 
     session = unique_user.repos.session
-    recipe = session.query(RecipeModel).filter(RecipeModel.slug == original_slug).one()
+    recipe = run_db(RecipeModel.get(slug=original_slug).using_db(session))
     recipe.name = translated_name
-    session.commit()
+    run_db(recipe.save(using_db=session))
 
     response = api_client.get(api_routes.recipes_slug(original_slug), headers=unique_user.token)
     assert response.status_code == 200
@@ -1975,9 +2050,9 @@ def test_get_recipe_ingredient_missing_reference_id(api_client: TestClient, uniq
 
     # Manually edit the database to remove the reference id from the ingredient
     session = unique_user.repos.session
-    recipe = session.query(RecipeModel).filter(RecipeModel.slug == slug).first()
+    recipe = run_db(RecipeModel.filter(slug=slug).using_db(session).prefetch_related("recipe_ingredient").first())
     recipe.recipe_ingredient[0].reference_id = None
-    session.commit()
+    run_db(recipe.recipe_ingredient[0].save(using_db=session))
 
     # Make sure we can fetch the recipe and generate a new reference id
     response = api_client.get(api_routes.recipes_slug(slug), headers=unique_user.token)
@@ -1992,12 +2067,18 @@ def test_get_recipes_organizer_filter(api_client: TestClient, unique_user: utils
     database = unique_user.repos
 
     # create recipes with different organizers
-    tags = database.tags.create_many([TagSave(name=random_string(), group_id=unique_user.group_id) for _ in range(3)])
-    categories = database.categories.create_many(
-        [CategorySave(name=random_string(), group_id=unique_user.group_id) for _ in range(3)]
+    tags = run_db(
+        database.tags.create_many([TagSave(name=random_string(), group_id=unique_user.group_id) for _ in range(3)])
     )
-    tools = database.tools.create_many(
-        [RecipeToolSave(name=random_string(), group_id=unique_user.group_id) for _ in range(3)]
+    categories = run_db(
+        database.categories.create_many(
+            [CategorySave(name=random_string(), group_id=unique_user.group_id) for _ in range(3)]
+        )
+    )
+    tools = run_db(
+        database.tools.create_many(
+            [RecipeToolSave(name=random_string(), group_id=unique_user.group_id) for _ in range(3)]
+        )
     )
 
     new_recipes_data: list[dict] = []
@@ -2016,7 +2097,7 @@ def test_get_recipes_organizer_filter(api_client: TestClient, unique_user: utils
             )
         )
 
-    recipes = database.recipes.create_many(new_recipes_data)  # type: ignore
+    recipes = run_db(database.recipes.create_many(new_recipes_data))  # type: ignore
 
     # get recipes by organizer
     if organizer_type == "tags":
@@ -2075,35 +2156,41 @@ def test_get_random_order(api_client: TestClient, unique_user: utils.TestUser):
 
 
 def test_get_cookbook_recipes(api_client: TestClient, unique_user: utils.TestUser):
-    tag = unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.group_id))
-    cookbook_recipes = unique_user.repos.recipes.create_many(
-        [
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=random_string(),
-                tags=[tag],
-            )
-            for _ in range(3)
-        ]
+    tag = run_db(unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.group_id)))
+    cookbook_recipes = run_db(
+        unique_user.repos.recipes.create_many(
+            [
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=random_string(),
+                    tags=[tag],
+                )
+                for _ in range(3)
+            ]
+        )
     )
-    other_recipes = unique_user.repos.recipes.create_many(
-        [
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=random_string(),
-            )
-            for _ in range(3)
-        ]
+    other_recipes = run_db(
+        unique_user.repos.recipes.create_many(
+            [
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=random_string(),
+                )
+                for _ in range(3)
+            ]
+        )
     )
 
-    cookbook = unique_user.repos.cookbooks.create(
-        SaveCookBook(
-            name=random_string(),
-            group_id=unique_user.group_id,
-            household_id=unique_user.household_id,
-            query_filter_string=f'tags.id IN ["{tag.id}"]',
+    cookbook = run_db(
+        unique_user.repos.cookbooks.create(
+            SaveCookBook(
+                name=random_string(),
+                group_id=unique_user.group_id,
+                household_id=unique_user.household_id,
+                query_filter_string=f'tags.id IN ["{tag.id}"]',
+            )
         )
     )
 
@@ -2119,40 +2206,50 @@ def test_get_cookbook_recipes(api_client: TestClient, unique_user: utils.TestUse
 
 
 def test_get_cookbook_recipes_by_food_label(api_client: TestClient, unique_user: utils.TestUser):
-    label = unique_user.repos.group_multi_purpose_labels.create(
-        MultiPurposeLabelSave(name=random_string(), group_id=unique_user.group_id)
+    label = run_db(
+        unique_user.repos.group_multi_purpose_labels.create(
+            MultiPurposeLabelSave(name=random_string(), group_id=unique_user.group_id)
+        )
     )
-    food = unique_user.repos.ingredient_foods.create(
-        SaveIngredientFood(name=random_string(), group_id=unique_user.group_id, label_id=label.id)
+    food = run_db(
+        unique_user.repos.ingredient_foods.create(
+            SaveIngredientFood(name=random_string(), group_id=unique_user.group_id, label_id=label.id)
+        )
     )
-    cookbook_recipes = unique_user.repos.recipes.create_many(
-        [
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=random_string(),
-                recipe_ingredient=[RecipeIngredient(food=food)],
-            )
-            for _ in range(3)
-        ]
+    cookbook_recipes = run_db(
+        unique_user.repos.recipes.create_many(
+            [
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=random_string(),
+                    recipe_ingredient=[RecipeIngredient(food=food)],
+                )
+                for _ in range(3)
+            ]
+        )
     )
-    other_recipes = unique_user.repos.recipes.create_many(
-        [
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=random_string(),
-            )
-            for _ in range(3)
-        ]
+    other_recipes = run_db(
+        unique_user.repos.recipes.create_many(
+            [
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=random_string(),
+                )
+                for _ in range(3)
+            ]
+        )
     )
 
-    cookbook = unique_user.repos.cookbooks.create(
-        SaveCookBook(
-            name=random_string(),
-            group_id=unique_user.group_id,
-            household_id=unique_user.household_id,
-            query_filter_string=f'recipe_ingredient.food.label_id IN ["{label.id}"]',
+    cookbook = run_db(
+        unique_user.repos.cookbooks.create(
+            SaveCookBook(
+                name=random_string(),
+                group_id=unique_user.group_id,
+                household_id=unique_user.household_id,
+                query_filter_string=f'recipe_ingredient.food.label_id IN ["{label.id}"]',
+            )
         )
     )
 

@@ -8,10 +8,7 @@ from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 from pydantic import UUID4, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.recipe import IngredientFoodModel, IngredientFoodSubstitutionModel
 from mealie.lang.locale_config import LocalePluralFoodHandling
 from mealie.lang.providers import get_locale_context
 from mealie.schema._mealie import MealieModel
@@ -234,13 +231,8 @@ class IngredientFood(CreateIngredientFood):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(IngredientFoodModel.households_with_ingredient_food),
-            joinedload(IngredientFoodModel.extras),
-            joinedload(IngredientFoodModel.label),
-            selectinload(IngredientFoodModel.substitutions).joinedload(IngredientFoodSubstitutionModel.substitute_food),
-        ]
+    def loader_options(cls) -> list[str]:
+        return ["households_with_ingredient_food", "extras", "label", "substitutions__substitute_food"]
 
     @field_validator("households_with_ingredient_food", mode="before")
     def convert_households_to_slugs(cls, v):

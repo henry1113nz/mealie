@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import orm
 
-from mealie.db.models._model_utils import guid
+from tests.fixtures.legacy_types import guid
 
 # revision identifiers, used by Alembic.
 revision = "86054b40fd06"

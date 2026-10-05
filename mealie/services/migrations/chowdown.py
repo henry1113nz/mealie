@@ -32,7 +32,7 @@ class ChowdownMigrator(BaseMigrator):
         else:
             return potential_path
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(self.archive) as zip_file:
                 zip_file.extractall(tmpdir)
@@ -45,9 +45,9 @@ class ChowdownMigrator(BaseMigrator):
 
             recipes_as_dicts = [y for x in recipe_dir.glob("*.md") if (y := MigrationReaders.yaml(x)) is not None]
 
-            recipes = [self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
+            recipes = [(await self.clean_recipe_dictionary(x)) for x in recipes_as_dicts]
 
-            results = self.import_recipes_to_database(recipes)
+            results = await self.import_recipes_to_database(recipes)
 
             recipe_lookup = {r.slug: r for r in recipes}
 
@@ -66,4 +66,4 @@ class ChowdownMigrator(BaseMigrator):
                     except StopIteration:
                         continue
                     if cd_image:
-                        self.import_image(slug, cd_image, recipe_id, extraction_root=image_dir)
+                        (await self.import_image(slug, cd_image, recipe_id, extraction_root=image_dir))

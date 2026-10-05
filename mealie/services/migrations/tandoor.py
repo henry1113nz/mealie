@@ -82,7 +82,7 @@ class TandoorMigrator(BaseMigrator):
             pass
         return recipe_data
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(self.archive) as zip_file:
                 zip_file.extractall(tmpdir)
@@ -117,8 +117,8 @@ class TandoorMigrator(BaseMigrator):
                         )
                     )
 
-            recipes = [self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
-            results = self.import_recipes_to_database(recipes)
+            recipes = [(await self.clean_recipe_dictionary(x)) for x in recipes_as_dicts]
+            results = await self.import_recipes_to_database(recipes)
             recipe_lookup = {r.slug: r for r in recipes}
             for slug, recipe_id, status in results:
                 if status:
@@ -130,4 +130,4 @@ class TandoorMigrator(BaseMigrator):
                     except StopIteration:
                         continue
 
-                    self.import_image(slug, r.image, recipe_id, extraction_root=source_dir)
+                    (await self.import_image(slug, r.image, recipe_id, extraction_root=source_dir))

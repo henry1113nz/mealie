@@ -1,37 +1,52 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String, orm
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from mealie.db.models._model_base import BaseMixins, SqlAlchemyBase
-from mealie.db.models._model_utils.auto_init import auto_init
-from mealie.db.models._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
 
 if TYPE_CHECKING:
-    from ..users import User
-    from . import RecipeModel
+    from mealie.db.models.recipe.recipe import RecipeModel
+    from mealie.db.models.users.users import User
 
 
-class RecipeComment(SqlAlchemyBase, BaseMixins):
+class RecipeComment(TortoiseModel):
     __tablename__ = "recipe_comments"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    text: Mapped[str | None] = mapped_column(String)
+    __filterable_fields__ = set()
+    __association_proxies__ = {"group_id": ["recipe", "group_id"], "household_id": ["recipe", "household_id"]}
 
-    # Recipe Link
-    recipe_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("recipes.id"), nullable=False, index=True)
-    recipe: Mapped[RecipeModel] = orm.relationship("RecipeModel", back_populates="comments")
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    text = fields.TextField(null=True)
+    recipe_id: UUID
+    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="comments",
+        source_field="recipe_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    user_id: UUID
+    user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
+        "models.User",
+        related_name="comments",
+        source_field="user_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
 
-    group_id: AssociationProxy[GUID] = association_proxy("recipe", "group_id")
-    household_id: AssociationProxy[GUID] = association_proxy("recipe", "household_id")
+    @property
+    def group_id(self):
+        parent = getattr(self, "recipe", None)
+        return getattr(parent, "group_id", None) if parent is not None else None
 
-    # User Link
-    user_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("users.id"), nullable=False, index=True)
-    user: Mapped[User] = orm.relationship("User", back_populates="comments", single_parent=True, foreign_keys=[user_id])
+    @property
+    def household_id(self):
+        parent = getattr(self, "recipe", None)
+        return getattr(parent, "household_id", None) if parent is not None else None
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-    def update(self, text, **_) -> None:
-        self.text = text
+    class Meta:
+        table = "recipe_comments"

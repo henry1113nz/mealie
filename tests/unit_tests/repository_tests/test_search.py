@@ -1,21 +1,22 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
-from mealie.db.models._model_base import SqlAlchemyBase
+from mealie.db.models._model_base import TortoiseModel
 from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.recipe.recipe_ingredient import IngredientUnit, SaveIngredientUnit
 from mealie.schema.response.pagination import OrderDirection, PaginationQuery
 from mealie.schema.response.query_search import SearchFilter
 from mealie.schema.user.user import GroupBase
+from tests.fixtures.fixture_database import run_db
 from tests.utils.factories import random_int, random_string
 
 
 @pytest.fixture()
 def unique_local_group_id(unfiltered_database: AllRepositories) -> str:
-    return str(unfiltered_database.groups.create(GroupBase(name=random_string())).id)
+    return str(run_db(unfiltered_database.groups.create(GroupBase(name=random_string()))).id)
 
 
 @pytest.fixture()
@@ -66,7 +67,7 @@ def search_units(unique_db: AllRepositories, unique_local_group_id: str) -> list
         ]
     )
 
-    return unique_db.ingredient_units.create_many(units)
+    return run_db(unique_db.ingredient_units.create_many(units))
 
 
 @pytest.mark.parametrize(
@@ -96,7 +97,7 @@ def test_basic_search(
 ):
     repo = unique_db.ingredient_units
     pagination = PaginationQuery(page=1, per_page=-1, order_by="created_at", order_direction=OrderDirection.asc)
-    results = repo.page_all(pagination, search=search).items
+    results = run_db(repo.page_all(pagination, search=search)).items
 
     if len(expected_names) == 0:
         assert len(results) == 0
@@ -112,12 +113,12 @@ def test_fuzzy_search(
     search_units: list[IngredientUnit],  # required so database is populated
 ):
     # this only works on postgres
-    if unique_db.session.get_bind().name != "postgresql":
+    if unique_db.session.capabilities.dialect != "postgresql":
         return
 
     repo = unique_db.ingredient_units
     pagination = PaginationQuery(page=1, per_page=-1, order_by="created_at", order_direction=OrderDirection.asc)
-    results = repo.page_all(pagination, search="tabel spoone").items
+    results = run_db(repo.page_all(pagination, search="tabel spoone")).items
 
     assert results and results[0].name == "Table Spoon"
 
@@ -137,7 +138,7 @@ def test_random_order_search(
     random_ordered = []
     for _ in range(5):
         pagination.pagination_seed = str(datetime.now(UTC))
-        random_ordered.append(repo.page_all(pagination, search="unit").items)
+        random_ordered.append(run_db(repo.page_all(pagination, search="unit")).items)
     assert not all(i == random_ordered[0] for i in random_ordered)
 
 
@@ -152,7 +153,7 @@ def test_random_order_search(
     ],
 )
 def test_normalize_strips_punctuation(name: str, expected: str):
-    assert SqlAlchemyBase.normalize(name) == expected
+    assert TortoiseModel.normalize(name) == expected
 
 
 @pytest.mark.parametrize(
@@ -166,8 +167,8 @@ def test_normalize_strips_punctuation(name: str, expected: str):
     ],
 )
 def test_search_normalize_symmetric_with_store_normalize(name: str):
-    """SearchFilter._normalize_search and SqlAlchemyBase.normalize must produce the same
+    """SearchFilter._normalize_search and TortoiseModel.normalize must produce the same
     output for the same input, otherwise stored values and search queries won't match."""
-    stored = SqlAlchemyBase.normalize(name)
+    stored = TortoiseModel.normalize(name)
     searched = SearchFilter._normalize_search(name, normalize_characters=True)
     assert stored == searched, f"Normalization mismatch for {name!r}: stored={stored!r}, searched={searched!r}"

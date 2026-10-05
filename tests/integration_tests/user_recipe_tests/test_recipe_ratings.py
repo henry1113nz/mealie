@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.user.user import UserRatingUpdate
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_bool, random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -21,12 +22,14 @@ def recipes(user_tuple: tuple[TestUser, TestUser]) -> Generator[list[Recipe]]:
     for _ in range(random_int(10, 20)):
         slug = random_string()
         recipes.append(
-            recipes_repo.create(
-                Recipe(
-                    user_id=unique_user.user_id,
-                    group_id=unique_user.group_id,
-                    name=slug,
-                    slug=slug,
+            run_db(
+                recipes_repo.create(
+                    Recipe(
+                        user_id=unique_user.user_id,
+                        group_id=unique_user.group_id,
+                        name=slug,
+                        slug=slug,
+                    )
                 )
             )
         )
@@ -34,7 +37,7 @@ def recipes(user_tuple: tuple[TestUser, TestUser]) -> Generator[list[Recipe]]:
     yield recipes
     for recipe in recipes:
         try:
-            recipes_repo.delete(recipe.id, match_key="id")
+            run_db(recipes_repo.delete(recipe.id, match_key="id"))
         except Exception:
             pass
 
@@ -310,8 +313,7 @@ def test_delete_recipe_deletes_ratings(
     assert response.status_code == 200
     assert response.json()
 
-    database.recipes.delete(recipe.id, match_key="id")
-    database.session.commit()
+    run_db(database.recipes.delete(recipe.id, match_key="id"))
     response = api_client.get(api_routes.users_self_ratings_recipe_id(recipe.id), headers=unique_user.token)
     assert response.status_code == 404
 
@@ -373,7 +375,7 @@ def test_recipe_rating_is_readonly(
 def test_user_can_rate_recipes_in_other_households(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe = unique_user.repos.recipes.get_one(response.json())
+    recipe = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe and recipe.id
 
     rating = UserRatingUpdate(rating=random.uniform(1, 5), is_favorite=True)
@@ -396,7 +398,7 @@ def test_average_recipe_rating_includes_all_households(
 ):
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe = unique_user.repos.recipes.get_one(response.json())
+    recipe = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe
 
     user_ratings = (UserRatingUpdate(rating=5), UserRatingUpdate(rating=2))

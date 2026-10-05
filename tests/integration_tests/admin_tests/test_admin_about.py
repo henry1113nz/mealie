@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from mealie.core.config import get_app_settings
 from mealie.core.settings.static import APP_VERSION
 from mealie.repos.repository_factory import AllRepositories
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.fixture_schemas import TestUser
 
@@ -13,11 +14,11 @@ def test_public_about_get_app_info(
     api_client: TestClient, is_private_group: bool, unfiltered_database: AllRepositories
 ):
     settings = get_app_settings()
-    group = unfiltered_database.groups.get_by_name(settings.DEFAULT_GROUP)
+    group = run_db(unfiltered_database.groups.get_by_name(settings.DEFAULT_GROUP))
     assert group and group.preferences
 
     group.preferences.private_group = is_private_group
-    unfiltered_database.group_preferences.update(group.id, group.preferences)
+    run_db(unfiltered_database.group_preferences.update(group.id, group.preferences))
 
     response = api_client.get(api_routes.app_about)
     as_dict = response.json()

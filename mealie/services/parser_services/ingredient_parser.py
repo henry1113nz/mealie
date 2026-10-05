@@ -6,7 +6,7 @@ from itertools import zip_longest
 from typing import TYPE_CHECKING
 
 from pydantic import UUID4
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 if TYPE_CHECKING:
     from ingredient_parser.dataclasses import IngredientAmount
@@ -39,7 +39,7 @@ class BruteForceParser(ABCIngredientParser):
     """
 
     async def parse_one(self, ingredient_string: str) -> ParsedIngredient:
-        bfi = brute.parse(ingredient_string, self)
+        bfi = await brute.parse(ingredient_string, self)
 
         parsed_ingredient = ParsedIngredient(
             input=ingredient_string,
@@ -52,7 +52,7 @@ class BruteForceParser(ABCIngredientParser):
             ),
         )
 
-        matched_ingredient = self.find_ingredient_match(parsed_ingredient)
+        matched_ingredient = await self.find_ingredient_match(parsed_ingredient)
 
         qty_conf = 1
         note_conf = 1
@@ -169,7 +169,7 @@ class NLPParser(ABCIngredientParser):
 
         return note, confidence
 
-    def _convert_extra_ingredients(
+    async def _convert_extra_ingredients(
         self, extra_ingredients: list[RecipeIngredient]
     ) -> list[RecipeIngredientSubstitution]:
         """
@@ -187,7 +187,7 @@ class NLPParser(ABCIngredientParser):
         substitutions: list[RecipeIngredientSubstitution] = []
         for extra in extra_ingredients:
             if extra.food and not extra.quantity and not extra.unit and not extra.note:
-                if food_match := self.data_matcher.find_food_match(extra.food):
+                if food_match := (await self.data_matcher.find_food_match(extra.food)):
                     substitutions.append(RecipeIngredientSubstitution(substitute_food_id=food_match.id))
                     continue
 
@@ -196,7 +196,7 @@ class NLPParser(ABCIngredientParser):
 
         return substitutions
 
-    def _convert_ingredient(self, ingredient: IngredientParserParsedIngredient) -> ParsedIngredient:
+    async def _convert_ingredient(self, ingredient: IngredientParserParsedIngredient) -> ParsedIngredient:
         from ingredient_parser.dataclasses import CompositeIngredientAmount
 
         ing_parts: list[_IngredientPart] = []
@@ -264,7 +264,7 @@ class NLPParser(ABCIngredientParser):
         extra_ingredients = recipe_ingredients[1:] if len(recipe_ingredients) > 1 else []
 
         if extra_ingredients:
-            primary_ingredient.substitutions = self._convert_extra_ingredients(extra_ingredients)
+            primary_ingredient.substitutions = await self._convert_extra_ingredients(extra_ingredients)
 
         parsed_ingredient = ParsedIngredient(
             input=ingredient.sentence,
@@ -278,13 +278,13 @@ class NLPParser(ABCIngredientParser):
             ingredient=primary_ingredient,
         )
 
-        return self.find_ingredient_match(parsed_ingredient)
+        return await self.find_ingredient_match(parsed_ingredient)
 
     async def parse_one(self, ingredient_string: str) -> ParsedIngredient:
         from ingredient_parser import parse_ingredient
 
         database_units = {}
-        for ingredient_unit in self.data_matcher.units_by_id.values():
+        for ingredient_unit in (await self.data_matcher.units_by_id()).values():
             if ingredient_unit.name:
                 plural_name = ingredient_unit.plural_name or ingredient_unit.name
                 database_units[plural_name] = ingredient_unit.name
@@ -294,7 +294,7 @@ class NLPParser(ABCIngredientParser):
                 database_units[plural_abbr] = ingredient_unit.abbreviation
 
         parsed_ingredient = parse_ingredient(ingredient_string, custom_units=database_units)
-        return self._convert_ingredient(parsed_ingredient)
+        return await self._convert_ingredient(parsed_ingredient)
 
     async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
         return [await self.parse_one(ingredient) for ingredient in ingredients]

@@ -28,7 +28,7 @@ router = UserAPIRouter(prefix="/groups/migrations", tags=["Groups: Migrations"])
 @controller(router)
 class GroupMigrationController(BaseUserController):
     @router.post("", response_model=ReportSummary)
-    def start_data_migration(
+    async def start_data_migration(
         self,
         add_migration_tag: bool = Form(False),
         migration_type: SupportedMigrations = Form(...),
@@ -70,5 +70,5 @@ class GroupMigrationController(BaseUserController):
 
             migrator = constructor(**args)
 
-            migration_result = migrator.migrate(f"{migration_type.value.title()} Migration")
+            migration_result = await migrator.migrate(f"{migration_type.value.title()} Migration")
         return migration_result

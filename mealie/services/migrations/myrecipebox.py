@@ -1,4 +1,3 @@
-import asyncio
 import csv
 from pathlib import Path
 from typing import Any
@@ -98,7 +97,7 @@ class MyRecipeBoxMigrator(BaseMigrator):
         row["notes"] = notes
         return row
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         recipe_image_urls: dict = {}
 
         recipes: list[Recipe] = []
@@ -111,15 +110,15 @@ class MyRecipeBoxMigrator(BaseMigrator):
                 except Exception:
                     pass
 
-            recipe_model = self.clean_recipe_dictionary(recipe_dict)
+            recipe_model = await self.clean_recipe_dictionary(recipe_dict)
             recipes.append(recipe_model)
 
-        results = self.import_recipes_to_database(recipes)
+        results = await self.import_recipes_to_database(recipes)
         for slug, recipe_id, status in results:
             if not status or not (recipe_image_url := recipe_image_urls.get(slug)):
                 continue
 
             try:
-                asyncio.run(self.scrape_image(slug, recipe_image_url, recipe_id))
+                await self.scrape_image(slug, recipe_image_url, recipe_id)
             except Exception as e:
                 self.logger.error(f"Failed to download image for {slug}: {e}")

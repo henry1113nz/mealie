@@ -8,10 +8,10 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import Depends, FastAPI, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm.session import Session
 from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 from text_unidecode import os
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.config import get_app_settings
 from mealie.core.dependencies.dependencies import try_get_current_user
@@ -215,20 +215,20 @@ def response_404():
     return Response(__contents, media_type="text/html", status_code=404)
 
 
-def serve_recipe_with_meta_public(
+async def serve_recipe_with_meta_public(
     group_slug: str,
     recipe_slug: str,
     session: Session = Depends(generate_session),
 ):
     try:
         public_repos = AllRepositories(session)
-        group = public_repos.groups.get_by_slug_or_id(group_slug)
+        group = await public_repos.groups.get_by_slug_or_id(group_slug)
 
         if not (group and group.preferences) or group.preferences.private_group:
             return response_404()
 
         group_repos = AllRepositories(session, group_id=group.id, household_id=None)
-        recipe = group_repos.recipes.get_one(recipe_slug)
+        recipe = await group_repos.recipes.get_one(recipe_slug)
 
         if not (recipe and recipe.settings) or not recipe.settings.public:
             return response_404()
@@ -246,12 +246,12 @@ async def serve_recipe_with_meta(
     session: Session = Depends(generate_session),
 ):
     if not user or user.group_slug != group_slug:
-        return serve_recipe_with_meta_public(group_slug, recipe_slug, session)
+        return await serve_recipe_with_meta_public(group_slug, recipe_slug, session)
 
     try:
         group_repos = AllRepositories(session, group_id=user.group_id, household_id=None)
 
-        recipe = group_repos.recipes.get_one(recipe_slug, "slug")
+        recipe = await group_repos.recipes.get_one(recipe_slug, "slug")
         if recipe is None:
             return response_404()
 
@@ -264,7 +264,7 @@ async def serve_recipe_with_meta(
 async def serve_shared_recipe_with_meta(group_slug: str, token_id: str, session: Session = Depends(generate_session)):
     try:
         public_repos = AllRepositories(session, group_id=None)
-        token_summary = public_repos.recipe_share_tokens.get_one(token_id)
+        token_summary = await public_repos.recipe_share_tokens.get_one(token_id)
         if token_summary is None:
             raise Exception("Token Not Found")
 

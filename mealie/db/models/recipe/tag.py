@@ -1,71 +1,36 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-import sqlalchemy as sa
-import sqlalchemy.orm as orm
-from slugify import slugify
-from sqlalchemy import literal
-from sqlalchemy.orm import Mapped, mapped_column, query_expression, validates
+from tortoise import fields
 
-from mealie.core import root_logger
-from mealie.db.models._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils import guid
+from mealie.db.models._model_base import TortoiseModel
+from mealie.db.models._model_utils.string import StringField
 
 if TYPE_CHECKING:
-    from ..group import Group
-    from . import RecipeModel
+    from mealie.db.models.group.group import Group
 
 
-logger = root_logger.get_logger()
-
-recipes_to_tags = sa.Table(
-    "recipes_to_tags",
-    SqlAlchemyBase.metadata,
-    sa.Column("recipe_id", guid.GUID, sa.ForeignKey("recipes.id"), index=True),
-    sa.Column("tag_id", guid.GUID, sa.ForeignKey("tags.id"), index=True),
-    sa.UniqueConstraint("recipe_id", "tag_id", name="recipe_id_tag_id_key"),
-)
-
-plan_rules_to_tags = sa.Table(
-    "plan_rules_to_tags",
-    SqlAlchemyBase.metadata,
-    sa.Column("plan_rule_id", guid.GUID, sa.ForeignKey("group_meal_plan_rules.id"), index=True),
-    sa.Column("tag_id", guid.GUID, sa.ForeignKey("tags.id"), index=True),
-    sa.UniqueConstraint("plan_rule_id", "tag_id", name="plan_rule_id_tag_id_key"),
-)
-
-cookbooks_to_tags = sa.Table(
-    "cookbooks_to_tags",
-    SqlAlchemyBase.metadata,
-    sa.Column("cookbook_id", guid.GUID, sa.ForeignKey("cookbooks.id"), index=True),
-    sa.Column("tag_id", guid.GUID, sa.ForeignKey("tags.id"), index=True),
-    sa.UniqueConstraint("cookbook_id", "tag_id", name="cookbook_id_tag_id_key"),
-)
-
-
-class Tag(SqlAlchemyBase, BaseMixins):
+class Tag(TortoiseModel):
     __tablename__ = "tags"
-    __table_args__ = (sa.UniqueConstraint("slug", "group_id", name="tags_slug_group_id_key"),)
-    id: FilterableColumn[guid.GUID] = mapped_column(guid.GUID, primary_key=True, default=guid.GUID.generate)
+    __filterable_fields__ = {"name", "group_id", "id", "slug"}
+    __association_proxies__ = {}
 
-    # ID Relationships
-    group_id: FilterableColumn[guid.GUID] = mapped_column(
-        guid.GUID, sa.ForeignKey("groups.id"), nullable=False, index=True
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="tags",
+        source_field="group_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
-    group: Mapped[Group] = orm.relationship("Group", back_populates="tags", foreign_keys=[group_id])
+    name = StringField(null=False, db_index=True)
+    slug = StringField(null=False, db_index=True)
+    recipe_count: int = 0
 
-    name: FilterableColumn[str] = mapped_column(sa.String, index=True, nullable=False)
-    slug: FilterableColumn[str] = mapped_column(sa.String, index=True, nullable=False)
-    recipe_count: Mapped[int] = query_expression(default_expr=literal(0))
-    recipes: Mapped[list[RecipeModel]] = orm.relationship(
-        "RecipeModel", secondary=recipes_to_tags, back_populates="tags"
-    )
-
-    @validates("name")
-    def validate_name(self, key, name):
-        assert name != ""
-        return name
-
-    def __init__(self, name, group_id, **_) -> None:
-        self.group_id = group_id
-        self.name = name.strip()
-        self.slug = slugify(self.name)
+    class Meta:
+        table = "tags"
+        unique_together = (("slug", "group_id"),)

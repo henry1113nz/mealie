@@ -1,19 +1,34 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import mapped_column
+from __future__ import annotations
 
-from mealie.db.models._model_base import FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from tortoise import fields
+
+from mealie.db.models._model_base import TortoiseModel
+
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class RecipeAsset(SqlAlchemyBase):
+class RecipeAsset(TortoiseModel):
     __tablename__ = "recipe_assets"
-    id: FilterableColumn[int] = mapped_column(sa.Integer, primary_key=True)
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
-    name: FilterableColumn[str | None] = mapped_column(sa.String)
-    icon: FilterableColumn[str | None] = mapped_column(sa.String)
-    file_name: FilterableColumn[str | None] = mapped_column(sa.String)
+    __filterable_fields__ = {"name", "id", "recipe_id", "icon", "file_name"}
+    __association_proxies__ = {}
 
-    def __init__(self, name=None, icon=None, file_name=None) -> None:
-        self.name = name
-        self.file_name = file_name
-        self.icon = icon
+    id = fields.IntField(primary_key=True)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="assets",
+        source_field="recipe_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    name = fields.TextField(null=True)
+    icon = fields.TextField(null=True)
+    file_name = fields.TextField(null=True)
+
+    class Meta:
+        table = "recipe_assets"

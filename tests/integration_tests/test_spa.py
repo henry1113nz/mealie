@@ -8,6 +8,7 @@ from mealie.schema.recipe.recipe import Recipe, RecipeSettings
 from mealie.schema.recipe.recipe_notes import RecipeNote
 from mealie.schema.recipe.recipe_share_token import RecipeShareTokenSave
 from tests import data as test_data
+from tests.fixtures.fixture_database import run_db
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -20,24 +21,26 @@ def set_spa_contents():
 
 
 def set_group_is_private(unique_user: TestUser, *, is_private: bool):
-    group = unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id)
+    group = run_db(unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id))
     assert group and group.preferences
     group.preferences.private_group = is_private
-    unique_user.repos.group_preferences.update(group.id, group.preferences)
+    run_db(unique_user.repos.group_preferences.update(group.id, group.preferences))
 
 
 def set_recipe_is_public(unique_user: TestUser, recipe: Recipe, *, is_public: bool):
     assert recipe.settings
     recipe.settings.public = is_public
-    unique_user.repos.recipes.update(recipe.slug, recipe)
+    run_db(unique_user.repos.recipes.update(recipe.slug, recipe))
 
 
 def create_recipe(user: TestUser) -> Recipe:
-    recipe = user.repos.recipes.create(
-        Recipe(
-            user_id=user.user_id,
-            group_id=user.group_id,
-            name=random_string(),
+    recipe = run_db(
+        user.repos.recipes.create(
+            Recipe(
+                user_id=user.user_id,
+                group_id=user.group_id,
+                name=random_string(),
+            )
         )
     )
     set_group_is_private(user, is_private=False)
@@ -154,7 +157,7 @@ def test_spa_recipe_json_times(unique_user: TestUser):
 @pytest.mark.asyncio
 async def test_spa_serve_recipe_with_meta(unique_user: TestUser, use_public_user: bool):
     recipe = create_recipe(unique_user)
-    user = unique_user.repos.users.get_by_username(unique_user.username)
+    user = run_db(unique_user.repos.users.get_by_username(unique_user.username))
     assert user
 
     response = await spa.serve_recipe_with_meta(
@@ -168,7 +171,7 @@ async def test_spa_serve_recipe_with_meta(unique_user: TestUser, use_public_user
 @pytest.mark.asyncio
 async def test_spa_serve_recipe_with_meta_invalid_data(unique_user: TestUser, use_public_user: bool):
     recipe = create_recipe(unique_user)
-    user = unique_user.repos.users.get_by_username(unique_user.username)
+    user = run_db(unique_user.repos.users.get_by_username(unique_user.username))
     assert user
 
     response = await spa.serve_recipe_with_meta(
@@ -207,7 +210,7 @@ async def test_spa_serve_recipe_with_meta_invalid_data(unique_user: TestUser, us
 async def test_spa_service_shared_recipe_with_meta(
     unique_user: TestUser, use_private_group: bool, use_public_recipe: bool
 ):
-    group = unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id)
+    group = run_db(unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id))
     assert group
     recipe = create_recipe(unique_user)
 
@@ -215,8 +218,10 @@ async def test_spa_service_shared_recipe_with_meta(
     set_group_is_private(unique_user, is_private=use_private_group)
     set_recipe_is_public(unique_user, recipe, is_public=use_public_recipe)
 
-    token = unique_user.repos.recipe_share_tokens.create(
-        RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+    token = run_db(
+        unique_user.repos.recipe_share_tokens.create(
+            RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+        )
     )
 
     response = await spa.serve_shared_recipe_with_meta(group.slug, token.id, session=unique_user.repos.session)
@@ -226,7 +231,7 @@ async def test_spa_service_shared_recipe_with_meta(
 
 @pytest.mark.asyncio
 async def test_spa_service_shared_recipe_with_meta_invalid_data(unique_user: TestUser):
-    group = unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id)
+    group = run_db(unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id))
     assert group
 
     response = await spa.serve_shared_recipe_with_meta(group.slug, random_string(), session=unique_user.repos.session)

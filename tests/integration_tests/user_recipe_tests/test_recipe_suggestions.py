@@ -14,6 +14,7 @@ from mealie.schema.recipe.recipe_ingredient import (
 )
 from mealie.schema.recipe.recipe_settings import RecipeSettings
 from mealie.schema.recipe.recipe_tool import RecipeToolOut, RecipeToolSave
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -21,30 +22,38 @@ from tests.utils.fixture_schemas import TestUser
 
 def create_food(user: TestUser, on_hand: bool = False):
     if on_hand:
-        household = user.repos.households.get_by_slug_or_id(user.household_id)
+        household = run_db(user.repos.households.get_by_slug_or_id(user.household_id))
         assert household
         households = [household.slug]
     else:
         households = []
 
-    return user.repos.ingredient_foods.create(
-        SaveIngredientFood(
-            id=uuid4(), name=random_string(), group_id=user.group_id, households_with_ingredient_food=households
+    return run_db(
+        user.repos.ingredient_foods.create(
+            SaveIngredientFood(
+                id=uuid4(), name=random_string(), group_id=user.group_id, households_with_ingredient_food=households
+            )
         )
     )
 
 
 def create_tool(user: TestUser, on_hand: bool = False):
     if on_hand:
-        household = user.repos.households.get_by_slug_or_id(user.household_id)
+        household = run_db(user.repos.households.get_by_slug_or_id(user.household_id))
         assert household
         households = [household.slug]
     else:
         households = []
 
-    return user.repos.tools.create(
-        RecipeToolSave(
-            id=uuid4(), name=random_string(), group_id=user.group_id, on_hand=on_hand, households_with_tool=households
+    return run_db(
+        user.repos.tools.create(
+            RecipeToolSave(
+                id=uuid4(),
+                name=random_string(),
+                group_id=user.group_id,
+                on_hand=on_hand,
+                households_with_tool=households,
+            )
         )
     )
 
@@ -61,15 +70,17 @@ def create_recipe(
     else:
         ingredients = []
 
-    recipe = user.repos.recipes.create(
-        Recipe(
-            user_id=user.user_id,
-            group_id=user.group_id,
-            name=kwargs.pop("name", random_string()),
-            recipe_ingredient=ingredients,
-            tools=tools or [],
-            settings=RecipeSettings(),
-            **kwargs,
+    recipe = run_db(
+        user.repos.recipes.create(
+            Recipe(
+                user_id=user.user_id,
+                group_id=user.group_id,
+                name=kwargs.pop("name", random_string()),
+                recipe_ingredient=ingredients,
+                tools=tools or [],
+                settings=RecipeSettings(),
+                **kwargs,
+            )
         )
     )
 
@@ -119,7 +130,7 @@ def test_suggestion_filter(api_client: TestClient, unique_user: TestUser, filter
                 assert item["missingTools"] == []
     finally:
         for recipe in recipes:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_food_suggestion_filter_with_max(api_client: TestClient, unique_user: TestUser):
@@ -148,7 +159,7 @@ def test_food_suggestion_filter_with_max(api_client: TestClient, unique_user: Te
 
     finally:
         for recipe in [recipe_exact, recipe_missing_one, recipe_missing_two, recipe_missing_three]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_tool_suggestion_filter_with_max(api_client: TestClient, unique_user: TestUser):
@@ -178,7 +189,7 @@ def test_tool_suggestion_filter_with_max(api_client: TestClient, unique_user: Te
 
     finally:
         for recipe in [recipe_exact, recipe_missing_one, recipe_missing_two, recipe_missing_three]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_ignore_empty_food_filter(api_client: TestClient, unique_user: TestUser):
@@ -203,7 +214,7 @@ def test_ignore_empty_food_filter(api_client: TestClient, unique_user: TestUser)
         assert item["missingTools"] == []
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_ignore_empty_tool_filter(api_client: TestClient, unique_user: TestUser):
@@ -228,7 +239,7 @@ def test_ignore_empty_tool_filter(api_client: TestClient, unique_user: TestUser)
         assert item["missingTools"] == []
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 @pytest.mark.parametrize("include_on_hand", [True, False])
@@ -260,7 +271,7 @@ def test_include_foods_on_hand(api_client: TestClient, unique_user: TestUser, in
             assert item["missingFoods"] == []
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 @pytest.mark.parametrize("include_on_hand", [True, False])
@@ -292,7 +303,7 @@ def test_include_tools_on_hand(api_client: TestClient, unique_user: TestUser, in
             assert item["missingTools"] == []
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_exclude_recipes_with_no_foods(api_client: TestClient, unique_user: TestUser):
@@ -315,7 +326,7 @@ def test_exclude_recipes_with_no_foods(api_client: TestClient, unique_user: Test
 
     finally:
         for recipe in [recipe_with_foods, recipe_without_foods]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_include_recipes_with_no_tools(api_client: TestClient, unique_user: TestUser):
@@ -341,7 +352,7 @@ def test_include_recipes_with_no_tools(api_client: TestClient, unique_user: Test
 
     finally:
         for recipe in [recipe_with_tools, recipe_without_tools]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_exclude_recipes_with_no_user_foods(api_client: TestClient, unique_user: TestUser):
@@ -364,7 +375,7 @@ def test_exclude_recipes_with_no_user_foods(api_client: TestClient, unique_user:
 
     finally:
         for recipe in [recipe_with_user_food, recipe_with_on_hand_food]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_recipe_order(api_client: TestClient, unique_user: TestUser):
@@ -454,7 +465,7 @@ def test_recipe_order(api_client: TestClient, unique_user: TestUser):
 
     finally:
         for recipe in recipes:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_respect_user_sort(api_client: TestClient, unique_user: TestUser):
@@ -482,7 +493,7 @@ def test_respect_user_sort(api_client: TestClient, unique_user: TestUser):
 
     finally:
         for recipe in [recipe_a, recipe_b, recipe_c, recipe_d]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_limit_param(api_client: TestClient, unique_user: TestUser):
@@ -501,7 +512,7 @@ def test_limit_param(api_client: TestClient, unique_user: TestUser):
 
     finally:
         for recipe in recipes:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_query_filter(api_client: TestClient, unique_user: TestUser):
@@ -527,7 +538,7 @@ def test_query_filter(api_client: TestClient, unique_user: TestUser):
 
     finally:
         for recipe in recipes_with_prefix + recipes_without_prefix:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_include_cross_household_recipes(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
@@ -547,8 +558,8 @@ def test_include_cross_household_recipes(api_client: TestClient, unique_user: Te
         assert {item["recipe"]["id"] for item in data["items"]} == {str(recipe.id), str(other_recipe.id)}
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
-        h2_user.repos.recipes.delete(other_recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
+        run_db(h2_user.repos.recipes.delete(other_recipe.slug))
 
 
 def test_respect_cross_household_on_hand_food(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
@@ -577,7 +588,7 @@ def test_respect_cross_household_on_hand_food(api_client: TestClient, unique_use
         assert len(data["items"]) == 0
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_respect_cross_household_on_hand_tool(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
@@ -606,29 +617,33 @@ def test_respect_cross_household_on_hand_tool(api_client: TestClient, unique_use
         assert len(data["items"]) == 0
 
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def set_food_substitutions(user: TestUser, food: IngredientFood, substitutions: list) -> IngredientFood:
-    return user.repos.ingredient_foods.update(
-        food.id,
-        SaveIngredientFood(
-            id=food.id,
-            name=food.name,
-            group_id=user.group_id,
-            substitutions=substitutions,
-        ),
+    return run_db(
+        user.repos.ingredient_foods.update(
+            food.id,
+            SaveIngredientFood(
+                id=food.id,
+                name=food.name,
+                group_id=user.group_id,
+                substitutions=substitutions,
+            ),
+        )
     )
 
 
 def create_recipe_with_ingredient_substitutions(user: TestUser, food: IngredientFood, substitutions: list):
-    return user.repos.recipes.create(
-        Recipe(
-            user_id=user.user_id,
-            group_id=user.group_id,
-            name=random_string(),
-            recipe_ingredient=[RecipeIngredient(food_id=food.id, food=food, substitutions=substitutions)],
-            settings=RecipeSettings(),
+    return run_db(
+        user.repos.recipes.create(
+            Recipe(
+                user_id=user.user_id,
+                group_id=user.group_id,
+                name=random_string(),
+                recipe_ingredient=[RecipeIngredient(food_id=food.id, food=food, substitutions=substitutions)],
+                settings=RecipeSettings(),
+            )
         )
     )
 
@@ -674,7 +689,7 @@ def test_food_substitution_satisfies_a_recipe(
         assert substituted[0]["food"]["id"] == str(stock.id)
         assert substituted[0]["substituteFood"]["id"] == str(broth.id)
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_food_substitution_direction_is_not_reversed(api_client: TestClient, unique_user: TestUser):
@@ -692,7 +707,7 @@ def test_food_substitution_direction_is_not_reversed(api_client: TestClient, uni
         items = suggestion_items(api_client, unique_user, [str(broth.id)])
         assert [item for item in items if item["recipe"]["id"] == str(recipe.id)] == []
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_recipe_level_substitution_satisfies_a_recipe(api_client: TestClient, unique_user: TestUser):
@@ -711,7 +726,7 @@ def test_recipe_level_substitution_satisfies_a_recipe(api_client: TestClient, un
         assert found[0]["substitutedFoods"][0]["food"]["id"] == str(chicken.id)
         assert found[0]["substitutedFoods"][0]["substituteFood"]["id"] == str(pork.id)
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_note_only_substitution_does_not_suppress_a_food_bearing_one(api_client: TestClient, unique_user: TestUser):
@@ -739,7 +754,7 @@ def test_note_only_substitution_does_not_suppress_a_food_bearing_one(api_client:
         assert len(found) == 1
         assert found[0]["substitutedFoods"][0]["substituteFood"]["id"] == str(broth.id)
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_note_only_substitution_alone_never_satisfies(api_client: TestClient, unique_user: TestUser):
@@ -752,7 +767,7 @@ def test_note_only_substitution_alone_never_satisfies(api_client: TestClient, un
         items = suggestion_items(api_client, unique_user, [str(other.id)])
         assert [item for item in items if item["recipe"]["id"] == str(recipe.id)] == []
     finally:
-        unique_user.repos.recipes.delete(recipe.slug)
+        run_db(unique_user.repos.recipes.delete(recipe.slug))
 
 
 def test_exact_matches_outrank_substitute_matches(api_client: TestClient, unique_user: TestUser):
@@ -775,4 +790,4 @@ def test_exact_matches_outrank_substitute_matches(api_client: TestClient, unique
         assert ranked == [str(exact_recipe.id), str(substituted_recipe.id)]
     finally:
         for recipe in [exact_recipe, substituted_recipe]:
-            unique_user.repos.recipes.delete(recipe.slug)
+            run_db(unique_user.repos.recipes.delete(recipe.slug))

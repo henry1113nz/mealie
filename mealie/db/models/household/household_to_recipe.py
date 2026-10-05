@@ -1,60 +1,48 @@
-from datetime import datetime
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import Column, ForeignKey, UniqueConstraint, event
-from sqlalchemy.engine.base import Connection
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.orm.session import Session
+from tortoise import fields
 
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
 
 if TYPE_CHECKING:
-    from ..recipe import RecipeModel
-    from .household import Household
-
-
-class HouseholdToRecipe(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "households_to_recipes"
-    __table_args__ = (UniqueConstraint("household_id", "recipe_id", name="household_id_recipe_id_key"),)
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    household: Mapped[Household] = relationship("Household", viewonly=True)
-    household_id = Column(GUID, ForeignKey("households.id"), index=True, primary_key=True)
-    recipe: Mapped[RecipeModel] = relationship("RecipeModel", viewonly=True)
-    recipe_id = Column(GUID, ForeignKey("recipes.id"), index=True, primary_key=True)
-    group_id: AssociationProxy[GUID] = association_proxy("household", "group_id")
-
-    last_made: Mapped[datetime | None] = mapped_column(NaiveDateTime)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-
-def update_recipe_last_made(session: Session, target: HouseholdToRecipe):
-    if not target.last_made:
-        return
-
+    from mealie.db.models.household.household import Household
     from mealie.db.models.recipe.recipe import RecipeModel
 
-    recipe = session.query(RecipeModel).filter(RecipeModel.id == target.recipe_id).first()
-    if not recipe:
-        return
 
-    recipe.last_made = recipe.last_made or target.last_made
-    recipe.last_made = max(recipe.last_made, target.last_made)
+class HouseholdToRecipe(TortoiseModel):
+    __tablename__ = "households_to_recipes"
+    __filterable_fields__ = set()
+    __association_proxies__ = {"group_id": ["household", "group_id"]}
 
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    household_id: UUID
+    household: fields.ForeignKeyRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="households_to_recipes_household",
+        source_field="household_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    recipe_id: UUID
+    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="households_to_recipes_recipe",
+        source_field="recipe_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    last_made = fields.DatetimeField(null=True)
 
-@event.listens_for(HouseholdToRecipe, "after_insert")
-@event.listens_for(HouseholdToRecipe, "after_update")
-@event.listens_for(HouseholdToRecipe, "after_delete")
-def update_recipe_rating_on_insert_or_delete(_, connection: Connection, target: HouseholdToRecipe):
-    session = Session(bind=connection)
+    @property
+    def group_id(self):
+        parent = getattr(self, "household", None)
+        return getattr(parent, "group_id", None) if parent is not None else None
 
-    update_recipe_last_made(session, target)
-    session.commit()
+    class Meta:
+        table = "households_to_recipes"
+        unique_together = (("household_id", "recipe_id"),)

@@ -1,51 +1,57 @@
-from datetime import UTC, datetime
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from tortoise import fields
 
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
+from mealie.db.models._model_utils.datetime import get_utc_now
 
 if TYPE_CHECKING:
-    from ..users import User
-    from . import RecipeModel
+    from mealie.db.models.recipe.recipe import RecipeModel
+    from mealie.db.models.users.users import User
 
 
-class RecipeTimelineEvent(SqlAlchemyBase, BaseMixins):
+class RecipeTimelineEvent(TortoiseModel):
     __tablename__ = "recipe_timeline_events"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+    __filterable_fields__ = {"subject", "timestamp", "user_id", "id", "event_type", "image", "recipe_id", "message"}
+    __association_proxies__ = {"group_id": ["recipe", "group_id"], "household_id": ["recipe", "household_id"]}
 
-    # Parent Recipe
-    recipe_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("recipes.id"), nullable=False, index=True)
-    recipe: Mapped[RecipeModel] = relationship("RecipeModel", back_populates="timeline_events")
-
-    group_id: AssociationProxy[GUID] = association_proxy("recipe", "group_id")
-    household_id: AssociationProxy[GUID] = association_proxy("recipe", "household_id")
-
-    # Related User (Actor)
-    user_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("users.id"), nullable=False, index=True)
-    user: Mapped[User] = relationship(
-        "User", back_populates="recipe_timeline_events", single_parent=True, foreign_keys=[user_id]
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    recipe_id: UUID
+    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="timeline_events",
+        source_field="recipe_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
+    user_id: UUID
+    user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
+        "models.User",
+        related_name="recipe_timeline_events",
+        source_field="user_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    subject = fields.TextField(null=False)
+    message = fields.TextField(null=True)
+    event_type = fields.TextField(null=True)
+    image = fields.TextField(null=True)
+    timestamp = fields.DatetimeField(null=True, db_index=True, default=get_utc_now)
 
-    # General Properties
-    subject: FilterableColumn[str] = mapped_column(String, nullable=False)
-    message: FilterableColumn[str | None] = mapped_column(String)
-    event_type: FilterableColumn[str | None] = mapped_column(String)
-    image: FilterableColumn[str | None] = mapped_column(String)
+    @property
+    def group_id(self):
+        parent = getattr(self, "recipe", None)
+        return getattr(parent, "group_id", None) if parent is not None else None
 
-    # Timestamps
-    timestamp: FilterableColumn[datetime | None] = mapped_column(NaiveDateTime, index=True)
+    @property
+    def household_id(self):
+        parent = getattr(self, "recipe", None)
+        return getattr(parent, "household_id", None) if parent is not None else None
 
-    @auto_init()
-    def __init__(
-        self,
-        timestamp=None,
-        **_,
-    ) -> None:
-        self.timestamp = timestamp or datetime.now(UTC)
+    class Meta:
+        table = "recipe_timeline_events"

@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_email, random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -17,19 +18,21 @@ def test_get_all_users_admin(request: pytest.FixtureRequest, api_client: TestCli
     database = user.repos
     user_ids: set[str] = set()
     for _ in range(random_int(2, 5)):
-        group = database.groups.create({"name": random_string()})
-        household = database.households.create({"name": random_string(), "group_id": group.id})
+        group = run_db(database.groups.create({"name": random_string()}))
+        household = run_db(database.households.create({"name": random_string(), "group_id": group.id}))
         for _ in range(random_int(2, 5)):
-            new_user = database.users.create(
-                {
-                    "username": random_string(),
-                    "email": random_email(),
-                    "group": group.name,
-                    "household": household.name,
-                    "full_name": random_string(),
-                    "password": random_string(),
-                    "admin": False,
-                }
+            new_user = run_db(
+                database.users.create(
+                    {
+                        "username": random_string(),
+                        "email": random_email(),
+                        "group": group.name,
+                        "household": household.name,
+                        "full_name": random_string(),
+                        "password": random_string(),
+                        "admin": False,
+                    }
+                )
             )
             user_ids.add(str(new_user.id))
 

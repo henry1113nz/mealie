@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from tests import utils
 from tests.fixtures.fixture_users import build_unique_user

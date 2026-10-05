@@ -33,17 +33,17 @@ class GroupReportsController(BaseUserController):
         )
 
     @router.get("", response_model=list[ReportSummary])
-    def get_all(self, report_type: ReportCategory | None = None):
-        return self.repo.multi_query({"group_id": self.group_id, "category": report_type}, limit=9999)
+    async def get_all(self, report_type: ReportCategory | None = None):
+        return await self.repo.multi_query({"group_id": self.group_id, "category": report_type}, limit=9999)
 
     @router.get("/{item_id}", response_model=ReportOut)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.delete("/{item_id}", status_code=200)
-    def delete_one(self, item_id: UUID4):
+    async def delete_one(self, item_id: UUID4):
         try:
-            self.mixins.delete_one(item_id)  # type: ignore
+            (await self.mixins.delete_one(item_id))  # type: ignore
             return SuccessResponse.respond(self.t("group.report-deleted"))
         except Exception as ex:
             raise HTTPException(500, ErrorResponse.respond("Failed to delete report")) from ex

@@ -2,7 +2,6 @@ import datetime
 from enum import StrEnum
 from typing import Annotated
 
-import sqlalchemy as sa
 from pydantic import UUID4, ConfigDict, Field, ValidationInfo, field_validator
 
 from mealie.core.root_logger import get_logger
@@ -56,7 +55,7 @@ class PlanRulesCreate(MealieModel):
         builder = QueryFilterBuilder(value)
 
         try:
-            builder.filter_query(sa.select(RecipeModel), RecipeModel)
+            builder.filter_query(RecipeModel.all(), RecipeModel)
         except Exception as e:
             raise ValueError("Invalid query filter string") from e
 

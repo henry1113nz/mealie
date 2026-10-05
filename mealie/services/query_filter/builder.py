@@ -2,23 +2,21 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
-import sqlalchemy as sa
 from dateutil import parser as date_parser
 from dateutil.parser import ParserError
 from fastapi import HTTPException
 from humps import decamelize
-from sqlalchemy.ext.associationproxy import AssociationProxyInstance
-from sqlalchemy.orm import InstrumentedAttribute, Mapper, RelationshipProperty
-from sqlalchemy.sql import sqltypes
+from tortoise import fields
+from tortoise.expressions import Q
+from tortoise.models import Model
+from tortoise.queryset import QuerySet
 
-from mealie.db.models._model_base import SqlAlchemyBase
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-from mealie.db.models._model_utils.guid import GUID
 from mealie.schema._mealie.mealie_model import MealieModel
 
+from .expressions import AttributeFilter
 from .keywords import PlaceholderKeyword, RelationalKeyword
 from .operators import LogicalOperator, RelationalOperator
 
@@ -118,30 +116,35 @@ class QueryFilterBuilderComponent:
             if v is None:
                 continue
 
-            if isinstance(model_attr_type, sqltypes.String):
+            if model_attr_type.field_type is str:
                 sanitized_values[i] = v.lower()
 
             if self.relationship is RelationalKeyword.LIKE or self.relationship is RelationalKeyword.NOT_LIKE:
-                if not isinstance(model_attr_type, sqltypes.String):
+                if model_attr_type.field_type is not str:
                     raise ValueError(
                         f'invalid query string: "{self.relationship.value}" can only be used with string columns'
                     )
 
-            if isinstance(model_attr_type, (GUID)):
+            if isinstance(model_attr_type, fields.UUIDField):
                 try:
                     # we don't set value since a UUID is functionally identical to a string here
                     UUID(v)
                 except ValueError as e:
                     raise ValueError(f"invalid query string: invalid UUID '{v}'") from e
 
-            if isinstance(model_attr_type, sqltypes.Date | sqltypes.DateTime | NaiveDateTime):
+            if isinstance(model_attr_type, fields.DateField | fields.DatetimeField):
                 try:
                     dt = date_parser.parse(v)
-                    sanitized_values[i] = dt.date() if isinstance(model_attr_type, sqltypes.Date) else dt
+                    sanitized_values[i] = dt.date() if isinstance(model_attr_type, fields.DateField) else dt
                 except ParserError as e:
                     raise ValueError(f"invalid query string: unknown date or datetime format '{v}'") from e
 
-            if isinstance(model_attr_type, sqltypes.Boolean):
+            if isinstance(model_attr_type, fields.IntField | fields.SmallIntField | fields.BigIntField):
+                sanitized_values[i] = int(v)
+            elif isinstance(model_attr_type, fields.FloatField | fields.DecimalField):
+                sanitized_values[i] = float(v)
+
+            if isinstance(model_attr_type, fields.BooleanField):
                 try:
                     sanitized_values[i] = v.lower()[0] in ["t", "y"] or v == "1"
                 except IndexError as e:
@@ -160,7 +163,7 @@ class QueryFilterBuilderComponent:
         )
 
 
-RelationshipChain = list[tuple[InstrumentedAttribute, bool]]
+RelationshipChain = list[str]
 
 
 class QueryFilterBuilder:
@@ -232,280 +235,129 @@ class QueryFilterBuilder:
         return " AND ".join(parts)
 
     @classmethod
-    def _consolidate_group(
-        cls, group: list[sa.ColumnElement], logical_operators: deque[LogicalOperator]
-    ) -> sa.ColumnElement:
-        consolidated_group_builder: sa.ColumnElement | None = None
-        for i, element in enumerate(reversed(group)):
-            if not i:
-                consolidated_group_builder = element
-            else:
-                operator = logical_operators.pop()
-                if operator is LogicalOperator.AND:
-                    consolidated_group_builder = sa.and_(consolidated_group_builder, element)
-                elif operator is LogicalOperator.OR:
-                    consolidated_group_builder = sa.or_(consolidated_group_builder, element)
-                else:
-                    raise ValueError(f"invalid logical operator {operator}")
-
-            if i == len(group) - 1:
-                return consolidated_group_builder.self_group()
+    def _consolidate_group(cls, group: list[Q], logical_operators: deque[LogicalOperator]) -> Q:
+        if not group:
+            raise ValueError("invalid query string")
+        result = group[-1]
+        for element in reversed(group[:-1]):
+            if not logical_operators:
+                raise ValueError("invalid query string")
+            operator = logical_operators.pop()
+            result = result & element if operator is LogicalOperator.AND else result | element
+        return result
 
     @classmethod
-    def get_model_and_model_attr_from_attr_string[Model: SqlAlchemyBase](
-        cls,
-        attr_string: str,
-        model: type[Model],
-        *,
-        collect_relationships: RelationshipChain | None = None,
-    ) -> tuple[type[SqlAlchemyBase], InstrumentedAttribute]:
-        """
-        Take an attribute string and traverse a database model and its relationships to get the desired
-        model and model attribute. Optionally collect the relationships traversed on the way, which can then
-        be applied with `_wrap_in_relationships` when filtering or `_aggregate_over_relationships` when ordering.
-
-        If the attribute string is invalid, raises a `ValueError`.
-
-        For instance, the attribute string "user.name" on `RecipeModel`
-        will return the `User` model's `name` attribute.
-
-        Works with shallow attributes (e.g. "slug" from `RecipeModel`)
-        and arbitrarily deep ones (e.g. "recipe.group.preferences" on `RecipeTimelineEvent`).
-        """
-        mapper: Mapper
-        model_attr: InstrumentedAttribute | None = None
-
-        attribute_chain = decamelize(attr_string).split(".")
-        if not attribute_chain:
-            raise ValueError("invalid query string: attribute name cannot be empty")
-
-        current_model: type[SqlAlchemyBase] = model
-        for i, attribute_link in enumerate(attribute_chain):
-            try:
-                model_attr = getattr(current_model, attribute_link)
-
-                # proxied attributes can't be joined to the query directly, so we need to inspect the proxy
-                # and get the actual model and its attribute
-                if isinstance(model_attr, AssociationProxyInstance):
-                    proxied_attribute_link = model_attr.target_collection
-                    next_attribute_link = model_attr.value_attr
-                    model_attr = getattr(current_model, proxied_attribute_link)
-
-                    mapper = sa.inspect(current_model)
-                    relationship = mapper.relationships[proxied_attribute_link]
-                    if collect_relationships is not None:
-                        collect_relationships.append((model_attr, relationship.uselist))
-                    current_model = relationship.mapper.class_
-                    model_attr = getattr(current_model, next_attribute_link)
-
-                # at the end of the chain there are no more relationships to inspect
-                if i == len(attribute_chain) - 1:
-                    break
-
-                mapper = sa.inspect(current_model)
-                relationship = mapper.relationships[attribute_link]
-                if collect_relationships is not None:
-                    collect_relationships.append((model_attr, relationship.uselist))
-                current_model = relationship.mapper.class_
-
-            except (AttributeError, KeyError) as e:
-                raise ValueError(f"invalid attribute string: '{attr_string}' does not exist on this schema") from e
-
-        if model_attr is None:
-            raise ValueError(f"invalid attribute string: '{attr_string}'")
-
-        if not getattr(model_attr, "info", {}).get("filterable"):
-            raise NonFilterableValueError(model_attr)
-
-        return current_model, model_attr
-
-    @staticmethod
-    def _aggregate_over_relationships[Model: SqlAlchemyBase](
-        element: sa.ColumnElement, relationships: RelationshipChain, model: type[Model], *, descending: bool
-    ) -> sa.ColumnElement:
-        """
-        Reduce a related attribute to a single value per record with a correlated subquery.
-
-        Joining a relationship can return more than one row per record, which breaks LIMIT and OFFSET. That holds
-        for "to-one" relationships too, since `uselist=False` is an ORM declaration rather than a unique constraint.
-        Aggregating keeps one row per record and picks the value the ordering would have surfaced anyway:
-        the lowest when ascending, the highest when descending.
-        """
-        join_conditions: list[sa.ColumnElement] = []
-        for relationship_attr, _ in relationships:
-            relationship = cast(RelationshipProperty, relationship_attr.property)
-            join_conditions.append(relationship.primaryjoin)
-            if relationship.secondary is not None:
-                join_conditions.append(relationship.secondaryjoin)
-
-        aggregate = sa.func.max if descending else sa.func.min
-        return sa.select(aggregate(element)).where(*join_conditions).correlate(model).scalar_subquery()
+    def resolve_attribute(cls, attr_string: str, model: type[Model]) -> tuple[str, Any, bool]:
+        """Resolve public dotted paths, including tenant association properties."""
+        links = deque(decamelize(attr_string).replace("__", ".").split("."))
+        current = model
+        path: list[str] = []
+        related = False
+        while links:
+            link = links.popleft()
+            if link == "updated_at":
+                link = "update_at"
+            proxy = getattr(current, "__association_proxies__", {}).get(link)
+            if proxy:
+                links.extendleft(reversed(proxy))
+                continue
+            field = current._meta.fields_map.get(link)
+            if field is None:
+                raise ValueError(f"invalid attribute string: '{attr_string}' does not exist on this schema")
+            path.append(link)
+            if links:
+                target = getattr(field, "related_model", None)
+                if target is None:
+                    raise ValueError(f"invalid attribute string: '{attr_string}' does not exist on this schema")
+                current = target
+                related = True
+            elif link not in getattr(current, "__filterable_fields__", set()) | {"created_at", "update_at"}:
+                raise NonFilterableValueError(attr_string)
+        return "__".join(path), field, related
 
     @classmethod
-    def get_order_attr[Model: SqlAlchemyBase](
+    def get_model_and_model_attr_from_attr_string(
+        cls, attr_string: str, model: type[Model], *, collect_relationships: RelationshipChain | None = None
+    ) -> tuple[type[Model], Any]:
+        path, field, related = cls.resolve_attribute(attr_string, model)
+        if collect_relationships is not None and related:
+            collect_relationships.extend(path.split("__")[:-1])
+        return field.model, field
+
+    @classmethod
+    def get_order_attr(
         cls,
         attr_string: str,
         model: type[Model],
         *,
         descending: bool,
-        column_aliases: dict[str, sa.ColumnElement] | None = None,
-    ) -> sa.ColumnElement:
-        """
-        Resolve an attribute string into an element a query can be ordered by.
-        If you need to order on a custom column expression (e.g. a computed property), you can supply column aliases
-        """
-        relationships: RelationshipChain = []
-        _, order_attr = cls.get_model_and_model_attr_from_attr_string(
-            attr_string, model, collect_relationships=relationships
-        )
-
-        if column_aliases and (column_alias := column_aliases.get(order_attr.key)) is not None:
-            # aliases are already expressed on the base model, so there is nothing left to traverse
-            return cls._transform_model_attr(column_alias, column_alias.type)
-
-        order_attr = cls._transform_model_attr(order_attr, order_attr.type)
-        if not relationships:
-            return order_attr
-
-        return cls._aggregate_over_relationships(order_attr, relationships, model, descending=descending)
-
-    @staticmethod
-    def _wrap_in_relationships(element: sa.ColumnElement, relationships: RelationshipChain) -> sa.ColumnElement:
-        """
-        Wrap a filter element in EXISTS subqueries, one per relationship traversed by the attribute string.
-
-        Joining the relationship instead would duplicate a row per related record, which breaks LIMIT/OFFSET,
-        and would make two conditions on the same relationship contradict each other on a single joined row.
-        """
-        for relationship_attr, uselist in reversed(relationships):
-            element = relationship_attr.any(element) if uselist else relationship_attr.has(element)
-
-        return element
+        column_aliases: dict[str, Any] | None = None,
+    ) -> str:
+        path, _, _ = cls.resolve_attribute(attr_string, model)
+        return (column_aliases or {}).get(path, path)
 
     @classmethod
-    def _transform_model_attr(cls, model_attr: InstrumentedAttribute, model_attr_type: Any) -> InstrumentedAttribute:
-        if isinstance(model_attr_type, sqltypes.String):
-            model_attr = sa.func.lower(model_attr)
+    def _component_filter(
+        cls, component: QueryFilterBuilderComponent, model: type[Model], aliases: dict[str, str]
+    ) -> Q:
+        path, field, related = cls.resolve_attribute(component.attribute_name, model)
+        path = aliases.get(path, path)
+        value = component.validate(field)
+        relationship = component.relationship
+        is_string = field.field_type is str
 
-        return model_attr
+        def matching(lookup: str, val: Any) -> Q:
+            return AttributeFilter(path, lookup, val, string=is_string)
 
-    @classmethod
-    def _get_filter_element[Model: SqlAlchemyBase](
-        cls,
-        component: QueryFilterBuilderComponent,
-        model: type[Model],
-        model_attr: InstrumentedAttribute,
-        model_attr_type: Any,
-        relationships: RelationshipChain,
-    ) -> sa.ColumnElement:
-        model_attr = cls._transform_model_attr(model_attr, model_attr_type)
-        value = component.validate(model_attr_type)
+        equal = ""
+        if relationship is RelationalKeyword.IS:
+            return matching("isnull", True)
+        if relationship is RelationalKeyword.IS_NOT:
+            return matching("isnull", False)
+        if relationship in (RelationalKeyword.IN, RelationalKeyword.NOT_IN):
+            condition = matching("in", value)
+            return ~condition if relationship is RelationalKeyword.NOT_IN else condition
+        if relationship is RelationalKeyword.CONTAINS_ALL:
+            condition = Q()
+            for item in value:
+                condition &= matching(equal, item)
+            return condition
+        if relationship in (RelationalKeyword.LIKE, RelationalKeyword.NOT_LIKE):
+            return matching("not_like" if relationship is RelationalKeyword.NOT_LIKE else "like", value)
+        operators = {
+            RelationalOperator.EQ: equal,
+            RelationalOperator.NOTEQ: "not",
+            RelationalOperator.GT: "gt",
+            RelationalOperator.GTE: "gte",
+            RelationalOperator.LT: "lt",
+            RelationalOperator.LTE: "lte",
+        }
+        condition = matching(operators[relationship], value)
+        return condition
 
-        # Keywords
-        if component.relationship is RelationalKeyword.IS:
-            element = model_attr.is_(value)
-        elif component.relationship is RelationalKeyword.IS_NOT:
-            element = model_attr.is_not(value)
-        elif component.relationship is RelationalKeyword.IN:
-            element = model_attr.in_(value)
-        elif component.relationship is RelationalKeyword.NOT_IN:
-            if relationships:
-                # "none of the related rows match", rather than "some related row doesn't match"
-                return sa.not_(cls._wrap_in_relationships(model_attr.in_(value), relationships))
-            else:
-                element = sa.not_(model_attr.in_(value))
-
-        elif component.relationship is RelationalKeyword.CONTAINS_ALL:
-            if len(value) == 1:
-                element = model_attr.in_(value)
-            else:
-                # every value must be matched by a different related row, so each gets its own EXISTS
-                return sa.and_(*(cls._wrap_in_relationships(model_attr == v, relationships) for v in value))
-        elif component.relationship is RelationalKeyword.LIKE:
-            element = model_attr.ilike(value)
-        elif component.relationship is RelationalKeyword.NOT_LIKE:
-            element = model_attr.not_ilike(value)
-
-        # Operators
-        elif component.relationship is RelationalOperator.EQ:
-            element = model_attr == value
-        elif component.relationship is RelationalOperator.NOTEQ:
-            element = model_attr != value
-        elif component.relationship is RelationalOperator.GT:
-            element = model_attr > value
-        elif component.relationship is RelationalOperator.LT:
-            element = model_attr < value
-        elif component.relationship is RelationalOperator.GTE:
-            element = model_attr >= value
-        elif component.relationship is RelationalOperator.LTE:
-            element = model_attr <= value
-        else:
-            raise ValueError(f"invalid relationship {component.relationship}")
-
-        return cls._wrap_in_relationships(element, relationships)
-
-    def filter_query[Model: SqlAlchemyBase](
-        self, query: sa.Select, model: type[Model], column_aliases: dict[str, sa.ColumnElement] | None = None
-    ) -> sa.Select:
-        """
-        Filters a query based on the parsed filter string.
-        If you need to filter on a custom column expression (e.g. a computed property), you can supply column aliases
-        """
-        column_aliases = column_aliases or {}
-
-        # resolve each attribute string to its model attribute and the relationships it traverses
-        attr_map: dict[int, tuple[type[SqlAlchemyBase], InstrumentedAttribute, RelationshipChain]] = {}
-        model_attr: InstrumentedAttribute
-        for i, component in enumerate(self.filter_components):
-            if not isinstance(component, QueryFilterBuilderComponent):
-                continue
-
-            relationships: RelationshipChain = []
-            nested_model, model_attr = self.get_model_and_model_attr_from_attr_string(
-                component.attribute_name, model, collect_relationships=relationships
-            )
-            attr_map[i] = (nested_model, model_attr, relationships)
-
-        # build query filter
-        partial_group: list[sa.ColumnElement] = []
-        partial_group_stack: deque[list[sa.ColumnElement]] = deque()
+    def filter_query(
+        self, query: QuerySet, model: type[Model], column_aliases: dict[str, str] | None = None
+    ) -> QuerySet:
+        if not self.filter_components:
+            return query
+        partial_group: list[Q] = []
+        partial_group_stack: deque[list[Q]] = deque()
         logical_operator_stack: deque[LogicalOperator] = deque()
-        for i, component in enumerate(self.filter_components):
+        for component in self.filter_components:
             if component == self.l_group_sep:
                 partial_group_stack.append(partial_group)
                 partial_group = []
-
             elif component == self.r_group_sep:
-                if partial_group:
-                    complete_group = self._consolidate_group(partial_group, logical_operator_stack)
-                    partial_group = partial_group_stack.pop()
-                    partial_group.append(complete_group)
-                else:
-                    partial_group = partial_group_stack.pop()
-
+                complete = self._consolidate_group(partial_group, logical_operator_stack)
+                partial_group = partial_group_stack.pop()
+                partial_group.append(complete)
             elif isinstance(component, LogicalOperator):
                 logical_operator_stack.append(component)
-
+            elif isinstance(component, QueryFilterBuilderComponent):
+                partial_group.append(self._component_filter(component, model, column_aliases or {}))
             else:
-                component = cast(QueryFilterBuilderComponent, component)
-                nested_model, model_attr, relationships = attr_map[i]
-
-                base_attribute_name = component.attribute_name.split(".")[-1]
-                if (column_alias := column_aliases.get(base_attribute_name)) is not None:
-                    model_attr = column_alias
-                    relationships = []
-
-                element = self._get_filter_element(component, model, model_attr, model_attr.type, relationships)
-                partial_group.append(element)
-
-        # combine the completed groups into one filter
-        while True:
-            consolidated_group = self._consolidate_group(partial_group, logical_operator_stack)
-            if not partial_group_stack:
-                return query.filter(consolidated_group)
-            else:
-                partial_group = partial_group_stack.pop()
-                partial_group.append(consolidated_group)
+                raise ValueError("invalid query string")
+        return query.filter(self._consolidate_group(partial_group, logical_operator_stack))
 
     @staticmethod
     def _break_filter_string_into_components(filter_string: str) -> list[str]:

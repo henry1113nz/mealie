@@ -5,6 +5,7 @@ Integration tests for admin AI provider management across groups.
 from fastapi.testclient import TestClient
 
 from mealie.schema.group.ai_providers import AIProviderCreate
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -46,13 +47,15 @@ def test_admin_create_ai_provider_for_group(api_client: TestClient, admin_user: 
         assert "id" in provider
         assert "apiKey" not in provider
     finally:
-        unique_user.repos.group_ai_providers.delete(provider["id"])
+        run_db(unique_user.repos.group_ai_providers.delete(provider["id"]))
 
 
 def test_admin_get_ai_provider_for_group(api_client: TestClient, admin_user: TestUser, unique_user: TestUser):
     """Admin can retrieve an AI provider from any group."""
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="secret")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="secret")
+        )
     )
     try:
         response = api_client.get(
@@ -65,13 +68,15 @@ def test_admin_get_ai_provider_for_group(api_client: TestClient, admin_user: Tes
         assert data["id"] == str(provider.id)
         assert data["name"] == provider.name
     finally:
-        unique_user.repos.group_ai_providers.delete(provider.id)
+        run_db(unique_user.repos.group_ai_providers.delete(provider.id))
 
 
 def test_admin_update_ai_provider_for_group(api_client: TestClient, admin_user: TestUser, unique_user: TestUser):
     """Admin can update an AI provider in any group."""
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+        )
     )
     try:
         new_name = random_string()
@@ -86,13 +91,15 @@ def test_admin_update_ai_provider_for_group(api_client: TestClient, admin_user: 
         assert data["name"] == new_name
         assert data["model"] == "gpt-4-turbo"
     finally:
-        unique_user.repos.group_ai_providers.delete(provider.id)
+        run_db(unique_user.repos.group_ai_providers.delete(provider.id))
 
 
 def test_admin_delete_ai_provider_for_group(api_client: TestClient, admin_user: TestUser, unique_user: TestUser):
     """Admin can delete an AI provider from any group."""
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="to-delete")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="to-delete")
+        )
     )
 
     response = api_client.delete(

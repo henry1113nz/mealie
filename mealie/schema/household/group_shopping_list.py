@@ -4,17 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import UUID4, ConfigDict, field_validator, model_validator
-from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.household import (
-    ShoppingList,
-    ShoppingListItem,
-    ShoppingListMultiPurposeLabel,
-    ShoppingListRecipeReference,
-)
-from mealie.db.models.recipe import IngredientFoodModel, IngredientFoodSubstitutionModel, RecipeModel
-from mealie.db.models.users.users import User
 from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema._mealie.types import NoneFloat
@@ -129,20 +119,16 @@ class ShoppingListItemOut(ShoppingListItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
+    def loader_options(cls) -> list[str]:
         return [
-            selectinload(ShoppingListItem.extras),
-            selectinload(ShoppingListItem.food).joinedload(IngredientFoodModel.extras),
-            selectinload(ShoppingListItem.food).joinedload(IngredientFoodModel.label),
-            selectinload(ShoppingListItem.food)
-            .selectinload(IngredientFoodModel.substitutions)
-            .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            joinedload(ShoppingListItem.label),
-            joinedload(ShoppingListItem.unit),
-            selectinload(ShoppingListItem.recipe_references),
-            joinedload(ShoppingListItem.shopping_list)
-            .joinedload(ShoppingList.user)
-            .load_only(User.household_id, User.group_id),
+            "extras",
+            "food__extras",
+            "food__label",
+            "food__substitutions__substitute_food",
+            "label",
+            "unit",
+            "recipe_references",
+            "shopping_list__user",
         ]
 
 
@@ -169,8 +155,8 @@ class ShoppingListMultiPurposeLabelOut(ShoppingListMultiPurposeLabelUpdate):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(ShoppingListMultiPurposeLabel.label)]
+    def loader_options(cls) -> list[str]:
+        return ["label"]
 
 
 class ShoppingListItemPagination(PaginationBase):
@@ -203,12 +189,8 @@ class ShoppingListRecipeRefOut(MealieModel):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(ShoppingListRecipeReference.recipe).joinedload(RecipeModel.recipe_category),
-            selectinload(ShoppingListRecipeReference.recipe).joinedload(RecipeModel.tags),
-            selectinload(ShoppingListRecipeReference.recipe).joinedload(RecipeModel.tools),
-        ]
+    def loader_options(cls) -> list[str]:
+        return ["recipe__recipe_category", "recipe__tags", "recipe__tools"]
 
 
 class ShoppingListSave(ShoppingListCreate):
@@ -224,20 +206,14 @@ class ShoppingListSummary(ShoppingListSave):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
+    def loader_options(cls) -> list[str]:
         return [
-            selectinload(ShoppingList.extras),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.recipe_category),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tags),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tools),
-            selectinload(ShoppingList.label_settings).joinedload(ShoppingListMultiPurposeLabel.label),
-            joinedload(ShoppingList.user).load_only(User.household_id, User.group_id),
+            "extras",
+            "recipe_references__recipe__recipe_category",
+            "recipe_references__recipe__tags",
+            "recipe_references__recipe__tools",
+            "label_settings__label",
+            "user",
         ]
 
 
@@ -261,34 +237,21 @@ class ShoppingListOut(ShoppingListUpdate):
         return v or []
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
+    def loader_options(cls) -> list[str]:
         return [
-            selectinload(ShoppingList.extras),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.extras),
-            selectinload(ShoppingList.list_items)
-            .joinedload(ShoppingListItem.food)
-            .joinedload(IngredientFoodModel.extras),
-            selectinload(ShoppingList.list_items)
-            .joinedload(ShoppingListItem.food)
-            .joinedload(IngredientFoodModel.label),
-            selectinload(ShoppingList.list_items)
-            .joinedload(ShoppingListItem.food)
-            .selectinload(IngredientFoodModel.substitutions)
-            .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.label),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.unit),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.recipe_references),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.recipe_category),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tags),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tools),
-            selectinload(ShoppingList.label_settings).joinedload(ShoppingListMultiPurposeLabel.label),
-            joinedload(ShoppingList.user).load_only(User.household_id, User.group_id),
+            "extras",
+            "list_items__extras",
+            "list_items__food__extras",
+            "list_items__food__label",
+            "list_items__food__substitutions__substitute_food",
+            "list_items__label",
+            "list_items__unit",
+            "list_items__recipe_references",
+            "recipe_references__recipe__recipe_category",
+            "recipe_references__recipe__tags",
+            "recipe_references__recipe__tools",
+            "label_settings__label",
+            "user",
         ]
 
 

@@ -78,7 +78,7 @@ class CooknMigrator(BaseMigrator):
         self.key_aliases = []
         self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
 
-    def _parse_units_table(self, db: DSVParser):
+    async def _parse_units_table(self, db: DSVParser):
         """Parses the Cook'n units table and adds missing units to Mealie DB."""
         _units_table = db.get_table("temp_unit")
         for _unit_row in _units_table:
@@ -87,11 +87,11 @@ class CooknMigrator(BaseMigrator):
             abbreviation = db.get_data(_unit_row, "ABBREVIATION")
 
             # exact match
-            if not name or name in self.matcher.units_by_alias:
+            if not name or name in (await self.matcher.units_by_alias()):
                 continue
 
             # fuzzy match
-            match = self.matcher.find_unit_match(name)
+            match = await self.matcher.find_unit_match(name)
             if match is None:
                 save = SaveIngredientUnit(
                     group_id=self.group.id,
@@ -102,13 +102,13 @@ class CooknMigrator(BaseMigrator):
                 # update DataMatcher
                 self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
                 try:
-                    self.db.ingredient_units.create(save)
+                    (await self.db.ingredient_units.create(save))
                 except Exception as e:
                     self.logger.error(e)
             else:
                 self.logger.debug("Fuzzy match for unit (%s -> %s)", name, match.name)
 
-    def _parse_foods_table(self, db: DSVParser):
+    async def _parse_foods_table(self, db: DSVParser):
         """Parses the Cook'n food table and adds missing foods to Mealie DB."""
         _foods_table = db.get_table("temp_food")
         for _food_row in _foods_table:
@@ -116,16 +116,16 @@ class CooknMigrator(BaseMigrator):
             plural_name = db.get_data(_food_row, "PLURAL_NAME")
 
             # exact match
-            if not name or name in self.matcher.foods_by_alias:
+            if not name or name in (await self.matcher.foods_by_alias()):
                 continue
 
-            match = self.matcher.find_food_match(name)
+            match = await self.matcher.find_food_match(name)
             if match is None:
                 save = SaveIngredientFood(group_id=self.group.id, name=name, plural_name=plural_name, description="")
                 # update DataMatcher
                 self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
                 try:
-                    self.db.ingredient_foods.create(save)
+                    (await self.db.ingredient_foods.create(save))
                 except Exception as e:
                     self.logger.error(e)
             else:
@@ -174,7 +174,7 @@ class CooknMigrator(BaseMigrator):
                     return str(candidate)
         return None
 
-    def _parse_ingredients(self, _recipe_id: str, db: DSVParser) -> list[RecipeIngredient]:
+    async def _parse_ingredients(self, _recipe_id: str, db: DSVParser) -> list[RecipeIngredient]:
         """Parses ingredients for recipe from Cook'n ingredients table."""
         ingredients = []
         ingredients_order = []
@@ -193,8 +193,8 @@ class CooknMigrator(BaseMigrator):
             food_name = db.get_data(_food_row, "NAME")
 
             # Match unit and food from Mealie DB
-            unit = self.matcher.find_unit_match(unit_name)
-            food = self.matcher.find_food_match(food_name)
+            unit = await self.matcher.find_unit_match(unit_name)
+            food = await self.matcher.find_food_match(food_name)
 
             pre_qualifier = db.get_data(_ingredient_row, "PRE_QUALIFIER").lstrip().rstrip()
             post_qualifier = db.get_data(_ingredient_row, "POST_QUALIFIER").lstrip().rstrip()
@@ -302,7 +302,7 @@ class CooknMigrator(BaseMigrator):
 
         return steps
 
-    def _process_recipe_document(self, _recipe_row: dict[str, Any], db: DSVParser) -> dict:
+    async def _process_recipe_document(self, _recipe_row: dict[str, Any], db: DSVParser) -> dict:
         """Parses recipe row from the Cook'n recipe table."""
         recipe_data: dict[str, int | str | list[str] | list[RecipeIngredient]] = {}
 
@@ -344,20 +344,20 @@ class CooknMigrator(BaseMigrator):
             recipe_data["image"] = [image_path]
 
         # Parse ingredients
-        recipe_data["_parsed_ingredients"] = self._parse_ingredients(_recipe_id, db)
+        recipe_data["_parsed_ingredients"] = await self._parse_ingredients(_recipe_id, db)
 
         # Parse instructions
         recipe_data["recipeInstructions"] = self._parse_instructions(db.get_data(_recipe_row, "INSTRUCTIONS"))
 
         return recipe_data
 
-    def _process_cookbook(self, path: Path) -> None:
+    async def _process_cookbook(self, path: Path) -> None:
         """Processes contents of a zip file."""
         source_dir = self.get_zip_base_path(path)
         db = DSVParser(source_dir)
         # Load units and foods from Cook'n
-        self._parse_units_table(db)
-        self._parse_foods_table(db)
+        (await self._parse_units_table(db))
+        (await self._parse_foods_table(db))
         # Reload DataMatcher with updated tables
         self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
 
@@ -367,7 +367,7 @@ class CooknMigrator(BaseMigrator):
         recipes_as_dicts = []
         for _recipe_row in _recipe_table:
             try:
-                recipes_as_dicts.append(self._process_recipe_document(_recipe_row, db))
+                recipes_as_dicts.append(await self._process_recipe_document(_recipe_row, db))
 
             except Exception as e:
                 self.report_entries.append(
@@ -383,30 +383,30 @@ class CooknMigrator(BaseMigrator):
         for r in recipes_as_dicts:
             # Clean recipes and re-add ingredient w/ amounts
             ingredients = r["_parsed_ingredients"]
-            r = self.clean_recipe_dictionary(r)
+            r = await self.clean_recipe_dictionary(r)
             r.recipe_ingredient = ingredients
             recipes.append(r)
 
         # add recipes and images to database
-        results = self.import_recipes_to_database(recipes)
+        results = await self.import_recipes_to_database(recipes)
         recipe_lookup = {r.slug: r for r in recipes}
         for slug, recipe_id, status in results:
             if status:
                 recipe = recipe_lookup.get(slug)
                 if recipe:
                     if recipe.image:
-                        self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory)
+                        (await self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory))
                 else:
                     index_len = len(slug.split("-")[-1])
                     recipe = recipe_lookup.get(slug[: -(index_len + 1)])
                     if recipe:
                         self.logger.warning("Duplicate recipe (%s) found! Saved as copy...", recipe.name)
                         if recipe.image:
-                            self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory)
+                            (await self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory))
                     else:
                         self.logger.warning("Failed to lookup recipe! (%s)", slug)
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         """Migrates recipes from Cook'n cookboop .zip. Also will handle a .zip folder of .zip folders"""
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(self.archive) as zip_file:
@@ -414,7 +414,7 @@ class CooknMigrator(BaseMigrator):
 
                 # Process single zipped cookbook
                 if Path(f"{tmpdir}/temp_recipe.dsv").exists():
-                    self._process_cookbook(Path(tmpdir))
+                    (await self._process_cookbook(Path(tmpdir)))
 
                 # Process a zip folder of zipped cookbooks
                 for file in Path(tmpdir).glob("*.zip"):
@@ -422,4 +422,4 @@ class CooknMigrator(BaseMigrator):
                         with zipfile.ZipFile(file) as zip_file2:
                             zip_file2.extractall(tmpdir2)
 
-                        self._process_cookbook(Path(tmpdir2))
+                        (await self._process_cookbook(Path(tmpdir2)))

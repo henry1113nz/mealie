@@ -1,10 +1,7 @@
 from typing import Any, Self
 
 from pydantic import UUID4, ConfigDict, Field, ValidationInfo, computed_field, field_validator, model_validator
-from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.group.ai_providers import AIProvider, AIProviderSettings
 from mealie.schema._mealie import MealieModel
 
 
@@ -57,11 +54,8 @@ class AIProviderOut(AIProviderCreate):
         return {x.key_name: x.value for x in v} if v else {}
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(AIProvider.request_headers),
-            selectinload(AIProvider.request_params),
-        ]
+    def loader_options(cls) -> list[str]:
+        return ["request_headers", "request_params"]
 
 
 class AIProviderTestResult(MealieModel):
@@ -78,7 +72,7 @@ class AIProviderSummary(MealieModel):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
+    def loader_options(cls) -> list[str]:
         return []
 
 
@@ -96,12 +90,8 @@ class AIProviderSettingsUpdate(MealieModel):
         return val or None
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(AIProviderSettings.default_provider),
-            joinedload(AIProviderSettings.audio_provider),
-            joinedload(AIProviderSettings.image_provider),
-        ]
+    def loader_options(cls) -> list[str]:
+        return ["default_provider", "audio_provider", "image_provider"]
 
 
 class AIProviderSettingsOut(AIProviderSettingsUpdate):
@@ -137,10 +127,5 @@ class AIProviderSettingsOut(AIProviderSettingsUpdate):
         return self.ai_enabled and self.image_provider_id is not None
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(AIProviderSettings.providers),
-            joinedload(AIProviderSettings.default_provider),
-            joinedload(AIProviderSettings.audio_provider),
-            joinedload(AIProviderSettings.image_provider),
-        ]
+    def loader_options(cls) -> list[str]:
+        return ["providers", "default_provider", "audio_provider", "image_provider"]

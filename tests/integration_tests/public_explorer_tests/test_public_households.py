@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from mealie.schema.household.household import HouseholdCreate
 from mealie.schema.household.household_preferences import CreateHouseholdPreferences
 from mealie.services.household_services.household_service import HouseholdService
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -13,12 +14,14 @@ from tests.utils.fixture_schemas import TestUser
 
 @pytest.mark.parametrize("is_private_group", [True, False])
 def test_get_all_households(api_client: TestClient, unique_user: TestUser, is_private_group: bool):
-    unique_user.repos.group_preferences.patch(UUID(unique_user.group_id), {"private_group": is_private_group})
+    run_db(unique_user.repos.group_preferences.patch(UUID(unique_user.group_id), {"private_group": is_private_group}))
     households = [
-        HouseholdService.create_household(
-            unique_user.repos,
-            HouseholdCreate(name=random_string()),
-            CreateHouseholdPreferences(private_household=False),
+        run_db(
+            HouseholdService.create_household(
+                unique_user.repos,
+                HouseholdCreate(name=random_string()),
+                CreateHouseholdPreferences(private_household=False),
+            )
         )
         for _ in range(5)
     ]
@@ -35,16 +38,20 @@ def test_get_all_households(api_client: TestClient, unique_user: TestUser, is_pr
 
 @pytest.mark.parametrize("is_private_group", [True, False])
 def test_get_all_households_public_only(api_client: TestClient, unique_user: TestUser, is_private_group: bool):
-    unique_user.repos.group_preferences.patch(UUID(unique_user.group_id), {"private_group": is_private_group})
-    public_household = HouseholdService.create_household(
-        unique_user.repos,
-        HouseholdCreate(name=random_string()),
-        CreateHouseholdPreferences(private_household=False),
+    run_db(unique_user.repos.group_preferences.patch(UUID(unique_user.group_id), {"private_group": is_private_group}))
+    public_household = run_db(
+        HouseholdService.create_household(
+            unique_user.repos,
+            HouseholdCreate(name=random_string()),
+            CreateHouseholdPreferences(private_household=False),
+        )
     )
-    private_household = HouseholdService.create_household(
-        unique_user.repos,
-        HouseholdCreate(name=random_string()),
-        CreateHouseholdPreferences(private_household=True),
+    private_household = run_db(
+        HouseholdService.create_household(
+            unique_user.repos,
+            HouseholdCreate(name=random_string()),
+            CreateHouseholdPreferences(private_household=True),
+        )
     )
 
     response = api_client.get(api_routes.explore_groups_group_slug_households(unique_user.group_id))
@@ -62,11 +69,13 @@ def test_get_all_households_public_only(api_client: TestClient, unique_user: Tes
 def test_get_household(
     api_client: TestClient, unique_user: TestUser, is_private_group: bool, is_private_household: bool
 ):
-    unique_user.repos.group_preferences.patch(UUID(unique_user.group_id), {"private_group": is_private_group})
-    household = household = HouseholdService.create_household(
-        unique_user.repos,
-        HouseholdCreate(name=random_string()),
-        CreateHouseholdPreferences(private_household=is_private_household),
+    run_db(unique_user.repos.group_preferences.patch(UUID(unique_user.group_id), {"private_group": is_private_group}))
+    household = household = run_db(
+        HouseholdService.create_household(
+            unique_user.repos,
+            HouseholdCreate(name=random_string()),
+            CreateHouseholdPreferences(private_household=is_private_household),
+        )
     )
 
     response = api_client.get(

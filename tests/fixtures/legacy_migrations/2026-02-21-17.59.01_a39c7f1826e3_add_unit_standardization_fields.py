@@ -11,7 +11,7 @@ from sqlalchemy import orm
 from alembic import op
 from mealie.repos.repository_units import RepositoryUnit
 from mealie.core.root_logger import get_logger
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.guid import GUID
 from mealie.repos.seed.seeders import IngredientUnitsSeeder
 from mealie.lang.locale_config import LOCALE_CONFIG
 

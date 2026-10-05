@@ -7,6 +7,7 @@ from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.household.group_shopping_list import ShoppingListOut
 from mealie.schema.labels.multi_purpose_label import MultiPurposeLabelOut
 from mealie.services.seeder.seeder_service import SeederService
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes, jsonify
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -136,11 +137,11 @@ def test_seed_label_creates_list_labels(api_client: TestClient, unique_user: Tes
     existing_label_settings = new_list.label_settings
 
     # seeding foods also seeds labels; make sure they were added to the list's label settings
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group
     database = AllRepositories(database.session, group_id=group.id)
     seeder = SeederService(database)
-    seeder.seed_foods("en-US")
+    run_db(seeder.seed_foods("en-US"))
 
     response = api_client.get(api_routes.households_shopping_lists_item_id(new_list.id), headers=unique_user.token)
     updated_list = ShoppingListOut.model_validate(response.json())

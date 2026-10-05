@@ -4,6 +4,7 @@ import pytest
 from slugify import slugify
 
 from mealie.schema.cookbook.cookbook import SaveCookBook
+from tests.fixtures.fixture_database import run_db
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -23,11 +24,11 @@ def test_create_cookbook_ignores_slug(unique_user: TestUser, use_create_many: bo
     bad_slug = random_string()
     cb_data = cookbook_data(unique_user, slug=bad_slug)
     if use_create_many:
-        result = unique_user.repos.cookbooks.create_many([cb_data])
+        result = run_db(unique_user.repos.cookbooks.create_many([cb_data]))
         assert len(result) == 1
         cb = result[0]
     else:
-        cb = unique_user.repos.cookbooks.create(cb_data)
+        cb = run_db(unique_user.repos.cookbooks.create(cb_data))
     assert cb.slug == slugify(cb.name) != bad_slug
 
 
@@ -36,15 +37,14 @@ def test_create_cookbook_duplicate_name(unique_user: TestUser, use_create_many: 
     cb_1_data = cookbook_data(unique_user)
     cb_2_data = cookbook_data(unique_user, name=cb_1_data.name)
 
-    cb_1 = unique_user.repos.cookbooks.create(cb_1_data)
-    unique_user.repos.session.commit()
+    cb_1 = run_db(unique_user.repos.cookbooks.create(cb_1_data))
 
     if use_create_many:
-        result = unique_user.repos.cookbooks.create_many([cb_2_data])
+        result = run_db(unique_user.repos.cookbooks.create_many([cb_2_data]))
         assert len(result) == 1
         cb_2 = result[0]
     else:
-        cb_2 = unique_user.repos.cookbooks.create(cb_2_data)
+        cb_2 = run_db(unique_user.repos.cookbooks.create(cb_2_data))
 
     assert cb_1.id != cb_2.id
     assert cb_1.name == cb_2.name
@@ -54,20 +54,19 @@ def test_create_cookbook_duplicate_name(unique_user: TestUser, use_create_many: 
 @pytest.mark.parametrize("method", ["update", "update_many", "patch"])
 def test_update_cookbook_updates_slug(unique_user: TestUser, method: str):
     cb_data = cookbook_data(unique_user)
-    cb = unique_user.repos.cookbooks.create(cb_data)
-    unique_user.repos.session.commit()
+    cb = run_db(unique_user.repos.cookbooks.create(cb_data))
 
     new_name = random_string()
     cb.name = new_name
 
     if method == "update":
-        cb = unique_user.repos.cookbooks.update(cb.id, cb)
+        cb = run_db(unique_user.repos.cookbooks.update(cb.id, cb))
     if method == "update_many":
-        result = unique_user.repos.cookbooks.update_many([cb])
+        result = run_db(unique_user.repos.cookbooks.update_many([cb]))
         assert len(result) == 1
         cb = result[0]
     else:
-        cb = unique_user.repos.cookbooks.patch(cb.id, cb)
+        cb = run_db(unique_user.repos.cookbooks.patch(cb.id, cb))
 
     assert cb.name == new_name
     assert cb.slug == slugify(new_name)
@@ -78,20 +77,18 @@ def test_update_cookbook_duplicate_name(unique_user: TestUser, method: str):
     cb_1_data = cookbook_data(unique_user)
     cb_2_data = cookbook_data(unique_user)
 
-    cb_1 = unique_user.repos.cookbooks.create(cb_1_data)
-    unique_user.repos.session.commit()
-    cb_2 = unique_user.repos.cookbooks.create(cb_2_data)
-    unique_user.repos.session.commit()
+    cb_1 = run_db(unique_user.repos.cookbooks.create(cb_1_data))
+    cb_2 = run_db(unique_user.repos.cookbooks.create(cb_2_data))
 
     cb_2.name = cb_1.name
     if method == "update":
-        cb_2 = unique_user.repos.cookbooks.update(cb_2.id, cb_2)
+        cb_2 = run_db(unique_user.repos.cookbooks.update(cb_2.id, cb_2))
     if method == "update_many":
-        result = unique_user.repos.cookbooks.update_many([cb_2])
+        result = run_db(unique_user.repos.cookbooks.update_many([cb_2]))
         assert len(result) == 1
         cb_2 = result[0]
     else:
-        cb_2 = unique_user.repos.cookbooks.patch(cb_2.id, cb_2)
+        cb_2 = run_db(unique_user.repos.cookbooks.patch(cb_2.id, cb_2))
 
     assert cb_1.id != cb_2.id
     assert cb_1.name == cb_2.name

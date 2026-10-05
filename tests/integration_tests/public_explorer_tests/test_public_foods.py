@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mealie.schema.recipe.recipe_ingredient import SaveIngredientFood
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -18,23 +19,25 @@ def test_get_all_foods(
     database = unique_user.repos
 
     ## Set Up Group
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = is_private_group
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
     ## Set Up Household
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = is_private_household
     household.preferences.recipe_public = not is_private_household
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     ## Set Up Foods
-    foods = database.ingredient_foods.create_many(
-        [SaveIngredientFood(name=random_string(), group_id=unique_user.group_id) for _ in range(random_int(15, 20))]
+    foods = run_db(
+        database.ingredient_foods.create_many(
+            [SaveIngredientFood(name=random_string(), group_id=unique_user.group_id) for _ in range(random_int(15, 20))]
+        )
     )
 
     ## Test Foods
@@ -64,22 +67,24 @@ def test_get_one_food(
     database = unique_user.repos
 
     ## Set Up Group
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = is_private_group
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
     ## Set Up Household
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = is_private_household
     household.preferences.recipe_public = not is_private_household
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     ## Set Up Food
-    food = database.ingredient_foods.create(SaveIngredientFood(name=random_string(), group_id=unique_user.group_id))
+    food = run_db(
+        database.ingredient_foods.create(SaveIngredientFood(name=random_string(), group_id=unique_user.group_id))
+    )
 
     ## Test Food
     response = api_client.get(api_routes.explore_groups_group_slug_foods_item_id(unique_user.group_id, food.id))

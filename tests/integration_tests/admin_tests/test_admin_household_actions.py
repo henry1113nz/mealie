@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from mealie.repos.repository_factory import AllRepositories
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.assertion_helpers import assert_ignore_keys
 from tests.utils.factories import random_bool, random_string
@@ -68,8 +69,8 @@ def test_admin_update_household(api_client: TestClient, admin_user: TestUser, un
 
 
 def test_admin_delete_household(unfiltered_database: AllRepositories, api_client: TestClient, admin_user: TestUser):
-    group = unfiltered_database.groups.create({"name": random_string()})
-    household = unfiltered_database.households.create({"name": random_string(), "group_id": group.id})
+    group = run_db(unfiltered_database.groups.create({"name": random_string()}))
+    household = run_db(unfiltered_database.households.create({"name": random_string(), "group_id": group.id}))
     response = api_client.delete(api_routes.admin_households_item_id(household.id), headers=admin_user.token)
     assert response.status_code == 200
 

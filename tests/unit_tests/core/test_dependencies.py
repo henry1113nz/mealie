@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +6,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from mealie.core.dependencies.dependencies import get_auth_token, validate_long_live_token
+from tests.fixtures.fixture_database import run_db
 
 
 def build_request(cookie: str | None = None) -> Request:
@@ -51,6 +53,7 @@ async def test_no_credential_yields_an_empty_token():
 
 class FakeSession:
     def __init__(self):
+        self.connection_name = "default"
         self.committed = False
         self.rolled_back = False
 
@@ -66,13 +69,28 @@ class FakeApiTokenRepo:
         self.tokens = tokens
         self.query = None
 
-    def multi_query(self, query):
+    async def multi_query(self, query):
         self.query = query
         return self.tokens
 
 
+@asynccontextmanager
+async def fake_transaction(session):
+    try:
+        yield session
+    except BaseException:
+        session.rollback()
+        raise
+    else:
+        session.commit()
+
+
 def test_validate_long_live_token_commits_after_successful_lookup(monkeypatch):
     session = FakeSession()
+    monkeypatch.setattr(
+        "mealie.core.dependencies.dependencies.in_transaction",
+        lambda connection_name: fake_transaction(session),
+    )
     user = SimpleNamespace(id="user-id")
     api_tokens = FakeApiTokenRepo([SimpleNamespace(user=user)])
 
@@ -81,7 +99,7 @@ def test_validate_long_live_token_commits_after_successful_lookup(monkeypatch):
         lambda session, group_id, household_id: SimpleNamespace(api_tokens=api_tokens),
     )
 
-    assert validate_long_live_token(session, "client-token", "user-id") is user
+    assert run_db(validate_long_live_token(session, "client-token", "user-id")) is user
     assert api_tokens.query == {"token": "client-token", "user_id": "user-id"}
     assert session.committed is True
     assert session.rolled_back is False
@@ -89,6 +107,10 @@ def test_validate_long_live_token_commits_after_successful_lookup(monkeypatch):
 
 def test_validate_long_live_token_rolls_back_after_failed_lookup(monkeypatch):
     session = FakeSession()
+    monkeypatch.setattr(
+        "mealie.core.dependencies.dependencies.in_transaction",
+        lambda connection_name: fake_transaction(session),
+    )
     api_tokens = FakeApiTokenRepo([])
 
     monkeypatch.setattr(
@@ -97,7 +119,7 @@ def test_validate_long_live_token_rolls_back_after_failed_lookup(monkeypatch):
     )
 
     with pytest.raises(HTTPException):
-        validate_long_live_token(session, "client-token", "user-id")
+        run_db(validate_long_live_token(session, "client-token", "user-id"))
 
     assert session.committed is False
     assert session.rolled_back is True

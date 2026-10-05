@@ -36,8 +36,8 @@ class IngredientFoodsController(BaseUserController):
         )
 
     @router.get("", response_model=IngredientFoodPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
-        response = self.repo.page_all(
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
+        response = await self.repo.page_all(
             pagination=q,
             override=IngredientFood,
             search=search,
@@ -47,32 +47,32 @@ class IngredientFoodsController(BaseUserController):
         return response
 
     @router.post("", response_model=IngredientFood, status_code=201)
-    def create_one(self, data: CreateIngredientFood):
+    async def create_one(self, data: CreateIngredientFood):
         self.checks.can_organize()
         save_data = mapper.cast(data, SaveIngredientFood, group_id=self.group_id)
-        return self.mixins.create_one(save_data)
+        return await self.mixins.create_one(save_data)
 
     @router.put("/merge", response_model=SuccessResponse)
-    def merge_one(self, data: MergeFood):
+    async def merge_one(self, data: MergeFood):
         self.checks.can_organize()
         try:
-            self.repo.merge(data.from_food, data.to_food)
+            (await self.repo.merge(data.from_food, data.to_food))
             return SuccessResponse.respond("Successfully merged foods")
         except Exception as e:
             self.logger.error(e)
             raise HTTPException(500, "Failed to merge foods") from e
 
     @router.get("/{item_id}", response_model=IngredientFood)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=IngredientFood)
-    def update_one(self, item_id: UUID4, data: CreateIngredientFood):
+    async def update_one(self, item_id: UUID4, data: CreateIngredientFood):
         self.checks.can_organize()
         data = mapper.cast(data, SaveIngredientFood, group_id=self.group_id)
-        return self.mixins.update_one(data, item_id)
+        return await self.mixins.update_one(data, item_id)
 
     @router.delete("/{item_id}", response_model=IngredientFood)
-    def delete_one(self, item_id: UUID4):
+    async def delete_one(self, item_id: UUID4):
         self.checks.can_organize()
-        return self.mixins.delete_one(item_id)
+        return await self.mixins.delete_one(item_id)

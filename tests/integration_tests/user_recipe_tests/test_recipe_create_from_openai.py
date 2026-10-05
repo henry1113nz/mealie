@@ -14,6 +14,7 @@ from mealie.schema.openai.recipe import OpenAIRecipe, OpenAIRecipeIngredient, Op
 from mealie.services.openai import OpenAIService
 from mealie.services.recipe.recipe_data_service import RecipeDataService
 from mealie.services.scraper.scraper_strategies import RecipeScraperOpenAI
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -50,12 +51,16 @@ def openai_scraper_setup(monkeypatch: pytest.MonkeyPatch, bare_html: str, unique
     """Restrict to only RecipeScraperOpenAI, create real DB provider data, and prevent real HTTP calls."""
     monkeypatch.setattr(recipe_scraper_module, "DEFAULT_SCRAPER_STRATEGIES", [RecipeScraperOpenAI])
 
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     async def mock_resilient_fetch(url: str) -> FetchResult:
@@ -266,9 +271,11 @@ def test_create_by_url_openai_disabled(
     recipe_url: str,
 ):
     """When no default provider is set, can_scrape() returns False and the endpoint returns 400."""
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     response = api_client.post(

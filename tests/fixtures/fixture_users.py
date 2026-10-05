@@ -3,13 +3,15 @@ from collections.abc import Generator
 from uuid import UUID
 
 from pytest import fixture
-from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
-from mealie.db.db_setup import session_context
 from mealie.db.models.users.users import AuthMethod
 from mealie.repos.all_repositories import get_repositories
+from mealie.schema.household import HouseholdCreate
+from mealie.services.household_services.household_service import HouseholdService
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 
@@ -229,7 +231,17 @@ def unique_user(session: Session, api_client: TestClient):
 @fixture(scope="module")
 def unique_admin(session: Session, api_client: TestClient, unique_user: utils.TestUser):
     admin_user = next(_unique_user(session, api_client))
-    admin_user.repos.users.patch(admin_user.user_id, {"admin": True, "group_id": unique_user.group_id})
+    group_repos = get_repositories(session, group_id=unique_user._group_id, household_id=None)
+    household = run_db(HouseholdService.create_household(group_repos, HouseholdCreate(name=random_string())))
+    run_db(
+        admin_user.repos.users.patch(
+            admin_user.user_id,
+            {"admin": True, "group_id": unique_user.group_id, "household_id": household.id},
+        )
+    )
+    admin_user._group_id = unique_user._group_id
+    admin_user._household_id = household.id
+    admin_user.repos = get_repositories(session, group_id=unique_user._group_id, household_id=household.id)
     yield admin_user
 
 
@@ -329,12 +341,12 @@ def user_token(admin_token, api_client: TestClient):
 
 
 @fixture(scope="module")
-def ldap_user():
+def ldap_user(session: Session):
     # Create an LDAP user directly instead of using TestClient since we don't have
     # a LDAP service set up
-    with session_context() as session:
-        db = get_repositories(session, group_id=None, household_id=None)
-        user = db.users.create(
+    db = get_repositories(session, group_id=None, household_id=None)
+    user = run_db(
+        db.users.create(
             {
                 "username": utils.random_string(10),
                 "password": "LDAP",
@@ -344,7 +356,7 @@ def ldap_user():
                 "auth_method": AuthMethod.LDAP,
             }
         )
+    )
     yield user
-    with session_context() as session:
-        db = get_repositories(session, group_id=None, household_id=None)
-        db.users.delete(user.id)
+    db = get_repositories(session, group_id=None, household_id=None)
+    run_db(db.users.delete(user.id))

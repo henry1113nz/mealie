@@ -7,6 +7,7 @@ Read endpoints remain open; only POST/PUT/DELETE require the permission.
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -21,10 +22,10 @@ RESOURCE_IDS = [resource[0] for resource in RESOURCES]
 
 
 def set_can_organize(user: TestUser, value: bool) -> None:
-    db_user = user.repos.users.get_one(user.user_id)
+    db_user = run_db(user.repos.users.get_one(user.user_id))
     assert db_user
     db_user.can_organize = value
-    user.repos.users.update(db_user.id, db_user)
+    run_db(user.repos.users.update(db_user.id, db_user))
 
 
 def create_item(api_client: TestClient, user: TestUser, collection: str) -> str:

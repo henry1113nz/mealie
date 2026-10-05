@@ -17,12 +17,12 @@ class PublicFoodsController(BasePublicGroupExploreController):
         return self.repos.ingredient_foods
 
     @router.get("", response_model=PaginationBase[IngredientFood])
-    def get_all(
+    async def get_all(
         self,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
         search: str | None = None,
     ) -> PaginationBase[IngredientFood]:
-        response = self.ingredient_foods.page_all(
+        response = await self.ingredient_foods.page_all(
             pagination=q,
             override=IngredientFood,
             search=search,
@@ -32,8 +32,8 @@ class PublicFoodsController(BasePublicGroupExploreController):
         return response
 
     @router.get("/{item_id}", response_model=IngredientFood)
-    def get_one(self, item_id: UUID4) -> IngredientFood:
-        item = self.ingredient_foods.get_one(item_id)
+    async def get_one(self, item_id: UUID4) -> IngredientFood:
+        item = await self.ingredient_foods.get_one(item_id)
         if not item:
             raise HTTPException(404, "food not found")
 

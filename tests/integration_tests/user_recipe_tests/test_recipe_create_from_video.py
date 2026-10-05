@@ -13,6 +13,7 @@ from mealie.schema.group.ai_providers import AIProviderCreate, AIProviderSetting
 from mealie.schema.openai.recipe import OpenAIRecipe, OpenAIRecipeIngredient, OpenAIRecipeInstruction
 from mealie.services.openai import OpenAIService
 from mealie.services.scraper.scraper_strategies import RecipeScraperOpenAITranscription
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -34,16 +35,20 @@ def video_scraper_setup(monkeypatch: pytest.MonkeyPatch, unique_user: TestUser):
     # Restrict to only the video scraper so other strategies don't interfere
     monkeypatch.setattr(recipe_scraper_module, "DEFAULT_SCRAPER_STRATEGIES", [RecipeScraperOpenAITranscription])
 
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(
-            default_provider_id=provider.id,
-            audio_provider_id=provider.id,
-            image_provider_id=None,
-        ),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(
+                default_provider_id=provider.id,
+                audio_provider_id=provider.id,
+                image_provider_id=None,
+            ),
+        )
     )
 
     # Prevent any real HTTP calls during scraping
@@ -132,9 +137,11 @@ def test_create_recipe_from_video_transcription_disabled(
     monkeypatch: pytest.MonkeyPatch,
     unique_user: TestUser,
 ):
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     r = api_client.post(api_routes.recipes_create_url, json={"url": VIDEO_URL}, headers=unique_user.token)

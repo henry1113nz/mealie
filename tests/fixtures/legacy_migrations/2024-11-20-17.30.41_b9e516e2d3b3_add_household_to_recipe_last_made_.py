@@ -15,8 +15,8 @@ from sqlalchemy.orm import DeclarativeBase
 import mealie.db.migration_types
 from alembic import op
 from mealie.core.root_logger import get_logger
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.datetime import NaiveDateTime
+from tests.fixtures.legacy_types.guid import GUID
 
 # revision identifiers, used by Alembic.
 revision = "b9e516e2d3b3"

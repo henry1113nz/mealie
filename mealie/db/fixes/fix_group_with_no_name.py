@@ -1,6 +1,6 @@
 from slugify import slugify
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
+from tortoise.exceptions import IntegrityError
 
 from mealie.core import root_logger
 from mealie.db.models.group import Group
@@ -8,7 +8,7 @@ from mealie.db.models.group import Group
 logger = root_logger.get_logger("init_db")
 
 
-def _do_fix(session: Session, group: Group, counter: int):
+async def _do_fix(session: Session, group: Group, counter: int):
     if counter:
         new_name = f"{group.id} ({counter})"
     else:
@@ -16,11 +16,11 @@ def _do_fix(session: Session, group: Group, counter: int):
 
     group.name = new_name
     group.slug = slugify(group.name)
-    session.commit()
+    await group.save(using_db=session)
 
 
-def fix_group_with_no_name(session: Session):
-    groups = session.query(Group).filter(Group.name == "").all()
+async def fix_group_with_no_name(session: Session):
+    groups = await Group.filter(name="").using_db(session)
     if not groups:
         logger.debug("No group found with an empty name; skipping fix")
         return
@@ -40,10 +40,9 @@ def fix_group_with_no_name(session: Session):
 
             counter = i + offset
             try:
-                _do_fix(session, group, counter)
+                await _do_fix(session, group, counter)
                 break
             except IntegrityError:
-                session.rollback()
                 attempts += 1
                 offset += 1
                 continue

@@ -20,7 +20,7 @@ class PublicCookbooksController(BasePublicHouseholdExploreController):
         return self.cross_household_repos.cookbooks
 
     @router.get("", response_model=PaginationBase[ReadCookBook])
-    def get_all(
+    async def get_all(
         self,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
         search: str | None = None,
@@ -28,7 +28,7 @@ class PublicCookbooksController(BasePublicHouseholdExploreController):
         public_filter = "(household.preferences.privateHousehold = FALSE AND public = TRUE)"
         q.query_filter = QueryFilterBuilder.combine_filters(q.query_filter, public_filter)
 
-        response = self.cross_household_cookbooks.page_all(
+        response = await self.cross_household_cookbooks.page_all(
             pagination=q,
             override=ReadCookBook,
             search=search,
@@ -38,7 +38,7 @@ class PublicCookbooksController(BasePublicHouseholdExploreController):
         return response
 
     @router.get("/{item_id}", response_model=ReadCookBook)
-    def get_one(self, item_id: UUID4 | str) -> ReadCookBook:
+    async def get_one(self, item_id: UUID4 | str) -> ReadCookBook:
         NOT_FOUND_EXCEPTION = HTTPException(404, "cookbook not found")
         if isinstance(item_id, UUID):
             match_attr = "id"
@@ -48,11 +48,11 @@ class PublicCookbooksController(BasePublicHouseholdExploreController):
                 match_attr = "id"
             except ValueError:
                 match_attr = "slug"
-        cookbook = self.cross_household_cookbooks.get_one(item_id, match_attr)
+        cookbook = await self.cross_household_cookbooks.get_one(item_id, match_attr)
 
         if not cookbook or not cookbook.public:
             raise NOT_FOUND_EXCEPTION
-        household = self.repos.households.get_one(cookbook.household_id)
+        household = await self.repos.households.get_one(cookbook.household_id)
         if not household or household.preferences.private_household:
             raise NOT_FOUND_EXCEPTION
 

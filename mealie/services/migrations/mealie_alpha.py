@@ -62,7 +62,7 @@ class MealieAlphaMigrator(BaseMigrator):
 
         return Recipe(**recipe)
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(self.archive) as zip_file:
                 zip_file.extractall(tmpdir)
@@ -89,7 +89,7 @@ class MealieAlphaMigrator(BaseMigrator):
                         )
                     )
 
-            results = self.import_recipes_to_database(recipes)
+            results = await self.import_recipes_to_database(recipes)
             for slug, recipe_id, status in results:
                 if not status:
                     continue

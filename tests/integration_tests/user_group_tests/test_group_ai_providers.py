@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from mealie.schema.group.ai_providers import AIProviderCreate, AIProviderSettingsUpdate
 from mealie.services.openai import OpenAIService
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string, user_registration_factory
 from tests.utils.fixture_schemas import TestUser
@@ -55,8 +56,10 @@ def test_create_provider(api_client: TestClient, unique_user: TestUser):
 
 def test_get_provider(api_client: TestClient, unique_user: TestUser):
     # Create a provider first
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
 
     try:
@@ -79,8 +82,10 @@ def test_get_provider_not_found(api_client: TestClient, unique_user: TestUser):
 
 
 def test_update_provider(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+        )
     )
 
     try:
@@ -105,8 +110,10 @@ def test_update_provider_rotates_the_api_key(api_client: TestClient, unique_user
 
     The key is write-only, so the response can't confirm this; read it back off the repository.
     """
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+        )
     )
 
     try:
@@ -117,7 +124,7 @@ def test_update_provider_rotates_the_api_key(api_client: TestClient, unique_user
         )
         assert response.status_code == 200
 
-        stored = unique_user.repos.group_ai_providers.get_one(provider.id)
+        stored = run_db(unique_user.repos.group_ai_providers.get_one(provider.id))
         assert stored is not None
         assert stored.api_key == "rotated-key"
     finally:
@@ -127,8 +134,10 @@ def test_update_provider_rotates_the_api_key(api_client: TestClient, unique_user
 def test_update_provider_without_an_api_key_keeps_the_stored_one(api_client: TestClient, unique_user: TestUser):
     """Editing other fields must not wipe the key, since the client never receives it to resend."""
 
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+        )
     )
 
     try:
@@ -140,7 +149,7 @@ def test_update_provider_without_an_api_key_keeps_the_stored_one(api_client: Tes
         assert response.status_code == 200
         assert response.json()["model"] == "gpt-4-turbo"
 
-        stored = unique_user.repos.group_ai_providers.get_one(provider.id)
+        stored = run_db(unique_user.repos.group_ai_providers.get_one(provider.id))
         assert stored is not None
         assert stored.api_key == "original-key"
     finally:
@@ -148,8 +157,10 @@ def test_update_provider_without_an_api_key_keeps_the_stored_one(api_client: Tes
 
 
 def test_delete_provider(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
 
     response = api_client.delete(
@@ -181,8 +192,10 @@ def test_get_settings(api_client: TestClient, unique_user: TestUser):
 
 
 def test_update_settings_set_default_provider(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
 
     try:
@@ -193,22 +206,30 @@ def test_update_settings_set_default_provider(api_client: TestClient, unique_use
         settings = response.json()
         assert settings["defaultProviderId"] == str(provider.id)
     finally:
-        unique_user.repos.group_ai_provider_settings.update(
-            unique_user.repos.group_id,
-            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        run_db(
+            unique_user.repos.group_ai_provider_settings.update(
+                unique_user.repos.group_id,
+                AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+            )
         )
         api_client.delete(api_routes.groups_ai_providers_providers_provider_id(provider.id), headers=unique_user.token)
 
 
 def test_update_settings_all_provider_types(api_client: TestClient, unique_user: TestUser):
-    default_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    default_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    audio_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="whisper-1", api_key="test-key")
+    audio_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="whisper-1", api_key="test-key")
+        )
     )
-    image_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="dall-e-3", api_key="test-key")
+    image_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="dall-e-3", api_key="test-key")
+        )
     )
 
     try:
@@ -225,21 +246,27 @@ def test_update_settings_all_provider_types(api_client: TestClient, unique_user:
         assert settings["audioProviderId"] == str(audio_provider.id)
         assert settings["imageProviderId"] == str(image_provider.id)
     finally:
-        unique_user.repos.group_ai_provider_settings.update(
-            unique_user.repos.group_id,
-            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        run_db(
+            unique_user.repos.group_ai_provider_settings.update(
+                unique_user.repos.group_id,
+                AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+            )
         )
         for p in [default_provider, audio_provider, image_provider]:
             api_client.delete(api_routes.groups_ai_providers_providers_provider_id(p.id), headers=unique_user.token)
 
 
 def test_update_settings_clear_providers(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     try:
@@ -255,8 +282,10 @@ def test_update_settings_clear_providers(api_client: TestClient, unique_user: Te
 
 
 def test_settings_providers_list_populated(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
 
     try:
@@ -275,12 +304,16 @@ def test_settings_providers_list_populated(api_client: TestClient, unique_user: 
 
 
 def test_delete_default_provider_clears_settings(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     # Delete the provider
@@ -290,25 +323,31 @@ def test_delete_default_provider_clears_settings(api_client: TestClient, unique_
     assert response.status_code == 200
 
     # Settings should now have nulled-out default
-    settings = unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id)
+    settings = run_db(unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id))
     assert settings is not None
     assert settings.default_provider_id is None
 
 
 def test_delete_audio_provider_clears_settings(api_client: TestClient, unique_user: TestUser):
-    default_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    default_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    audio_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="whisper-1", api_key="test-key")
+    audio_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="whisper-1", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(
-            default_provider_id=default_provider.id,
-            audio_provider_id=audio_provider.id,
-            image_provider_id=None,
-        ),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(
+                default_provider_id=default_provider.id,
+                audio_provider_id=audio_provider.id,
+                image_provider_id=None,
+            ),
+        )
     )
 
     try:
@@ -317,14 +356,16 @@ def test_delete_audio_provider_clears_settings(api_client: TestClient, unique_us
             api_routes.groups_ai_providers_providers_provider_id(audio_provider.id), headers=unique_user.token
         )
 
-        settings = unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id)
+        settings = run_db(unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id))
         assert settings is not None
         assert settings.audio_provider_id is None
         assert settings.default_provider_id == default_provider.id
     finally:
-        unique_user.repos.group_ai_provider_settings.update(
-            unique_user.repos.group_id,
-            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        run_db(
+            unique_user.repos.group_ai_provider_settings.update(
+                unique_user.repos.group_id,
+                AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+            )
         )
         api_client.delete(
             api_routes.groups_ai_providers_providers_provider_id(default_provider.id), headers=unique_user.token
@@ -332,19 +373,25 @@ def test_delete_audio_provider_clears_settings(api_client: TestClient, unique_us
 
 
 def test_delete_image_provider_clears_settings(api_client: TestClient, unique_user: TestUser):
-    default_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    default_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
-    image_provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="dall-e-3", api_key="test-key")
+    image_provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="dall-e-3", api_key="test-key")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(
-            default_provider_id=default_provider.id,
-            audio_provider_id=None,
-            image_provider_id=image_provider.id,
-        ),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(
+                default_provider_id=default_provider.id,
+                audio_provider_id=None,
+                image_provider_id=image_provider.id,
+            ),
+        )
     )
 
     try:
@@ -353,14 +400,16 @@ def test_delete_image_provider_clears_settings(api_client: TestClient, unique_us
             api_routes.groups_ai_providers_providers_provider_id(image_provider.id), headers=unique_user.token
         )
 
-        settings = unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id)
+        settings = run_db(unique_user.repos.group_ai_provider_settings.get_one(unique_user.repos.group_id))
         assert settings is not None
         assert settings.image_provider_id is None
         assert settings.default_provider_id == default_provider.id
     finally:
-        unique_user.repos.group_ai_provider_settings.update(
-            unique_user.repos.group_id,
-            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        run_db(
+            unique_user.repos.group_ai_provider_settings.update(
+                unique_user.repos.group_id,
+                AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+            )
         )
         api_client.delete(
             api_routes.groups_ai_providers_providers_provider_id(default_provider.id), headers=unique_user.token
@@ -376,30 +425,30 @@ def test_providers_require_can_manage_get(api_client: TestClient, user_tuple: li
     usr, _ = user_tuple
 
     # Ensure user does NOT have can_manage
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
     # Create a provider so there's something to GET (using repos directly to bypass permission check)
-    provider = usr.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        usr.repos.group_ai_providers.create(AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key"))
     )
 
     try:
         response = api_client.get(api_routes.groups_ai_providers_providers_provider_id(provider.id), headers=usr.token)
         assert response.status_code == 403
     finally:
-        usr.repos.group_ai_providers.delete(provider.id)
+        run_db(usr.repos.group_ai_providers.delete(provider.id))
 
 
 def test_providers_require_can_manage_create(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
     data = {"name": random_string(), "model": "gpt-4o", "apiKey": "test-key"}
     response = api_client.post(api_routes.groups_ai_providers_providers, json=data, headers=usr.token)
@@ -409,13 +458,13 @@ def test_providers_require_can_manage_create(api_client: TestClient, user_tuple:
 def test_providers_require_can_manage_update(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
-    provider = usr.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        usr.repos.group_ai_providers.create(AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key"))
     )
 
     try:
@@ -425,19 +474,19 @@ def test_providers_require_can_manage_update(api_client: TestClient, user_tuple:
         )
         assert response.status_code == 403
     finally:
-        usr.repos.group_ai_providers.delete(provider.id)
+        run_db(usr.repos.group_ai_providers.delete(provider.id))
 
 
 def test_providers_require_can_manage_delete(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
-    provider = usr.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        usr.repos.group_ai_providers.create(AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key"))
     )
 
     try:
@@ -446,16 +495,16 @@ def test_providers_require_can_manage_delete(api_client: TestClient, user_tuple:
         )
         assert response.status_code == 403
     finally:
-        usr.repos.group_ai_providers.delete(provider.id)
+        run_db(usr.repos.group_ai_providers.delete(provider.id))
 
 
 def test_settings_require_can_manage_get(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
     response = api_client.get(api_routes.groups_ai_providers_settings, headers=usr.token)
     assert response.status_code == 403
@@ -464,10 +513,10 @@ def test_settings_require_can_manage_get(api_client: TestClient, user_tuple: lis
 def test_settings_require_can_manage_update(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
     update = {"defaultProviderId": None, "audioProviderId": None, "imageProviderId": None}
     response = api_client.put(api_routes.groups_ai_providers_settings, json=update, headers=usr.token)
@@ -496,8 +545,10 @@ def test_api_key_not_in_create_response(api_client: TestClient, unique_user: Tes
 
 
 def test_api_key_not_in_get_response(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="super-secret-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="super-secret-key")
+        )
     )
 
     try:
@@ -515,8 +566,10 @@ def test_api_key_not_in_get_response(api_client: TestClient, unique_user: TestUs
 
 
 def test_api_key_not_in_update_response(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+        )
     )
 
     try:
@@ -538,12 +591,16 @@ def test_api_key_not_in_update_response(api_client: TestClient, unique_user: Tes
 
 
 def test_api_key_not_in_settings_response(api_client: TestClient, unique_user: TestUser):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="secret-in-settings")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="secret-in-settings")
+        )
     )
-    unique_user.repos.group_ai_provider_settings.update(
-        unique_user.repos.group_id,
-        AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+    run_db(
+        unique_user.repos.group_ai_provider_settings.update(
+            unique_user.repos.group_id,
+            AIProviderSettingsUpdate(default_provider_id=provider.id, audio_provider_id=None, image_provider_id=None),
+        )
     )
 
     try:
@@ -555,17 +612,21 @@ def test_api_key_not_in_settings_response(api_client: TestClient, unique_user: T
         assert "api_key" not in data
         assert "secret-in-settings" not in str(data)
     finally:
-        unique_user.repos.group_ai_provider_settings.update(
-            unique_user.repos.group_id,
-            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        run_db(
+            unique_user.repos.group_ai_provider_settings.update(
+                unique_user.repos.group_id,
+                AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+            )
         )
         api_client.delete(api_routes.groups_ai_providers_providers_provider_id(provider.id), headers=unique_user.token)
 
 
 def test_api_key_not_in_groups_self_response(api_client: TestClient, unique_user: TestUser):
     """Ensure the groups/self endpoint does not expose any AI provider data including API keys."""
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="groups-self-secret")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="groups-self-secret")
+        )
     )
 
     try:
@@ -639,8 +700,10 @@ def test_test_unsaved_provider_never_persists(api_client: TestClient, unique_use
 
 
 def test_test_saved_provider_success(api_client: TestClient, unique_user: TestUser, monkeypatch):
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
     _patch_ping(monkeypatch, succeeds=True)
 
@@ -658,8 +721,10 @@ def test_test_saved_provider_uses_override_values(api_client: TestClient, unique
     # Simulates editing a provider (changing the model) and testing before saving, without
     # entering a new API key. The override's model should be what actually gets tested, not the
     # one still in the database, and the saved API key should still be used since none was given.
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="original-key")
+        )
     )
 
     seen_providers = []
@@ -697,10 +762,10 @@ def test_test_saved_provider_not_found(api_client: TestClient, unique_user: Test
 def test_test_unsaved_provider_requires_can_manage(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
     data = {"name": random_string(), "model": "gpt-4o", "apiKey": "test-key"}
     response = api_client.post(api_routes.groups_ai_providers_providers_test, json=data, headers=usr.token)
@@ -710,14 +775,14 @@ def test_test_unsaved_provider_requires_can_manage(api_client: TestClient, user_
 def test_test_saved_provider_requires_can_manage(api_client: TestClient, user_tuple: list[TestUser]):
     usr, _ = user_tuple
 
-    provider = usr.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        usr.repos.group_ai_providers.create(AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key"))
     )
 
-    user = usr.repos.users.get_one(usr.user_id)
+    user = run_db(usr.repos.users.get_one(usr.user_id))
     assert user
     user.can_manage = False
-    usr.repos.users.update(user.id, user)
+    run_db(usr.repos.users.update(user.id, user))
 
     try:
         response = api_client.post(
@@ -725,7 +790,7 @@ def test_test_saved_provider_requires_can_manage(api_client: TestClient, user_tu
         )
         assert response.status_code == 403
     finally:
-        usr.repos.group_ai_providers.delete(provider.id)
+        run_db(usr.repos.group_ai_providers.delete(provider.id))
 
 
 # ==========================================

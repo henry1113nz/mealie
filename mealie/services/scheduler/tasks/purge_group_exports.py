@@ -1,37 +1,34 @@
 import datetime
 from pathlib import Path
 
-from sqlalchemy import cast, select
-
 from mealie.core import root_logger
 from mealie.core.config import get_app_dirs
 from mealie.db.db_setup import session_context
-from mealie.db.models._model_utils.datetime import NaiveDateTime
 from mealie.db.models.group.exports import GroupDataExportsModel
 
 ONE_DAY_AS_MINUTES = 1440
 
 
-def purge_group_data_exports(max_minutes_old=ONE_DAY_AS_MINUTES):
+async def purge_group_data_exports(max_minutes_old=ONE_DAY_AS_MINUTES):
     """Purges all group exports after x days"""
     logger = root_logger.get_logger()
 
     logger.debug("purging group data exports")
     limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=max_minutes_old)
 
-    with session_context() as session:
-        stmt = select(GroupDataExportsModel).filter(cast(GroupDataExportsModel.expires, NaiveDateTime) <= limit)
-        results = session.execute(stmt).scalars().all()
-
-        total_removed = 0
+    async with session_context() as session:
+        candidates = await GroupDataExportsModel.all().using_db(session)
+        results = []
+        for candidate in candidates:
+            expires = datetime.datetime.fromisoformat(candidate.expires)
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=datetime.UTC)
+            if expires <= limit:
+                results.append(candidate)
         for result in results:
-            session.delete(result)
+            await result.delete(using_db=session)
             Path(result.path).unlink(missing_ok=True)
-            total_removed += 1
-
-        session.commit()
-
-        logger.info(f"finished purging group data exports. {total_removed} exports removed from group data")
+        logger.info(f"finished purging group data exports. {len(results)} exports removed from group data")
 
 
 def purge_excess_files() -> None:
@@ -42,8 +39,7 @@ def purge_excess_files() -> None:
     limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=ONE_DAY_AS_MINUTES * 2)
 
     for file in directories.GROUPS_DIR.glob("**/export/*.zip"):
-        # TODO: fix comparison types
-        if file.stat().st_mtime < limit:  # type: ignore
+        if file.stat().st_mtime < limit.timestamp():
             file.unlink()
             logger.debug(f"excess group file removed '{file}'")
 

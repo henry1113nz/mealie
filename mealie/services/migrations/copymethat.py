@@ -83,7 +83,7 @@ class CopyMeThatMigrator(BaseMigrator):
 
         return recipe_dict
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(self.archive) as zip_file:
                 zip_file.extractall(tmpdir)
@@ -109,8 +109,8 @@ class CopyMeThatMigrator(BaseMigrator):
                                 )
                             )
 
-            recipes = [self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
-            results = self.import_recipes_to_database(recipes)
+            recipes = [(await self.clean_recipe_dictionary(x)) for x in recipes_as_dicts]
+            results = await self.import_recipes_to_database(recipes)
             recipe_lookup = {r.slug: r for r in recipes}
             for slug, recipe_id, status in results:
                 if status:

@@ -14,7 +14,7 @@ import mealie.db.migration_types
 from mealie.core.config import ENV
 from mealie.core.root_logger import get_logger
 from mealie.core.settings.settings import get_secrets_dir
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.guid import GUID
 
 # revision identifiers, used by Alembic.
 revision = "2187537c52b8"

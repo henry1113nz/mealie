@@ -2,9 +2,9 @@ import sqlite3
 from collections.abc import Callable
 from logging import Logger
 
-import sqlalchemy.exc
 from fastapi import HTTPException, status
 from pydantic import UUID4, BaseModel
+from tortoise.exceptions import DoesNotExist, IntegrityError
 
 from mealie.core.config import get_app_settings
 from mealie.repos.repository_generic import RepositoryGeneric
@@ -15,21 +15,16 @@ def is_postgres() -> bool:
     return get_app_settings().DB_ENGINE == "postgres"
 
 
-def is_unique_violation(ex: sqlalchemy.exc.IntegrityError) -> bool:
-
-    try:
-        import psycopg2  # noqa: I001
-
-        if is_postgres() and isinstance(ex.orig, psycopg2.Error):
-            return getattr(ex.orig, "pgcode", None) == "23505"
-
-    except ImportError:
-        pass
-
-    if isinstance(ex.orig, sqlite3.Error):
-        return getattr(ex.orig, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE
-
-    return False
+def is_unique_violation(ex: IntegrityError) -> bool:
+    """Inspect driver errors without depending on a particular database driver."""
+    original = getattr(ex, "orig", None) or ex.__cause__
+    if original is None and ex.args and isinstance(ex.args[0], BaseException):
+        original = ex.args[0]
+    if original is None:
+        original = ex
+    if getattr(original, "sqlstate", None) == "23505" or getattr(original, "pgcode", None) == "23505":
+        return True
+    return getattr(original, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE
 
 
 class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
@@ -71,17 +66,16 @@ class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
     def handle_exception(self, ex: Exception) -> None:
         # Cleanup
         self.logger.exception(ex)
-        self.repo.session.rollback()
 
         # Respond
         msg = self.get_exception_message(ex)
 
-        if isinstance(ex, sqlalchemy.exc.NoResultFound):
+        if isinstance(ex, DoesNotExist):
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,
                 detail=ErrorResponse.respond(message=msg, exception=str(ex)),
             )
-        elif isinstance(ex, sqlalchemy.exc.IntegrityError):
+        elif isinstance(ex, IntegrityError):
             if is_unique_violation(ex):
                 msg = "This item already exists."
             raise HTTPException(
@@ -94,17 +88,17 @@ class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
                 detail=ErrorResponse.respond(message=msg, exception=str(ex)),
             )
 
-    def create_one(self, data: C) -> R | None:
+    async def create_one(self, data: C) -> R | None:
         item: R | None = None
         try:
-            item = self.repo.create(data)
+            item = await self.repo.create(data)
         except Exception as ex:
             self.handle_exception(ex)
 
         return item
 
-    def get_one(self, item_id: int | str | UUID4, key: str | None = None) -> R:
-        item = self.repo.get_one(item_id, key)
+    async def get_one(self, item_id: int | str | UUID4, key: str | None = None) -> R:
+        item = await self.repo.get_one(item_id, key)
 
         if not item:
             raise HTTPException(
@@ -114,24 +108,8 @@ class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
 
         return item
 
-    def update_one(self, data: U, item_id: int | str | UUID4) -> R:
-        item = self.repo.get_one(item_id)
-
-        if not item:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND,
-                detail=ErrorResponse.respond(message="Not found."),
-            )
-
-        try:
-            item = self.repo.update(item_id, data)  # type: ignore
-        except Exception as ex:
-            self.handle_exception(ex)
-
-        return item
-
-    def patch_one(self, data: U, item_id: int | str | UUID4) -> R:
-        item = self.repo.get_one(item_id)
+    async def update_one(self, data: U, item_id: int | str | UUID4) -> R:
+        item = await self.repo.get_one(item_id)
 
         if not item:
             raise HTTPException(
@@ -140,16 +118,32 @@ class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
             )
 
         try:
-            item = self.repo.patch(item_id, data.model_dump(exclude_unset=True, exclude_defaults=True))
+            item = await self.repo.update(item_id, data)  # type: ignore
         except Exception as ex:
             self.handle_exception(ex)
 
         return item
 
-    def delete_one(self, item_id: int | str | UUID4) -> R | None:
+    async def patch_one(self, data: U, item_id: int | str | UUID4) -> R:
+        item = await self.repo.get_one(item_id)
+
+        if not item:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message="Not found."),
+            )
+
+        try:
+            item = await self.repo.patch(item_id, data.model_dump(exclude_unset=True, exclude_defaults=True))
+        except Exception as ex:
+            self.handle_exception(ex)
+
+        return item
+
+    async def delete_one(self, item_id: int | str | UUID4) -> R | None:
         item: R | None = None
         try:
-            item = self.repo.delete(item_id)
+            item = await self.repo.delete(item_id)
             self.logger.info(f"Deleting item with id {item_id}")
         except Exception as ex:
             self.handle_exception(ex)

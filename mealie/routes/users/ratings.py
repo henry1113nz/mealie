@@ -20,7 +20,7 @@ class UserRatingsController(BaseUserController):
     def group_recipes(self):
         return get_repositories(self.session, group_id=self.group_id, household_id=None).recipes
 
-    def get_recipe_or_404(self, slug_or_id: str | UUID):
+    async def get_recipe_or_404(self, slug_or_id: str | UUID):
         """Fetches a recipe by slug or id, or raises a 404 error if not found."""
         if isinstance(slug_or_id, str):
             try:
@@ -29,9 +29,9 @@ class UserRatingsController(BaseUserController):
                 pass
 
         if isinstance(slug_or_id, UUID):
-            recipe = self.group_recipes.get_one(slug_or_id, key="id")
+            recipe = await self.group_recipes.get_one(slug_or_id, key="id")
         else:
-            recipe = self.group_recipes.get_one(slug_or_id, key="slug")
+            recipe = await self.group_recipes.get_one(slug_or_id, key="slug")
 
         if not recipe:
             raise HTTPException(
@@ -45,28 +45,30 @@ class UserRatingsController(BaseUserController):
     async def get_ratings(self, id: UUID4):
         """Get user's rated recipes"""
         assert_user_change_allowed(id, self.user, self.user)
-        return UserRatings(ratings=self.repos.user_ratings.get_by_user(id))
+        return UserRatings(ratings=(await self.repos.user_ratings.get_by_user(id)))
 
     @router.get("/{id}/favorites", response_model=UserRatings[UserRatingOut])
     async def get_favorites(self, id: UUID4):
         """Get user's favorited recipes"""
         assert_user_change_allowed(id, self.user, self.user)
-        return UserRatings(ratings=self.repos.user_ratings.get_by_user(id, favorites_only=True))
+        return UserRatings(ratings=(await self.repos.user_ratings.get_by_user(id, favorites_only=True)))
 
     @router.post("/{id}/ratings/{slug}")
-    def set_rating(self, id: UUID4, slug: str, data: UserRatingUpdate):
+    async def set_rating(self, id: UUID4, slug: str, data: UserRatingUpdate):
         """Sets the user's rating for a recipe"""
         assert_user_change_allowed(id, self.user, self.user)
 
-        recipe = self.get_recipe_or_404(slug)
-        user_rating = self.repos.user_ratings.get_by_user_and_recipe(id, recipe.id)
+        recipe = await self.get_recipe_or_404(slug)
+        user_rating = await self.repos.user_ratings.get_by_user_and_recipe(id, recipe.id)
         if not user_rating:
-            self.repos.user_ratings.create(
-                UserRatingCreate(
-                    user_id=id,
-                    recipe_id=recipe.id,
-                    rating=data.rating,
-                    is_favorite=data.is_favorite or False,
+            (
+                await self.repos.user_ratings.create(
+                    UserRatingCreate(
+                        user_id=id,
+                        recipe_id=recipe.id,
+                        rating=data.rating,
+                        is_favorite=data.is_favorite or False,
+                    )
                 )
             )
         else:
@@ -75,14 +77,14 @@ class UserRatingsController(BaseUserController):
             if data.is_favorite is not None:
                 user_rating.is_favorite = data.is_favorite
 
-            self.repos.user_ratings.update(user_rating.id, user_rating)
+            (await self.repos.user_ratings.update(user_rating.id, user_rating))
 
     @router.post("/{id}/favorites/{slug}")
-    def add_favorite(self, id: UUID4, slug: str):
+    async def add_favorite(self, id: UUID4, slug: str):
         """Adds a recipe to the user's favorites"""
-        self.set_rating(id, slug, data=UserRatingUpdate(is_favorite=True))
+        (await self.set_rating(id, slug, data=UserRatingUpdate(is_favorite=True)))
 
     @router.delete("/{id}/favorites/{slug}")
-    def remove_favorite(self, id: UUID4, slug: str):
+    async def remove_favorite(self, id: UUID4, slug: str):
         """Removes a recipe from the user's favorites"""
-        self.set_rating(id, slug, data=UserRatingUpdate(is_favorite=False))
+        (await self.set_rating(id, slug, data=UserRatingUpdate(is_favorite=False)))

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-import sqlalchemy as sa
+from tortoise.expressions import Q
 
 from mealie.db.models.recipe.ingredient import IngredientFoodSubstitutionModel
 from mealie.schema.household.group_shopping_list import ShoppingListItemCreate, ShoppingListSave
@@ -12,6 +12,7 @@ from mealie.schema.recipe.recipe_ingredient import (
     RecipeIngredientSubstitution,
     SaveIngredientFood,
 )
+from tests.fixtures.fixture_database import run_db
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -21,30 +22,36 @@ def test_food_merger(unique_user: TestUser):
     database = unique_user.repos
     slug1 = random_string(10)
 
-    food_1 = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food_1 = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
-    food_2 = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food_2 = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
-    recipe = database.recipes.create(
-        Recipe(
-            name=slug1,
-            user_id=unique_user.user_id,
-            group_id=UUID(unique_user.group_id),
-            recipe_ingredient=[
-                RecipeIngredient(note="", food=food_1),  # type: ignore
-                RecipeIngredient(note="", food=food_2),  # type: ignore
-            ],
-        )  # type: ignore
+    recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=slug1,
+                user_id=unique_user.user_id,
+                group_id=UUID(unique_user.group_id),
+                recipe_ingredient=[
+                    RecipeIngredient(note="", food=food_1),  # type: ignore
+                    RecipeIngredient(note="", food=food_2),  # type: ignore
+                ],
+            )  # type: ignore
+        )
     )
 
     # Santiy check make sure recipe got created
@@ -53,9 +60,9 @@ def test_food_merger(unique_user: TestUser):
     for ing in recipe.recipe_ingredient:
         assert ing.food.id in [food_1.id, food_2.id]  # type: ignore
 
-    database.ingredient_foods.merge(food_2.id, food_1.id)
+    run_db(database.ingredient_foods.merge(food_2.id, food_1.id))
 
-    recipe = database.recipes.get_one(recipe.slug)
+    recipe = run_db(database.recipes.get_one(recipe.slug))
     assert recipe
 
     for ingredient in recipe.recipe_ingredient:
@@ -66,39 +73,49 @@ def test_food_merger_with_shopping_list_reference(unique_user: TestUser):
     """Merging a food that a shopping list item points at should move the reference, not fail."""
     database = unique_user.repos
 
-    food_1 = database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
-    food_2 = database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+    food_1 = run_db(
+        database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+    )
+    food_2 = run_db(
+        database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+    )
 
-    shopping_list = database.group_shopping_lists.create(
-        ShoppingListSave(
-            name=random_string(10),
-            group_id=unique_user.group_id,
-            user_id=unique_user.user_id,
+    shopping_list = run_db(
+        database.group_shopping_lists.create(
+            ShoppingListSave(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+                user_id=unique_user.user_id,
+            )
         )
     )
 
-    item = database.group_shopping_list_item.create(
-        ShoppingListItemCreate(
-            shopping_list_id=shopping_list.id,
-            note=random_string(10),
-            quantity=1,
-            food_id=food_2.id,
+    item = run_db(
+        database.group_shopping_list_item.create(
+            ShoppingListItemCreate(
+                shopping_list_id=shopping_list.id,
+                note=random_string(10),
+                quantity=1,
+                food_id=food_2.id,
+            )
         )
     )
 
-    database.ingredient_foods.merge(food_2.id, food_1.id)
+    run_db(database.ingredient_foods.merge(food_2.id, food_1.id))
 
-    updated_item = database.group_shopping_list_item.get_one(item.id)
+    updated_item = run_db(database.group_shopping_list_item.get_one(item.id))
     assert updated_item
     assert updated_item.food_id == food_1.id
 
 
 def create_food_with_substitutions(user: TestUser, *, substitutions=None) -> IngredientFood:
-    return user.repos.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=user.group_id,
-            substitutions=substitutions or [],
+    return run_db(
+        user.repos.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=user.group_id,
+                substitutions=substitutions or [],
+            )
         )
     )
 
@@ -106,23 +123,17 @@ def create_food_with_substitutions(user: TestUser, *, substitutions=None) -> Ing
 def substitution_pairs(user: TestUser, food_id) -> set[tuple]:
     """The (substitute food id, note) pairs currently stored against a food."""
 
-    food = user.repos.ingredient_foods.get_one(food_id)
+    food = run_db(user.repos.ingredient_foods.get_one(food_id))
     assert food
     return {(sub.substitute_food_id, sub.note) for sub in food.substitutions}
 
 
 def count_edges_touching(user: TestUser, food_id) -> int:
-    stmt = (
-        sa.select(sa.func.count())
-        .select_from(IngredientFoodSubstitutionModel)
-        .where(
-            sa.or_(
-                IngredientFoodSubstitutionModel.food_id == food_id,
-                IngredientFoodSubstitutionModel.substitute_food_id == food_id,
-            )
-        )
+    return run_db(
+        IngredientFoodSubstitutionModel.filter(Q(food_id=food_id) | Q(substitute_food_id=food_id))
+        .using_db(user.repos.session)
+        .count()
     )
-    return user.repos.session.execute(stmt).scalar_one()
 
 
 def test_food_merger_moves_outbound_substitutions(unique_user: TestUser):
@@ -134,7 +145,7 @@ def test_food_merger_moves_outbound_substitutions(unique_user: TestUser):
         unique_user, substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=substitute.id)]
     )
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert substitution_pairs(unique_user, target.id) == {(substitute.id, None)}
 
@@ -148,7 +159,7 @@ def test_food_merger_repoints_inbound_substitutions(unique_user: TestUser):
         unique_user, substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=source.id)]
     )
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert substitution_pairs(unique_user, referrer.id) == {(target.id, None)}
 
@@ -163,17 +174,19 @@ def test_food_merger_drops_resulting_self_edges(unique_user: TestUser):
     source = create_food_with_substitutions(
         unique_user, substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=target.id)]
     )
-    unique_user.repos.ingredient_foods.update(
-        target.id,
-        SaveIngredientFood(
-            id=target.id,
-            name=target.name,
-            group_id=unique_user.group_id,
-            substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=source.id)],
-        ),
+    run_db(
+        unique_user.repos.ingredient_foods.update(
+            target.id,
+            SaveIngredientFood(
+                id=target.id,
+                name=target.name,
+                group_id=unique_user.group_id,
+                substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=source.id)],
+            ),
+        )
     )
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert substitution_pairs(unique_user, target.id) == set()
     assert count_edges_touching(unique_user, target.id) == 0
@@ -190,7 +203,7 @@ def test_food_merger_collapses_duplicate_substitutions(unique_user: TestUser):
         unique_user, substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=substitute.id, note="drop me")]
     )
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert substitution_pairs(unique_user, target.id) == {(substitute.id, "keep me")}
 
@@ -207,7 +220,7 @@ def test_food_merger_keeps_note_only_substitutions(unique_user: TestUser):
         ],
     )
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert substitution_pairs(unique_user, target.id) == {
         (None, "water and a bouillon cube"),
@@ -230,7 +243,7 @@ def test_food_delete_leaves_no_orphaned_substitutions(unique_user: TestUser):
         unique_user, substitutions=[CreateIngredientFoodSubstitution(substitute_food_id=doomed.id)]
     )
 
-    unique_user.repos.ingredient_foods.delete(doomed.id)
+    run_db(unique_user.repos.ingredient_foods.delete(doomed.id))
 
     assert count_edges_touching(unique_user, doomed.id) == 0
     assert substitution_pairs(unique_user, referrer.id) == set()
@@ -240,29 +253,31 @@ def test_food_delete_leaves_no_orphaned_substitutions(unique_user: TestUser):
 def create_recipe_with_ingredient(
     user: TestUser, food: IngredientFood | None, substitute_food_ids: list | None = None
 ) -> Recipe:
-    return user.repos.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=user.user_id,
-            group_id=UUID(user.group_id),
-            recipe_ingredient=[
-                RecipeIngredient(
-                    note="",
-                    food=food,  # type: ignore
-                    substitutions=[
-                        RecipeIngredientSubstitution(substitute_food_id=food_id)
-                        for food_id in substitute_food_ids or []
-                    ],
-                )
-            ],
-        )  # type: ignore
+    return run_db(
+        user.repos.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=user.user_id,
+                group_id=UUID(user.group_id),
+                recipe_ingredient=[
+                    RecipeIngredient(
+                        note="",
+                        food=food,  # type: ignore
+                        substitutions=[
+                            RecipeIngredientSubstitution(substitute_food_id=food_id)
+                            for food_id in substitute_food_ids or []
+                        ],
+                    )
+                ],
+            )  # type: ignore
+        )
     )
 
 
 def recipe_substitute_ids(user: TestUser, recipe: Recipe) -> list:
     """The substitute food ids stored against the recipe's only ingredient."""
 
-    stored = user.repos.recipes.get_one(recipe.slug)
+    stored = run_db(user.repos.recipes.get_one(recipe.slug))
     assert stored
     return [sub.substitute_food_id for sub in stored.recipe_ingredient[0].substitutions]
 
@@ -280,7 +295,7 @@ def test_food_delete_removes_recipe_substitutions(unique_user: TestUser):
 
     assert recipe_substitute_ids(unique_user, recipe) == [doomed.id]
 
-    unique_user.repos.ingredient_foods.delete(doomed.id)
+    run_db(unique_user.repos.ingredient_foods.delete(doomed.id))
 
     assert recipe_substitute_ids(unique_user, recipe) == []
 
@@ -293,7 +308,7 @@ def test_food_merger_repoints_recipe_substitutions(unique_user: TestUser):
     source = create_food_with_substitutions(unique_user)
     recipe = create_recipe_with_ingredient(unique_user, food, [source.id])
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert recipe_substitute_ids(unique_user, recipe) == [target.id]
 
@@ -309,7 +324,7 @@ def test_food_merger_drops_resulting_recipe_self_substitutions(unique_user: Test
     substituting_source = create_recipe_with_ingredient(unique_user, target, [source.id])
     substituting_target = create_recipe_with_ingredient(unique_user, source, [target.id])
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert recipe_substitute_ids(unique_user, substituting_source) == []
     assert recipe_substitute_ids(unique_user, substituting_target) == []
@@ -323,6 +338,6 @@ def test_food_merger_collapses_duplicate_recipe_substitutions(unique_user: TestU
     source = create_food_with_substitutions(unique_user)
     recipe = create_recipe_with_ingredient(unique_user, food, [target.id, source.id])
 
-    unique_user.repos.ingredient_foods.merge(source.id, target.id)
+    run_db(unique_user.repos.ingredient_foods.merge(source.id, target.id))
 
     assert recipe_substitute_ids(unique_user, recipe) == [target.id]

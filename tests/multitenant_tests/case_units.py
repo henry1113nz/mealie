@@ -2,6 +2,7 @@ from requests import Response
 
 from mealie.schema.recipe.recipe_ingredient import IngredientUnit, SaveIngredientUnit
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.multitenant_tests.case_abc import ABCMultiTenantTestCase
 from tests.utils import api_routes
 
@@ -12,10 +13,12 @@ class UnitsTestCase(ABCMultiTenantTestCase):
     def seed_action(self, group_id: str) -> set[str]:
         unit_ids: set[str] = set()
         for _ in range(10):
-            unit = self.database.ingredient_units.create(
-                SaveIngredientUnit(
-                    group_id=group_id,
-                    name=utils.random_string(10),
+            unit = run_db(
+                self.database.ingredient_units.create(
+                    SaveIngredientUnit(
+                        group_id=group_id,
+                        name=utils.random_string(10),
+                    )
                 )
             )
 
@@ -31,10 +34,12 @@ class UnitsTestCase(ABCMultiTenantTestCase):
         for _ in range(10):
             name = utils.random_string(10)
             for group_id, item_ids in [(group1_id, g1_item_ids), (group2_id, g2_item_ids)]:
-                food = self.database.ingredient_units.create(
-                    SaveIngredientUnit(
-                        group_id=group_id,
-                        name=name,
+                food = run_db(
+                    self.database.ingredient_units.create(
+                        SaveIngredientUnit(
+                            group_id=group_id,
+                            name=name,
+                        )
                     )
                 )
                 item_ids.add(str(food.id))
@@ -47,4 +52,4 @@ class UnitsTestCase(ABCMultiTenantTestCase):
 
     def cleanup(self) -> None:
         for item in self.items:
-            self.database.ingredient_units.delete(item.id)
+            run_db(self.database.ingredient_units.delete(item.id))

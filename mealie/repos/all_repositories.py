@@ -1,5 +1,5 @@
 from pydantic import UUID4
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from ._utils import NOT_SET, NotSet
 from .repository_factory import AllRepositories

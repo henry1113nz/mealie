@@ -15,12 +15,12 @@ from mealie.core.security.providers.credentials_provider import (
     CredentialsRequest,
 )
 from mealie.core.security.providers.ldap_provider import LDAPProvider
-from mealie.db.db_setup import session_context
 from mealie.db.models.users.users import AuthMethod
 from mealie.repos.repository_factory import AllRepositories
 from mealie.routes.utility_routes import download_file
 from mealie.schema.user.auth import CredentialsRequestForm
 from mealie.schema.user.user import PrivateUser
+from tests.fixtures.fixture_database import run_db, session_context
 from tests.utils import random_string
 
 
@@ -234,7 +234,7 @@ def test_ldap_user_creation(monkeypatch: MonkeyPatch):
 
     with session_context() as session:
         provider = get_provider(session, user, password)
-        result = provider.get_user()
+        result = run_db(provider.get_user())
 
     app_settings = get_app_settings()
 
@@ -270,7 +270,7 @@ def test_ldap_user_creation_invalid_group_or_household(
     with session_context() as session:
         provider = get_provider(session, user, password)
         try:
-            result = provider.get_user()
+            result = run_db(provider.get_user())
         except ValueError:
             result = None
 
@@ -280,7 +280,7 @@ def test_ldap_user_creation_invalid_group_or_household(
         assert not result
 
     # check if the user exists in the db
-    user = unfiltered_database.users.get_by_username(user)
+    user = run_db(unfiltered_database.users.get_by_username(user))
     if valid_group and valid_household:
         assert user
     else:
@@ -300,7 +300,7 @@ def test_ldap_user_creation_fail(monkeypatch: MonkeyPatch):
 
     with session_context() as session:
         provider = get_provider(session, user, password + "a")
-        result = provider.get_user()
+        result = run_db(provider.get_user())
 
     assert result is None
 
@@ -319,7 +319,7 @@ def test_ldap_user_creation_non_admin(monkeypatch: MonkeyPatch):
 
     with session_context() as session:
         provider = get_provider(session, user, password)
-        result = provider.get_user()
+        result = run_db(provider.get_user())
 
     assert result
     assert result.username == user
@@ -342,7 +342,7 @@ def test_ldap_user_creation_admin(monkeypatch: MonkeyPatch):
 
     with session_context() as session:
         provider = get_provider(session, user, password)
-        result = provider.get_user()
+        result = run_db(provider.get_user())
 
     assert result
     assert result.username == user
@@ -388,7 +388,7 @@ def test_user_login_ldap_auth_method(monkeypatch: MonkeyPatch, ldap_user: Privat
 
     with session_context() as session:
         provider = get_provider(session, ldap_user.username, ldap_password)
-        result = provider.get_user()
+        result = run_db(provider.get_user())
 
     assert result
     assert result.username == ldap_user.username
@@ -433,7 +433,7 @@ def test_ldap_rejects_empty_password(monkeypatch: MonkeyPatch):
 
     with session_context() as session:
         provider = get_provider(session, user, "")
-        result = provider.get_user()
+        result = run_db(provider.get_user())
 
     assert result is None
 
@@ -452,7 +452,7 @@ def test_ldap_escapes_username_in_search_filter(monkeypatch: MonkeyPatch):
 
     with session_context() as session:
         provider = get_provider(session, injected_username, password)
-        provider.get_user()
+        run_db(provider.get_user())
 
     captured = CapturingConnMock.captured_filter
     assert captured is not None

@@ -25,8 +25,8 @@ class RecipeToolController(BaseUserController):
         return HttpRepo[RecipeToolCreate, RecipeTool, RecipeToolCreate](self.repo, self.logger)
 
     @router.get("", response_model=RecipeToolPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
-        response = self.repo.page_all(
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
+        response = await self.repo.page_all(
             pagination=q,
             override=RecipeTool,
             search=search,
@@ -36,23 +36,23 @@ class RecipeToolController(BaseUserController):
         return response
 
     @router.post("", response_model=RecipeTool, status_code=201)
-    def create_one(self, data: RecipeToolCreate):
+    async def create_one(self, data: RecipeToolCreate):
         save_data = mapper.cast(data, RecipeToolSave, group_id=self.group_id)
-        return self.mixins.create_one(save_data)
+        return await self.mixins.create_one(save_data)
 
     @router.get("/{item_id}", response_model=RecipeTool)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=RecipeTool)
-    def update_one(self, item_id: UUID4, data: RecipeToolCreate):
+    async def update_one(self, item_id: UUID4, data: RecipeToolCreate):
         data = mapper.cast(data, RecipeToolSave, group_id=self.group_id)
-        return self.mixins.update_one(data, item_id)
+        return await self.mixins.update_one(data, item_id)
 
     @router.delete("/{item_id}", response_model=RecipeTool)
-    def delete_one(self, item_id: UUID4):
-        return self.mixins.delete_one(item_id)  # type: ignore
+    async def delete_one(self, item_id: UUID4):
+        return await self.mixins.delete_one(item_id)  # type: ignore
 
     @router.get("/slug/{tool_slug}", response_model=RecipeToolResponse)
     async def get_one_by_slug(self, tool_slug: str):
-        return self.repo.get_one(tool_slug, "slug", override_schema=RecipeToolResponse)
+        return await self.repo.get_one(tool_slug, "slug", override_schema=RecipeToolResponse)

@@ -1,9 +1,6 @@
-import asyncio
-
 import pytest
 from pydantic import UUID4
 
-from mealie.db.db_setup import session_context
 from mealie.lang.providers import get_locale_provider
 from mealie.schema.recipe.recipe_ingredient import (
     CreateIngredientFood,
@@ -14,6 +11,7 @@ from mealie.schema.recipe.recipe_ingredient import (
     RecipeIngredient,
 )
 from mealie.services.parser_services import RegisteredParser, get_parser
+from tests.fixtures.fixture_database import run_db, session_context
 
 
 def build_parsed_ing(food: str | None, unit: str | None) -> ParsedIngredient:
@@ -105,7 +103,7 @@ def test_brute_parser(
 ):
     with session_context() as session:
         parser = get_parser(RegisteredParser.brute, unique_local_group_id, session, get_locale_provider())
-        parsed = asyncio.run(parser.parse_one(input))
+        parsed = run_db(parser.parse_one(input))
         ing = parsed.ingredient
 
         assert ing.original_text == input
@@ -149,7 +147,7 @@ def test_brute_parser_confidence(
 
     with session_context() as session:
         parser = get_parser(RegisteredParser.brute, unique_local_group_id, session, get_locale_provider())
-        parsed = asyncio.run(parser.parse_one(input_str))
+        parsed = run_db(parser.parse_one(input_str))
 
         conf = parsed.confidence
 
@@ -320,7 +318,7 @@ def test_parser_ingredient_match(
 ):
     with session_context() as session:
         parser = get_parser(RegisteredParser.brute, unique_local_group_id, session, get_locale_provider())
-        parsed_ingredient = parser.find_ingredient_match(input)
+        parsed_ingredient = run_db(parser.find_ingredient_match(input))
 
         if expected_food_name:
             assert parsed_ingredient.ingredient.food and parsed_ingredient.ingredient.food.name == expected_food_name

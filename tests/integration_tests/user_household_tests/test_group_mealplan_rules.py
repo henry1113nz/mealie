@@ -7,6 +7,7 @@ from mealie.schema.meal_plan.plan_rules import PlanRulesOut
 from mealie.schema.recipe.recipe import RecipeCategory
 from mealie.schema.recipe.recipe_category import CategorySave
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -16,12 +17,12 @@ from tests.utils.fixture_schemas import TestUser
 def category(unique_user: TestUser):
     database = unique_user.repos
     slug = utils.random_string(length=10)
-    model = database.categories.create(CategorySave(group_id=unique_user.group_id, slug=slug, name=slug))
+    model = run_db(database.categories.create(CategorySave(group_id=unique_user.group_id, slug=slug, name=slug)))
 
     yield model
 
     try:
-        database.categories.delete(model.slug)
+        run_db(database.categories.delete(model.slug))
     except Exception:
         pass
 
@@ -73,7 +74,7 @@ def test_group_mealplan_rules_create(api_client: TestClient, unique_user: TestUs
     assert response_data["queryFilter"]["parts"][0]["value"] == [str(category.id)]
 
     # Validate database entry
-    rule = database.group_meal_plan_rules.get_one(UUID(response_data["id"]))
+    rule = run_db(database.group_meal_plan_rules.get_one(UUID(response_data["id"])))
     assert rule
 
     assert str(rule.group_id) == unique_user.group_id
@@ -83,7 +84,7 @@ def test_group_mealplan_rules_create(api_client: TestClient, unique_user: TestUs
     assert rule.query_filter_string == query_filter_string
 
     # Cleanup
-    database.group_meal_plan_rules.delete(rule.id)
+    run_db(database.group_meal_plan_rules.delete(rule.id))
 
 
 def test_group_mealplan_rules_read(api_client: TestClient, unique_user: TestUser, plan_rule: PlanRulesOut):

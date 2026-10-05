@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from functools import cached_property
 
 from fastapi import APIRouter, HTTPException
@@ -17,18 +18,18 @@ class DataSeederController(BaseUserController):
     def service(self) -> SeederService:
         return SeederService(self.repos)
 
-    def _wrap(self, func):
+    async def _wrap(self, func: Callable[[], Awaitable[None]]) -> dict:
         try:
-            func()
+            await func()
         except Exception as e:
             raise HTTPException(status_code=500, detail=ErrorResponse.respond("Seeding Failed")) from e
 
         return SuccessResponse.respond("Seeding Successful")
 
     @router.post("/foods", response_model=SuccessResponse)
-    def seed_foods(self, data: SeederConfig) -> dict:
-        return self._wrap(lambda: self.service.seed_foods(data.locale))
+    async def seed_foods(self, data: SeederConfig) -> dict:
+        return await self._wrap(lambda: self.service.seed_foods(data.locale))
 
     @router.post("/units", response_model=SuccessResponse)
-    def seed_units(self, data: SeederConfig) -> dict:
-        return self._wrap(lambda: self.service.seed_units(data.locale))
+    async def seed_units(self, data: SeederConfig) -> dict:
+        return await self._wrap(lambda: self.service.seed_units(data.locale))

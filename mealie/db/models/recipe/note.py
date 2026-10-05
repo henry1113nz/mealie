@@ -1,20 +1,34 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import Mapped, mapped_column
+from __future__ import annotations
 
-from mealie.db.models._model_base import SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
+
+from tortoise import fields
+
+from mealie.db.models._model_base import TortoiseModel
+
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class Note(SqlAlchemyBase):
+class Note(TortoiseModel):
     __tablename__ = "notes"
-    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
-    recipe_id: Mapped[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
-    title: Mapped[str | None] = mapped_column(sa.String)
-    text: Mapped[str | None] = mapped_column(sa.String)
-    reference_id: Mapped[GUID | None] = mapped_column(GUID, index=True, default=GUID.generate)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    def __init__(self, title, text, reference_id=None, **_) -> None:
-        self.title = title
-        self.text = text
-        if reference_id is not None:
-            self.reference_id = reference_id
+    id = fields.IntField(primary_key=True)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="notes",
+        source_field="recipe_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    title = fields.TextField(null=True)
+    text = fields.TextField(null=True)
+    reference_id = fields.UUIDField(null=True, db_index=True, default=uuid4)
+
+    class Meta:
+        table = "notes"

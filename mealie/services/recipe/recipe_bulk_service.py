@@ -21,33 +21,33 @@ class RecipeBulkActionsService(BaseService):
         self.group = group
         super().__init__()
 
-    def export_recipes(self, temp_path: Path, slugs: list[str]) -> None:
+    async def export_recipes(self, temp_path: Path, slugs: list[str]) -> None:
         recipe_exporter = RecipeExporter(self.repos, self.group.id, slugs)
         exporter = Exporter(self.group.id, temp_path, [recipe_exporter])
 
-        exporter.run(self.repos)
+        await exporter.run(self.repos)
 
-    def get_exports(self) -> list[GroupDataExport]:
-        exports_page = self.repos.group_exports.page_all(PaginationQuery(per_page=-1))
+    async def get_exports(self) -> list[GroupDataExport]:
+        exports_page = await self.repos.group_exports.page_all(PaginationQuery(per_page=-1))
         return exports_page.items
 
-    def get_export(self, id: UUID4) -> GroupDataExport | None:
-        return self.repos.group_exports.get_one(id)
+    async def get_export(self, id: UUID4) -> GroupDataExport | None:
+        return await self.repos.group_exports.get_one(id)
 
-    def purge_exports(self) -> int:
-        all_exports = self.get_exports()
+    async def purge_exports(self) -> int:
+        all_exports = await self.get_exports()
 
         exports_deleted = 0
         for export in all_exports:
             try:
                 Path(export.path).unlink(missing_ok=True)
-                self.repos.group_exports.delete(export.id)
+                (await self.repos.group_exports.delete(export.id))
                 exports_deleted += 1
             except Exception as e:
                 self.logger.error(f"Failed to delete export {export.id}")
                 self.logger.error(e)
 
-        group = self.repos.groups.get_one(self.group.id)
+        group = await self.repos.groups.get_one(self.group.id)
 
         if group is None:
             raise UnexpectedNone("Failed to purge exports for group, no group found")
@@ -59,9 +59,9 @@ class RecipeBulkActionsService(BaseService):
 
         return exports_deleted
 
-    def set_settings(self, recipes: list[str], settings: RecipeSettings) -> None:
+    async def set_settings(self, recipes: list[str], settings: RecipeSettings) -> None:
         for slug in recipes:
-            recipe = self.repos.recipes.get_one(slug)
+            recipe = await self.repos.recipes.get_one(slug)
 
             if recipe is None or recipe.settings is None:
                 raise UnexpectedNone(f"Failed to set settings for recipe {slug}, no recipe found")
@@ -70,14 +70,14 @@ class RecipeBulkActionsService(BaseService):
             recipe.settings = settings
 
             try:
-                self.repos.recipes.update(slug, recipe)
+                (await self.repos.recipes.update(slug, recipe))
             except Exception as e:
                 self.logger.error(f"Failed to set settings for recipe {slug}")
                 self.logger.error(e)
 
-    def assign_tags(self, recipes: list[str], tags: list[TagBase]) -> None:
+    async def assign_tags(self, recipes: list[str], tags: list[TagBase]) -> None:
         for slug in recipes:
-            recipe = self.repos.recipes.get_one(slug)
+            recipe = await self.repos.recipes.get_one(slug)
 
             if recipe is None:
                 raise UnexpectedNone(f"Failed to tag recipe {slug}, no recipe found")
@@ -88,14 +88,14 @@ class RecipeBulkActionsService(BaseService):
             recipe.tags += tags  # type: ignore
 
             try:
-                self.repos.recipes.update(slug, recipe)
+                (await self.repos.recipes.update(slug, recipe))
             except Exception as e:
                 self.logger.error(f"Failed to tag recipe {slug}")
                 self.logger.error(e)
 
-    def assign_categories(self, recipes: list[str], categories: list[CategoryBase]) -> None:
+    async def assign_categories(self, recipes: list[str], categories: list[CategoryBase]) -> None:
         for slug in recipes:
-            recipe = self.repos.recipes.get_one(slug)
+            recipe = await self.repos.recipes.get_one(slug)
 
             if recipe is None:
                 raise UnexpectedNone(f"Failed to categorize recipe {slug}, no recipe found")
@@ -106,7 +106,7 @@ class RecipeBulkActionsService(BaseService):
             recipe.recipe_category += categories  # type: ignore
 
             try:
-                self.repos.recipes.update(slug, recipe)
+                (await self.repos.recipes.update(slug, recipe))
             except Exception as e:
                 self.logger.error(f"Failed to categorize recipe {slug}")
                 self.logger.error(e)

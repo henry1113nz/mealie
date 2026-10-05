@@ -1,19 +1,17 @@
 import sqlite3
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
-import sqlalchemy.exc
+from tortoise.exceptions import IntegrityError
 
 from mealie.routes._base.mixins import is_unique_violation
 
 
-def make_postgres_integrity_error(pgcode: str) -> sqlalchemy.exc.IntegrityError:
-    psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 is only installed with the pgsql extra")
-
-    orig = Mock(spec=psycopg2.Error)
-    orig.pgcode = pgcode
-    return sqlalchemy.exc.IntegrityError(None, None, orig)
+def make_postgres_integrity_error(pgcode: str) -> IntegrityError:
+    orig = Exception("PostgreSQL constraint violation")
+    orig.sqlstate = pgcode
+    return IntegrityError(orig)
 
 
 @patch("mealie.routes._base.mixins.get_app_settings")
@@ -32,10 +30,10 @@ def test_is_unique_violation_postgres(mock_settings, pgcode, expected):
     assert is_unique_violation(ex) is expected
 
 
-def make_sqlite_integrity_error(sqlite_errorcode: int) -> sqlalchemy.exc.IntegrityError:
+def make_sqlite_integrity_error(sqlite_errorcode: int) -> IntegrityError:
     orig = sqlite3.IntegrityError()
     orig.sqlite_errorcode = sqlite_errorcode
-    return sqlalchemy.exc.IntegrityError(None, None, orig)
+    return IntegrityError(orig)
 
 
 @patch("mealie.routes._base.mixins.get_app_settings")

@@ -1,57 +1,78 @@
-from pydantic import ConfigDict
-from sqlalchemy import ForeignKey, Integer, String, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from __future__ import annotations
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
+
+from tortoise import fields
+
+from mealie.db.models._model_base import TortoiseModel
+
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class RecipeIngredientRefLink(SqlAlchemyBase, BaseMixins):
+class RecipeIngredientRefLink(TortoiseModel):
     __tablename__ = "recipe_ingredient_ref_link"
-    instruction_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("recipe_instructions.id"), index=True)
-    reference_id: Mapped[GUID | None] = mapped_column(GUID, index=True)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    instruction_id: UUID | None
+    instruction: fields.ForeignKeyNullableRelation[RecipeInstruction] = fields.ForeignKeyField(
+        "models.RecipeInstruction",
+        related_name="ingredient_references",
+        source_field="instruction_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    reference_id = fields.UUIDField(null=True, db_index=True)
+
+    class Meta:
+        table = "recipe_ingredient_ref_link"
 
 
-class RecipeNoteRefLink(SqlAlchemyBase, BaseMixins):
+class RecipeNoteRefLink(TortoiseModel):
     __tablename__ = "recipe_note_ref_link"
-    instruction_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("recipe_instructions.id"), index=True)
-    reference_id: Mapped[GUID | None] = mapped_column(GUID, index=True)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    instruction_id: UUID | None
+    instruction: fields.ForeignKeyNullableRelation[RecipeInstruction] = fields.ForeignKeyField(
+        "models.RecipeInstruction",
+        related_name="note_references",
+        source_field="instruction_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    reference_id = fields.UUIDField(null=True, db_index=True)
+
+    class Meta:
+        table = "recipe_note_ref_link"
 
 
-class RecipeInstruction(SqlAlchemyBase):
+class RecipeInstruction(TortoiseModel):
     __tablename__ = "recipe_instructions"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    recipe_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("recipes.id"), index=True)
-    position: Mapped[int | None] = mapped_column(Integer, index=True)
-    type: Mapped[str | None] = mapped_column(String, default="")
-    title: Mapped[str | None] = mapped_column(String)  # This is the section title
-    text: Mapped[str | None] = mapped_column(String)
-    summary: Mapped[str | None] = mapped_column(String)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
+    model_config = {"exclude": {"id", "ingredient_references", "note_references"}}
 
-    ingredient_references: Mapped[list[RecipeIngredientRefLink]] = orm.relationship(
-        RecipeIngredientRefLink, cascade="all, delete-orphan"
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="recipe_instructions",
+        source_field="recipe_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
-    note_references: Mapped[list[RecipeNoteRefLink]] = orm.relationship(RecipeNoteRefLink, cascade="all, delete-orphan")
-    model_config = ConfigDict(
-        exclude={
-            "id",
-            "ingredient_references",
-            "note_references",
-        }
-    )
+    position = fields.IntField(null=True, db_index=True)
+    type = fields.TextField(null=True, default="")
+    title = fields.TextField(null=True)
+    text = fields.TextField(null=True)
+    summary = fields.TextField(null=True)
 
-    @auto_init()
-    def __init__(self, session, ingredient_references=None, note_references=None, **_) -> None:
-        self.ingredient_references = [
-            RecipeIngredientRefLink(**ref, session=session) for ref in (ingredient_references or [])
-        ]
-        self.note_references = [RecipeNoteRefLink(**ref, session=session) for ref in (note_references or [])]
+    class Meta:
+        table = "recipe_instructions"
+        ordering = ("position", "id")

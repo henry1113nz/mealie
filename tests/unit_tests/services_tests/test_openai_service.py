@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import httpx
@@ -11,6 +11,7 @@ import mealie.services.openai.openai as openai_module
 from mealie.schema.group.ai_providers import AIProviderOut
 from mealie.schema.openai._base import OpenAIBase
 from mealie.services.openai.openai import OpenAIService
+from tests.fixtures.fixture_database import await_db
 
 
 def _make_mock_repos() -> MagicMock:
@@ -22,8 +23,8 @@ def _make_mock_repos() -> MagicMock:
 
     repos = MagicMock()
     repos.group_id = uuid4()
-    repos.group_ai_provider_settings.get_one.return_value = provider_settings
-    repos.group_ai_providers.get_one.return_value = MagicMock()
+    repos.group_ai_provider_settings.get_one = AsyncMock(return_value=provider_settings)
+    repos.group_ai_providers.get_one = AsyncMock(return_value=MagicMock())
     return repos
 
 
@@ -142,7 +143,7 @@ async def test_ping_builds_debug_prompt_and_delegates_to_get_response(settings_s
 
     svc = OpenAIService(_make_mock_repos())
     provider = _make_test_provider()
-    result = await svc.ping(provider, "hello there", images=["fake-image"])
+    result = await await_db(svc.ping(provider, "hello there", images=["fake-image"]))
 
     assert result.text == "ok"
     assert captured == {
@@ -160,7 +161,7 @@ async def test_connection_success_recognizes_test_image(settings_stub, monkeypat
     _patch_ping(monkeypatch, image_response="Tomato & Egg Stir-Fry")
 
     svc = OpenAIService(_make_mock_repos())
-    result = await svc.test_connection(_make_test_provider())
+    result = await await_db(svc.test_connection(_make_test_provider()))
 
     assert result.success is True
     assert result.message is None
@@ -174,7 +175,7 @@ async def test_connection_success_but_image_reply_does_not_mention_recipe(settin
     _patch_ping(monkeypatch, image_response="I'm not sure what you mean, could you clarify?")
 
     svc = OpenAIService(_make_mock_repos())
-    result = await svc.test_connection(_make_test_provider())
+    result = await await_db(svc.test_connection(_make_test_provider()))
 
     assert result.success is True
     assert result.supports_images is False
@@ -187,7 +188,7 @@ async def test_connection_success_but_image_request_errors(settings_stub, monkey
     _patch_ping(monkeypatch, image_error=Exception("model does not support image input"))
 
     svc = OpenAIService(_make_mock_repos())
-    result = await svc.test_connection(_make_test_provider())
+    result = await await_db(svc.test_connection(_make_test_provider()))
 
     assert result.success is True
     assert result.supports_images is False
@@ -204,7 +205,7 @@ async def test_connection_text_failure_never_attempts_image_check(settings_stub,
     monkeypatch.setattr(OpenAIService, "ping", _fake_ping)
 
     svc = OpenAIService(_make_mock_repos())
-    result = await svc.test_connection(_make_test_provider())
+    result = await await_db(svc.test_connection(_make_test_provider()))
 
     assert result.success is False
     assert result.supports_images is None
@@ -216,7 +217,7 @@ async def test_connection_empty_response_is_a_failure(settings_stub, monkeypatch
     _patch_ping(monkeypatch, text_response=None)
 
     svc = OpenAIService(_make_mock_repos())
-    result = await svc.test_connection(_make_test_provider())
+    result = await await_db(svc.test_connection(_make_test_provider()))
 
     assert result.success is False
     assert result.message == "No response received from the provider."
@@ -250,7 +251,7 @@ async def test_connection_failure_never_returns_the_providers_response_body(sett
     monkeypatch.setattr(OpenAIService, "ping", _fake_ping)
 
     svc = OpenAIService(_make_mock_repos())
-    result = await svc.test_connection(_make_test_provider())
+    result = await await_db(svc.test_connection(_make_test_provider()))
 
     assert result.success is False
     assert result.message == "NotFoundError (HTTP 404)"
@@ -325,7 +326,9 @@ async def test_get_response_sends_schema_as_response_format(settings_stub):
     completions = _FakeCompletions(parse_result=_make_body('{"answer": "hi"}'))
     svc.get_client = MagicMock(return_value=_FakeClient(completions))
 
-    result = await svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+    result = await await_db(
+        svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+    )
 
     assert result is not None
     assert result.answer == "hi"
@@ -341,7 +344,9 @@ async def test_get_response_strips_markdown_fence_from_strict_response(settings_
     completions = _FakeCompletions(parse_result=_make_body('```json\n{"answer": "hi"}\n```'))
     svc.get_client = MagicMock(return_value=_FakeClient(completions))
 
-    result = await svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+    result = await await_db(
+        svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+    )
 
     assert result is not None
     assert result.answer == "hi"
@@ -354,7 +359,9 @@ async def test_get_response_returns_none_when_no_choices(settings_stub):
     completions = _FakeCompletions(parse_result=_make_body(None))
     svc.get_client = MagicMock(return_value=_FakeClient(completions))
 
-    result = await svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+    result = await await_db(
+        svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+    )
 
     assert result is None
 
@@ -366,7 +373,9 @@ async def test_get_response_raises_when_response_not_json(settings_stub):
     svc.get_client = MagicMock(return_value=_FakeClient(completions))
 
     with pytest.raises(Exception, match="OpenAI Request Failed"):
-        await svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+        await await_db(
+            svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+        )
 
 
 @pytest.mark.asyncio
@@ -376,7 +385,9 @@ async def test_get_response_raises_on_length_finish_reason(settings_stub):
     svc.get_client = MagicMock(return_value=_FakeClient(completions))
 
     with pytest.raises(Exception, match="length limit"):
-        await svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+        await await_db(
+            svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+        )
 
 
 @pytest.mark.asyncio
@@ -386,4 +397,6 @@ async def test_get_response_raises_on_content_filter_finish_reason(settings_stub
     svc.get_client = MagicMock(return_value=_FakeClient(completions))
 
     with pytest.raises(Exception, match="content filter"):
-        await svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+        await await_db(
+            svc.get_response("system prompt", "hello", response_schema=_SampleSchema, provider=_make_provider())
+        )

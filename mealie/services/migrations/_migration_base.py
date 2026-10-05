@@ -1,4 +1,5 @@
 import contextlib
+import inspect
 from pathlib import Path
 
 from PIL import UnidentifiedImageError
@@ -54,21 +55,9 @@ class BaseMigrator(BaseService):
         self.add_migration_tag = add_migration_tag
         self.translator = translator
 
-        user = db.users.get_one(user_id)
-        if not user:
-            raise UnexpectedNone(f"Cannot find user {user_id}")
-
-        household = db.households.get_one(household_id)
-        if not household:
-            raise UnexpectedNone(f"Cannot find household {household_id}")
-
-        group = db.groups.get_one(group_id)
-        if not group:
-            raise UnexpectedNone(f"Cannot find group {group_id}")
-
-        self.user = user
-        self.household = household
-        self.group = group
+        self.user_id = user_id
+        self.household_id = household_id
+        self.group_id = group_id
 
         self.name = "migration"
 
@@ -77,9 +66,23 @@ class BaseMigrator(BaseService):
         self.logger = root_logger.get_logger()
 
         self.helpers = DatabaseMigrationHelpers(self.db, self.session)
-        self.recipe_service = RecipeService(db, user, household, translator=self.translator)
 
         super().__init__()
+
+    async def initialize(self) -> None:
+        user = await self.db.users.get_one(self.user_id)
+        if not user:
+            raise UnexpectedNone(f"Cannot find user {self.user_id}")
+        self.user = user
+        household = await self.db.households.get_one(self.household_id)
+        if not household:
+            raise UnexpectedNone(f"Cannot find household {self.household_id}")
+        self.household = household
+        group = await self.db.groups.get_one(self.group_id)
+        if not group:
+            raise UnexpectedNone(f"Cannot find group {self.group_id}")
+        self.group = group
+        self.recipe_service = RecipeService(self.db, self.user, self.household, translator=self.translator)
 
     @classmethod
     def get_zip_base_path(cls, path: Path) -> Path:
@@ -103,10 +106,10 @@ class BaseMigrator(BaseService):
         else:
             return path
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         raise NotImplementedError
 
-    def _create_report(self, report_name: str) -> None:
+    async def _create_report(self, report_name: str) -> None:
         report_to_save = ReportCreate(
             name=report_name,
             category=ReportCategory.migration,
@@ -114,10 +117,10 @@ class BaseMigrator(BaseService):
             group_id=self.group.id,
         )
 
-        self.report = self.db.group_reports.create(report_to_save)
+        self.report = await self.db.group_reports.create(report_to_save)
         self.report_id = self.report.id
 
-    def _save_all_entries(self) -> None:
+    async def _save_all_entries(self) -> None:
         is_success = True
         is_failure = True
 
@@ -129,7 +132,7 @@ class BaseMigrator(BaseService):
             if is_success and not entry.success:
                 is_success = False
 
-            new_entries.append(self.db.group_report_entries.create(entry))
+            new_entries.append(await self.db.group_report_entries.create(entry))
 
         if is_success:
             self.report.status = ReportSummaryStatus.success
@@ -141,21 +144,22 @@ class BaseMigrator(BaseService):
             self.report.status = ReportSummaryStatus.partial
 
         self.report.entries = new_entries
-        self.db.group_reports.update(self.report.id, self.report)
+        (await self.db.group_reports.update(self.report.id, self.report))
 
-    def migrate(self, report_name: str) -> ReportSummary:
-        self._create_report(report_name)
-        self._migrate()
-        self._save_all_entries()
+    async def migrate(self, report_name: str) -> ReportSummary:
+        await self.initialize()
+        (await self._create_report(report_name))
+        await self._migrate()
+        (await self._save_all_entries())
 
-        result = self.db.group_reports.get_one(self.report_id)
+        result = await self.db.group_reports.get_one(self.report_id)
 
         if not result:
             raise ValueError("Report not found")
 
         return result
 
-    def import_recipes_to_database(self, validated_recipes: list[Recipe]) -> list[tuple[str, UUID4, bool]]:
+    async def import_recipes_to_database(self, validated_recipes: list[Recipe]) -> list[tuple[str, UUID4, bool]]:
         """
         Used as a single access point to process a list of Recipe objects into the
         database in a predictable way. If an error occurs the session is rolled back
@@ -166,7 +170,7 @@ class BaseMigrator(BaseService):
             validated_recipes (list[Recipe]):
         """
         if self.add_migration_tag:
-            migration_tag = self.helpers.get_or_set_tags([self.name])[0]
+            migration_tag = (await self.helpers.get_or_set_tags([self.name]))[0]
 
         return_vars: list[tuple[str, UUID4, bool]] = []
 
@@ -188,12 +192,12 @@ class BaseMigrator(BaseService):
             recipe.group_id = self.group.id
 
             if recipe.tags:
-                recipe.tags = self.helpers.get_or_set_tags(x.name for x in recipe.tags)
+                recipe.tags = await self.helpers.get_or_set_tags(x.name for x in recipe.tags)
             else:
                 recipe.tags = []
 
             if recipe.recipe_category:
-                recipe.recipe_category = self.helpers.get_or_set_category(x.name for x in recipe.recipe_category)
+                recipe.recipe_category = await self.helpers.get_or_set_category(x.name for x in recipe.recipe_category)
 
             if self.add_migration_tag:
                 recipe.tags.append(migration_tag)
@@ -206,13 +210,12 @@ class BaseMigrator(BaseService):
                 # locate the file, so it is dropped from the persisted copy only. The key is
                 # recorded by `import_image`/`scrape_image` once a file actually lands, so a
                 # recipe never claims an image the media route cannot serve.
-                recipe = self.recipe_service.create_one(recipe.model_copy(update={"image": None}))
+                recipe = await self.recipe_service.create_one(recipe.model_copy(update={"image": None}))
                 status = True
 
             except Exception as inst:
                 exception = str(inst)
                 self.logger.exception(inst)
-                self.session.rollback()
 
             if status:
                 message = f"Imported {recipe.name} successfully"
@@ -232,7 +235,7 @@ class BaseMigrator(BaseService):
 
         return return_vars
 
-    def rewrite_alias(self, recipe_dict: dict) -> dict:
+    async def rewrite_alias(self, recipe_dict: dict) -> dict:
         """A helper function to reassign attributes by an alias using a list
         of MigrationAlias objects to rewrite the alias attribute found in the recipe_dict
         to a
@@ -256,6 +259,8 @@ class BaseMigrator(BaseService):
             if alias.func:
                 try:
                     prop_value = alias.func(prop_value)
+                    if inspect.isawaitable(prop_value):
+                        prop_value = await prop_value
                 except Exception as e:
                     self.logger.exception(e)
                     continue
@@ -264,12 +269,12 @@ class BaseMigrator(BaseService):
 
         return recipe_dict
 
-    def clean_recipe_dictionary(self, recipe_dict: dict) -> Recipe:
+    async def clean_recipe_dictionary(self, recipe_dict: dict) -> Recipe:
         """
         Calls the rewrite_alias function and the Cleaner.clean function on a
         dictionary and returns the result unpacked into a Recipe object
         """
-        recipe_dict = self.rewrite_alias(recipe_dict)
+        recipe_dict = await self.rewrite_alias(recipe_dict)
 
         with contextlib.suppress(KeyError):
             del recipe_dict["id"]
@@ -277,20 +282,20 @@ class BaseMigrator(BaseService):
         recipe = cleaner.clean(recipe_dict, self.translator, url=recipe_dict.get("org_url", None))
         return recipe
 
-    def _record_image(self, slug: str) -> None:
+    async def _record_image(self, slug: str) -> None:
         """Stamps the recipe's image cache key, marking it as having a picture."""
         try:
-            self.db.recipes.update_image(slug)
+            (await self.db.recipes.update_image(slug))
         except Exception as e:
             self.logger.error(f"Failed to record image for {slug}: {e}")
 
-    def import_image(self, slug: str, src: str | Path, recipe_id: UUID4, extraction_root: Path | None = None):
+    async def import_image(self, slug: str, src: str | Path, recipe_id: UUID4, extraction_root: Path | None = None):
         try:
             if import_image(src, recipe_id, extraction_root=extraction_root) is not None:
-                self._record_image(slug)
+                (await self._record_image(slug))
         except UnidentifiedImageError as e:
             self.logger.error(f"Failed to import image for {slug}: {e}")
 
     async def scrape_image(self, slug: str, image_url: str, recipe_id: UUID4) -> None:
         if await scrape_image(image_url, recipe_id) is not None:
-            self._record_image(slug)
+            (await self._record_image(slug))

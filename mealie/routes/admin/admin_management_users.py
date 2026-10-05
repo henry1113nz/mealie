@@ -31,8 +31,8 @@ class AdminUserManagementRoutes(BaseAdminController):
         return HttpRepo[UserIn, UserOut, UserOut](self.repo, self.logger, self.registered_exceptions)
 
     @router.get("", response_model=UserPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
-        response = self.repo.page_all(
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+        response = await self.repo.page_all(
             pagination=q,
             override=UserOut,
         )
@@ -41,43 +41,43 @@ class AdminUserManagementRoutes(BaseAdminController):
         return response
 
     @router.post("", response_model=UserOut, status_code=201)
-    def create_one(self, data: UserIn):
-        if self.repos.users.get_by_username(data.username):
+    async def create_one(self, data: UserIn):
+        if await self.repos.users.get_by_username(data.username):
             raise HTTPException(status.HTTP_409_CONFLICT, {"message": self.t("exceptions.username-conflict-error")})
-        elif self.repos.users.get_one(data.email, "email"):
+        elif await self.repos.users.get_one(data.email, "email"):
             raise HTTPException(status.HTTP_409_CONFLICT, {"message": self.t("exceptions.email-conflict-error")})
 
         data.password = security.hash_password(data.password)
-        return self.mixins.create_one(data)
+        return await self.mixins.create_one(data)
 
     @router.post("/unlock", response_model=UnlockResults)
-    def unlock_users(self, force: bool = False) -> UnlockResults:
+    async def unlock_users(self, force: bool = False) -> UnlockResults:
         user_service = UserService(self.repos)
-        unlocked = user_service.reset_locked_users(force=force)
+        unlocked = await user_service.reset_locked_users(force=force)
 
         return UnlockResults(unlocked=unlocked)
 
     @router.get("/{item_id}", response_model=UserOut)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=UserOut)
-    def update_one(self, item_id: UUID4, data: UserOut):
+    async def update_one(self, item_id: UUID4, data: UserOut):
         # Prevent self demotion
         if self.user.id == item_id and self.user.admin != data.admin:
             raise HTTPException(status_code=403, detail=ErrorResponse.respond("you cannot demote yourself"))
 
-        return self.mixins.update_one(data, item_id)
+        return await self.mixins.update_one(data, item_id)
 
     @router.delete("/{item_id}", response_model=UserOut)
-    def delete_one(self, item_id: UUID4):
-        return self.mixins.delete_one(item_id)
+    async def delete_one(self, item_id: UUID4):
+        return await self.mixins.delete_one(item_id)
 
     @router.post("/password-reset-token", response_model=PasswordResetToken, status_code=201)
-    def generate_token(self, email: ForgotPassword):
+    async def generate_token(self, email: ForgotPassword):
         """Generates a reset token and returns it. This is an authenticated endpoint"""
         f_service = PasswordResetService(self.session)
-        token_entry = f_service.generate_reset_token(email.email)
+        token_entry = await f_service.generate_reset_token(email.email)
         if not token_entry:
             raise HTTPException(status_code=500, detail=ErrorResponse.respond("error while generating reset token"))
         return PasswordResetToken(token=token_entry.token)

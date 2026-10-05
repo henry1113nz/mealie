@@ -1,34 +1,42 @@
-from datetime import UTC, datetime, timedelta
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-import sqlalchemy as sa
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from tortoise import fields
 
-from mealie.db.models._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.auto_init import auto_init
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-from mealie.db.models._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
 
 if TYPE_CHECKING:
-    from . import RecipeModel
+    from mealie.db.models.group.group import Group
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-def defaut_expires_at_time() -> datetime:
-    return datetime.now(UTC) + timedelta(days=30)
-
-
-class RecipeShareTokenModel(SqlAlchemyBase, BaseMixins):
+class RecipeShareTokenModel(TortoiseModel):
     __tablename__ = "recipe_share_tokens"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=uuid4)
+    __filterable_fields__ = {"expires_at", "group_id", "recipe_id"}
+    __association_proxies__ = {}
 
-    group_id: FilterableColumn[GUID] = mapped_column(GUID, sa.ForeignKey("groups.id"), nullable=False, index=True)
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="recipe_share_tokens_group",
+        source_field="group_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    recipe_id: UUID
+    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="share_tokens",
+        source_field="recipe_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    expires_at = fields.DatetimeField(null=False)
 
-    recipe_id: FilterableColumn[GUID] = mapped_column(GUID, sa.ForeignKey("recipes.id"), nullable=False, index=True)
-    recipe: Mapped[RecipeModel] = relationship("RecipeModel", back_populates="share_tokens", uselist=False)
-
-    expires_at: FilterableColumn[datetime] = mapped_column(NaiveDateTime, nullable=False)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "recipe_share_tokens"

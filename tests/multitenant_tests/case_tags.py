@@ -3,6 +3,7 @@ from requests import Response
 from mealie.schema.recipe.recipe import RecipeTag
 from mealie.schema.recipe.recipe_category import TagSave
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.multitenant_tests.case_abc import ABCMultiTenantTestCase
 from tests.utils import api_routes
 
@@ -13,10 +14,12 @@ class TagsTestCase(ABCMultiTenantTestCase):
     def seed_action(self, group_id: str) -> set[str]:
         tag_ids: set[str] = set()
         for _ in range(10):
-            tag = self.database.tags.create(
-                TagSave(
-                    group_id=group_id,
-                    name=utils.random_string(10),
+            tag = run_db(
+                self.database.tags.create(
+                    TagSave(
+                        group_id=group_id,
+                        name=utils.random_string(10),
+                    )
                 )
             )
 
@@ -32,10 +35,12 @@ class TagsTestCase(ABCMultiTenantTestCase):
         for _ in range(10):
             name = utils.random_string(10)
             for group_id, item_ids in [(group1_id, g1_item_ids), (group2_id, g2_item_ids)]:
-                category = self.database.tags.create(
-                    TagSave(
-                        group_id=group_id,
-                        name=name,
+                category = run_db(
+                    self.database.tags.create(
+                        TagSave(
+                            group_id=group_id,
+                            name=name,
+                        )
                     )
                 )
                 item_ids.add(str(category.id))
@@ -48,4 +53,4 @@ class TagsTestCase(ABCMultiTenantTestCase):
 
     def cleanup(self) -> None:
         for item in self.items:
-            self.database.tags.delete(item.id)
+            run_db(self.database.tags.delete(item.id))

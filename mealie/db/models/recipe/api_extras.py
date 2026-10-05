@@ -1,64 +1,109 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import mapped_column
+from __future__ import annotations
 
-from mealie.db.models._model_base import FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from typing import TYPE_CHECKING
+from uuid import UUID
 
+from tortoise import fields
 
-def api_extras(func):
-    """Decorator function to unpack the extras into a dict; requires an "extras" column"""
+from mealie.db.models._model_base import TortoiseModel
 
-    def wrapper(*args, **kwargs):
-        extras = kwargs.pop("extras", None)
-
-        if extras is None:
-            extras = []
-        else:
-            extras = [{"key": key, "value": value} for key, value in extras.items()]
-
-        return func(*args, extras=extras, **kwargs)
-
-    return wrapper
+if TYPE_CHECKING:
+    from mealie.db.models.household.shopping_list import ShoppingList, ShoppingListItem
+    from mealie.db.models.recipe.ingredient import IngredientFoodModel
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class ExtrasGeneric:
-    """
-    Template for API extensions
-
-    This class is not an actual table, so it does not inherit from SqlAlchemyBase
-    """
-
-    id: FilterableColumn[int] = mapped_column(sa.Integer, primary_key=True)
-    key_name: FilterableColumn[str | None] = mapped_column(sa.String)
-    value: FilterableColumn[str | None] = mapped_column(sa.String)
-
-    def __init__(self, key, value) -> None:
-        self.key_name = key
-        self.value = value
-
-
-# used specifically for recipe extras
-class ApiExtras(ExtrasGeneric, SqlAlchemyBase):
+class ApiExtras(TortoiseModel):
     __tablename__ = "api_extras"
-    recipee_id: FilterableColumn[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
+    __filterable_fields__ = {"id", "key_name", "recipee_id", "value"}
+    __association_proxies__ = {"recipee_id": ["recipe_id"]}
+
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="extras",
+        source_field="recipee_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    id = fields.IntField(primary_key=True)
+    key_name = fields.TextField(null=True)
+    value = fields.TextField(null=True)
+
+    @property
+    def recipee_id(self) -> UUID | None:
+        return self.recipe_id
+
+    @recipee_id.setter
+    def recipee_id(self, value: UUID | None) -> None:
+        self.recipe_id = value
+
+    class Meta:
+        table = "api_extras"
 
 
-class IngredientFoodExtras(ExtrasGeneric, SqlAlchemyBase):
+class IngredientFoodExtras(TortoiseModel):
     __tablename__ = "ingredient_food_extras"
-    ingredient_food_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("ingredient_foods.id"), index=True
+    __filterable_fields__ = {"value", "key_name", "id", "ingredient_food_id"}
+    __association_proxies__ = {}
+
+    ingredient_food_id: UUID | None
+    ingredient_food: fields.ForeignKeyNullableRelation[IngredientFoodModel] = fields.ForeignKeyField(
+        "models.IngredientFoodModel",
+        related_name="extras",
+        source_field="ingredient_food_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
+    id = fields.IntField(primary_key=True)
+    key_name = fields.TextField(null=True)
+    value = fields.TextField(null=True)
+
+    class Meta:
+        table = "ingredient_food_extras"
 
 
-class ShoppingListExtras(ExtrasGeneric, SqlAlchemyBase):
+class ShoppingListExtras(TortoiseModel):
     __tablename__ = "shopping_list_extras"
-    shopping_list_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("shopping_lists.id"), index=True
+    __filterable_fields__ = {"shopping_list_id", "key_name", "id", "value"}
+    __association_proxies__ = {}
+
+    shopping_list_id: UUID | None
+    shopping_list: fields.ForeignKeyNullableRelation[ShoppingList] = fields.ForeignKeyField(
+        "models.ShoppingList",
+        related_name="extras",
+        source_field="shopping_list_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
+    id = fields.IntField(primary_key=True)
+    key_name = fields.TextField(null=True)
+    value = fields.TextField(null=True)
+
+    class Meta:
+        table = "shopping_list_extras"
 
 
-class ShoppingListItemExtras(ExtrasGeneric, SqlAlchemyBase):
+class ShoppingListItemExtras(TortoiseModel):
     __tablename__ = "shopping_list_item_extras"
-    shopping_list_item_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("shopping_list_items.id"), index=True
+    __filterable_fields__ = {"shopping_list_item_id", "value", "key_name", "id"}
+    __association_proxies__ = {}
+
+    shopping_list_item_id: UUID | None
+    shopping_list_item: fields.ForeignKeyNullableRelation[ShoppingListItem] = fields.ForeignKeyField(
+        "models.ShoppingListItem",
+        related_name="extras",
+        source_field="shopping_list_item_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
+    id = fields.IntField(primary_key=True)
+    key_name = fields.TextField(null=True)
+    value = fields.TextField(null=True)
+
+    class Meta:
+        table = "shopping_list_item_extras"

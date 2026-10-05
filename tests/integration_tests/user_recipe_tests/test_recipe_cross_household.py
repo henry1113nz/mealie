@@ -8,6 +8,7 @@ from mealie.schema.cookbook.cookbook import SaveCookBook
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_category import TagSave
 from tests import data
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -17,17 +18,17 @@ from tests.utils.fixture_schemas import TestUser
 def test_duplicate_recipe_changes_household(
     api_client: TestClient, unique_user: TestUser, h2_user: TestUser, is_private_household: bool
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     source_recipe_name = random_string()
     duplicate_recipe_name = random_string()
 
     response = api_client.post(api_routes.recipes, json={"name": source_recipe_name}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe = unique_user.repos.recipes.get_one(response.json())
+    recipe = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe
     assert recipe.name == source_recipe_name
     assert str(recipe.household_id) == unique_user.household_id
@@ -36,7 +37,7 @@ def test_duplicate_recipe_changes_household(
         api_routes.recipes_slug_duplicate(recipe.slug), json={"name": duplicate_recipe_name}, headers=h2_user.token
     )
     assert response.status_code == 201
-    duplicate_recipe = h2_user.repos.recipes.get_one(response.json()["slug"])
+    duplicate_recipe = run_db(h2_user.repos.recipes.get_one(response.json()["slug"]))
     assert duplicate_recipe
     assert duplicate_recipe.name == duplicate_recipe_name
     assert str(duplicate_recipe.household_id) == h2_user.household_id != unique_user.household_id
@@ -46,20 +47,20 @@ def test_duplicate_recipe_changes_household(
 def test_get_all_recipes_includes_all_households(
     api_client: TestClient, unique_user: TestUser, h2_user: TestUser, is_private_household: bool
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe = unique_user.repos.recipes.get_one(response.json())
+    recipe = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe and recipe.id
     recipe_id = recipe.id
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = h2_recipe.id
 
@@ -74,20 +75,20 @@ def test_get_all_recipes_includes_all_households(
 def test_get_all_recipes_with_household_filter(
     api_client: TestClient, unique_user: TestUser, h2_user: TestUser, is_private_household: bool
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe = unique_user.repos.recipes.get_one(response.json())
+    recipe = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe and recipe.id
     recipe_id = recipe.id
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = h2_recipe.id
 
@@ -106,14 +107,14 @@ def test_get_all_recipes_with_household_filter(
 def test_get_one_recipe_from_another_household(
     api_client: TestClient, unique_user: TestUser, h2_user: TestUser, is_private_household: bool
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = h2_recipe.id
 
@@ -133,16 +134,16 @@ def test_update_recipes_in_other_households(
     household_lock_recipe_edits: bool,
     use_patch: bool,
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     original_name = random_string()
     response = api_client.post(api_routes.recipes, json={"name": original_name}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = h2_recipe.id
 
@@ -183,15 +184,15 @@ def test_delete_recipes_from_other_households(
     is_private_household: bool,
     household_lock_recipe_edits: bool,
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = str(h2_recipe.id)
 
@@ -218,15 +219,15 @@ def test_admin_delete_recipes_from_other_households(
     is_private_household: bool,
     household_lock_recipe_edits: bool,
 ):
-    household = h2_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(h2_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    h2_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(h2_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = str(h2_recipe.id)
 
@@ -254,16 +255,16 @@ def test_admin_update_recipes_in_other_households(
     is_private_household: bool,
     household_lock_recipe_edits: bool,
 ):
-    household = h2_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(h2_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    h2_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(h2_user.repos.household_preferences.update(household.id, household.preferences))
 
     original_name = random_string()
     response = api_client.post(api_routes.recipes, json={"name": original_name}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = h2_recipe.id
 
@@ -296,15 +297,15 @@ def test_user_can_update_last_made_on_other_household(
     is_private_household: bool,
     household_lock_recipe_edits: bool,
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_slug = h2_recipe.slug
 
@@ -327,7 +328,7 @@ def test_user_can_update_last_made_on_other_household(
     assert response.status_code == 200
     assert response.json()["lastMade"] is None
 
-    recipe = h2_user.repos.recipes.get_one(h2_recipe_slug)
+    recipe = run_db(h2_user.repos.recipes.get_one(h2_recipe_slug))
     assert recipe
     assert recipe.last_made == dt_2
 
@@ -347,41 +348,47 @@ def test_user_can_update_last_made_on_other_household(
     assert parse_dt(last_made_json) == dt_2
 
     # this shouldn't have updated since dt_2 is newer than dt_1
-    recipe = h2_user.repos.recipes.get_one(h2_recipe_slug)
+    recipe = run_db(h2_user.repos.recipes.get_one(h2_recipe_slug))
     assert recipe
     assert recipe.last_made == dt_2
 
 
 def test_cookbook_recipes_includes_all_households(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
-    tag = unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.group_id))
-    recipes = unique_user.repos.recipes.create_many(
-        [
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=random_string(),
-                tags=[tag],
-            )
-            for _ in range(3)
-        ]
+    tag = run_db(unique_user.repos.tags.create(TagSave(name=random_string(), group_id=unique_user.group_id)))
+    recipes = run_db(
+        unique_user.repos.recipes.create_many(
+            [
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=random_string(),
+                    tags=[tag],
+                )
+                for _ in range(3)
+            ]
+        )
     )
-    other_recipes = h2_user.repos.recipes.create_many(
-        [
-            Recipe(
-                user_id=h2_user.user_id,
-                group_id=h2_user.group_id,
-                name=random_string(),
-            )
-            for _ in range(3)
-        ]
+    other_recipes = run_db(
+        h2_user.repos.recipes.create_many(
+            [
+                Recipe(
+                    user_id=h2_user.user_id,
+                    group_id=h2_user.group_id,
+                    name=random_string(),
+                )
+                for _ in range(3)
+            ]
+        )
     )
 
-    cookbook = unique_user.repos.cookbooks.create(
-        SaveCookBook(
-            name=random_string(),
-            group_id=unique_user.group_id,
-            household_id=unique_user.household_id,
-            tags=[tag],
+    cookbook = run_db(
+        unique_user.repos.cookbooks.create(
+            SaveCookBook(
+                name=random_string(),
+                group_id=unique_user.group_id,
+                household_id=unique_user.household_id,
+                tags=[tag],
+            )
         )
     )
 
@@ -397,11 +404,13 @@ def test_cookbook_recipes_includes_all_households(api_client: TestClient, unique
 
 
 def test_cookbooks_from_other_households(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
-    h2_cookbook = h2_user.repos.cookbooks.create(
-        SaveCookBook(
-            name=random_string(),
-            group_id=h2_user.group_id,
-            household_id=h2_user.household_id,
+    h2_cookbook = run_db(
+        h2_user.repos.cookbooks.create(
+            SaveCookBook(
+                name=random_string(),
+                group_id=h2_user.group_id,
+                household_id=h2_user.household_id,
+            )
         )
     )
 
@@ -418,15 +427,15 @@ def test_update_recipe_image_from_other_households(
     is_private_household: bool,
     household_lock_recipe_edits: bool,
 ):
-    household = unique_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=h2_user.token)
     assert response.status_code == 201
-    h2_recipe = h2_user.repos.recipes.get_one(response.json())
+    h2_recipe = run_db(h2_user.repos.recipes.get_one(response.json()))
     assert h2_recipe and h2_recipe.id
     h2_recipe_id = str(h2_recipe.id)
 

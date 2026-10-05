@@ -4,13 +4,9 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import UUID4, ConfigDict, Field
-from sqlalchemy.orm import joinedload
-from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.config import get_app_dirs
 from mealie.db.models._model_utils.datetime import get_utc_now
-from mealie.db.models.recipe.recipe_timeline import RecipeTimelineEvent
-from mealie.db.models.users.users import User
 from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema.recipe.recipe import Recipe
@@ -66,11 +62,8 @@ class RecipeTimelineEventOut(RecipeTimelineEventCreate):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(RecipeTimelineEvent.recipe),
-            joinedload(RecipeTimelineEvent.user).load_only(User.household_id, User.group_id),
-        ]
+    def loader_options(cls) -> list[str]:
+        return ["recipe", "user"]
 
     @classmethod
     def image_dir_from_id(cls, recipe_id: UUID4 | str, timeline_event_id: UUID4 | str) -> Path:

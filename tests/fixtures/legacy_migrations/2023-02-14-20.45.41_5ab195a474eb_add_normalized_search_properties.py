@@ -12,7 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from text_unidecode import unidecode
 
 from alembic import op
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.guid import GUID
 
 # revision identifiers, used by Alembic.
 revision = "5ab195a474eb"

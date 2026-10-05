@@ -9,7 +9,7 @@ Create Date: 2026-05-10 18:44:53.159775
 from sqlalchemy import orm, text
 
 from alembic import op
-from mealie.db.models._model_base import SqlAlchemyBase
+from mealie.db.models._model_base import TortoiseModel as SqlAlchemyBase
 
 
 # revision identifiers, used by Alembic.

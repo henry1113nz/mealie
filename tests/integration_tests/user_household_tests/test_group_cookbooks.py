@@ -9,6 +9,7 @@ from pydantic import UUID4
 
 from mealie.schema.cookbook.cookbook import ReadCookBook, SaveCookBook
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -42,7 +43,9 @@ def cookbooks(unique_user: TestUser) -> Generator[list[TestCookbook]]:
     data: list[ReadCookBook] = []
     yield_data: list[TestCookbook] = []
     for _ in range(3):
-        cb = database.cookbooks.create(SaveCookBook(**get_page_data(unique_user.group_id, unique_user.household_id)))
+        cb = run_db(
+            database.cookbooks.create(SaveCookBook(**get_page_data(unique_user.group_id, unique_user.household_id)))
+        )
         assert cb.slug
         data.append(cb)
         yield_data.append(TestCookbook(id=cb.id, slug=cb.slug, name=cb.name, data=cb.model_dump()))
@@ -51,7 +54,7 @@ def cookbooks(unique_user: TestUser) -> Generator[list[TestCookbook]]:
 
     for cb in data:
         try:
-            database.cookbooks.delete(cb.id)
+            run_db(database.cookbooks.delete(cb.id))
         except Exception:
             pass
 
@@ -89,7 +92,7 @@ def test_read_cookbook(
     use_other_household: bool,
 ):
     sample = random.choice(cookbooks)
-    household = unique_user.repos.households.get_one(sample.data["household_id"])
+    household = run_db(unique_user.repos.households.get_one(sample.data["household_id"]))
     assert household
 
     if use_other_household:

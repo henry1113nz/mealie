@@ -1,29 +1,36 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
 
 if TYPE_CHECKING:
-    from .group import Group
+    from mealie.db.models.group.group import Group
 
 
-class GroupDataExportsModel(SqlAlchemyBase, BaseMixins):
+class GroupDataExportsModel(TortoiseModel):
     __tablename__ = "group_data_exports"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    group: Mapped[Group | None] = orm.relationship("Group", back_populates="data_exports", single_parent=True)
-    group_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("groups.id"), index=True)
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    group_id: UUID | None
+    group: fields.ForeignKeyNullableRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="data_exports",
+        source_field="group_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    name = fields.TextField(null=False)
+    filename = fields.TextField(null=False)
+    path = fields.TextField(null=False)
+    size = fields.TextField(null=False)
+    expires = fields.TextField(null=False)
 
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    filename: Mapped[str] = mapped_column(String, nullable=False)
-    path: Mapped[str] = mapped_column(String, nullable=False)
-    size: Mapped[str] = mapped_column(String, nullable=False)
-    expires: Mapped[str] = mapped_column(String, nullable=False)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "group_data_exports"

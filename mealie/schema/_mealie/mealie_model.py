@@ -4,15 +4,14 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from enum import Enum
-from typing import ClassVar, Protocol, Self
+from typing import Any, ClassVar, Protocol, Self, cast
 
 from humps.main import camelize
 from pydantic import UUID4, AliasChoices, BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Select, desc, func, or_, text
-from sqlalchemy.orm import InstrumentedAttribute, Session
-from sqlalchemy.orm.interfaces import LoaderOption
-
-from mealie.db.models._model_base import SqlAlchemyBase
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.expressions import Case, Q, When
+from tortoise.models import Model
+from tortoise.queryset import QuerySet
 
 HOUR_ONLY_TZ_PATTERN = re.compile(r"[+-]\d{2}$")
 
@@ -132,19 +131,19 @@ class MealieModel(BaseModel):
                 setattr(self, field, val)
 
     @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
+    def loader_options(cls) -> list[str]:
         return []
 
     @classmethod
     def filter_search_query(
         cls,
-        db_model: type[SqlAlchemyBase],
-        query: Select,
-        session: Session,
+        db_model: type[Model],
+        query: QuerySet,
+        session: BaseDBAsyncClient,
         search_type: SearchType,
         search: str,
         search_list: list[str],
-    ) -> Select:
+    ) -> QuerySet:
         """
         Filters a search query based on model attributes
 
@@ -154,20 +153,32 @@ class MealieModel(BaseModel):
         if not cls._searchable_properties:
             raise AttributeError("Not Implemented")
 
-        model_properties: list[InstrumentedAttribute] = [getattr(db_model, prop) for prop in cls._searchable_properties]
+        properties = cls._searchable_properties
         if search_type is SearchType.fuzzy:
-            session.execute(text(f"set pg_trgm.word_similarity_threshold = {cls._fuzzy_similarity_threshold};"))
-            filters = [prop.op("%>")(search) for prop in model_properties]
+            from mealie.services.query_filter.expressions import WordSimilarity
 
-            # trigram ordering by the first searchable property
-            return query.filter(or_(*filters)).order_by(func.least(model_properties[0].op("<->>")(search)))
-        else:
-            filters = []
-            for prop in model_properties:
-                filters.extend([prop.like(f"%{s}%") for s in search_list])
-
-            # order by how close the result is to the first searchable property
-            return query.filter(or_(*filters)).order_by(desc(model_properties[0].like(f"%{search}%")))
+            annotations = {
+                f"_search_similarity_{index}": WordSimilarity(prop, search) for index, prop in enumerate(properties)
+            }
+            query = query.annotate(**annotations)
+            matches = Q()
+            for key in annotations:
+                condition: dict[str, Any] = {key + "__gte": cls._fuzzy_similarity_threshold}
+                matches |= Q(**condition)
+            return query.filter(matches).order_by("-_search_similarity_0")
+        matches = Q()
+        for prop in properties:
+            for token in search_list:
+                matches |= Q(**{prop + "__icontains": token})
+        return (
+            query.filter(matches)
+            .annotate(
+                _search_rank=Case(
+                    When(Q(**{properties[0] + "__icontains": search}), then=cast(Any, 1)), default=cast(Any, 0)
+                )
+            )
+            .order_by("-_search_rank")
+        )
 
 
 class HasUUID(Protocol):

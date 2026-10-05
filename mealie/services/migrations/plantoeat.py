@@ -1,4 +1,3 @@
-import asyncio
 import csv
 import tempfile
 import zipfile
@@ -143,7 +142,7 @@ class PlanToEatMigrator(BaseMigrator):
         )
         return False
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         if not self._validate_archive():
             return
 
@@ -160,17 +159,17 @@ class PlanToEatMigrator(BaseMigrator):
 
             preprocess_recipe = self._process_recipe_row(recipe)
 
-            recipe_model = self.clean_recipe_dictionary(preprocess_recipe)
+            recipe_model = await self.clean_recipe_dictionary(preprocess_recipe)
 
             recipes.append(recipe_model)
 
-        results = self.import_recipes_to_database(recipes)
+        results = await self.import_recipes_to_database(recipes)
 
         for slug, recipe_id, status in results:
             if not status:
                 continue
 
             try:
-                asyncio.run(self.scrape_image(slug, recipe_image_urls[slug], recipe_id))
+                await self.scrape_image(slug, recipe_image_urls[slug], recipe_id)
             except Exception as e:
                 self.logger.error(f"Failed to download image for {slug}: {e}")

@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mealie.repos.repository_factory import AllRepositories
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes, random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -39,7 +40,7 @@ def test_get_group_member_not_found(api_client: TestClient, unique_user: TestUse
 
 
 def test_get_households(api_client: TestClient, unique_user: TestUser):
-    households = [unique_user.repos.households.create({"name": random_string()}) for _ in range(5)]
+    households = [run_db(unique_user.repos.households.create({"name": random_string()})) for _ in range(5)]
     response = api_client.get(api_routes.groups_households, headers=unique_user.token)
     response_ids = [item["id"] for item in response.json()["items"]]
     for household in households:
@@ -48,14 +49,14 @@ def test_get_households(api_client: TestClient, unique_user: TestUser):
 
 def test_get_households_filtered(unfiltered_database: AllRepositories, api_client: TestClient, unique_user: TestUser):
     group_1_id = unique_user.group_id
-    group_2_id = str(unfiltered_database.groups.create({"name": random_string()}).id)
+    group_2_id = str(run_db(unfiltered_database.groups.create({"name": random_string()})).id)
 
     group_1_households = [
-        unfiltered_database.households.create({"name": random_string(), "group_id": group_1_id})
+        run_db(unfiltered_database.households.create({"name": random_string(), "group_id": group_1_id}))
         for _ in range(random_int(2, 5))
     ]
     group_2_households = [
-        unfiltered_database.households.create({"name": random_string(), "group_id": group_2_id})
+        run_db(unfiltered_database.households.create({"name": random_string(), "group_id": group_2_id}))
         for _ in range(random_int(2, 5))
     ]
 
@@ -68,7 +69,7 @@ def test_get_households_filtered(unfiltered_database: AllRepositories, api_clien
 
 
 def test_get_one_household(api_client: TestClient, unique_user: TestUser):
-    households = [unique_user.repos.households.create({"name": random_string()}) for _ in range(5)]
+    households = [run_db(unique_user.repos.households.create({"name": random_string()})) for _ in range(5)]
     household = random.choice(households)
 
     response = api_client.get(api_routes.groups_households_household_slug(household.slug), headers=unique_user.token)

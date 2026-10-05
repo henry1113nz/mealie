@@ -2,10 +2,11 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import sqlalchemy
 from fastapi.testclient import TestClient
+from tortoise.exceptions import DoesNotExist
 
 from mealie.schema.recipe.recipe_share_token import RecipeShareToken, RecipeShareTokenSave
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -23,8 +24,8 @@ def slug(api_client: TestClient, unique_user: TestUser) -> Generator[str]:
     yield response_data
 
     try:
-        database.recipes.delete(response_data)
-    except sqlalchemy.exc.NoResultFound:
+        run_db(database.recipes.delete(response_data))
+    except DoesNotExist:
         pass
 
 
@@ -32,13 +33,15 @@ def test_recipe_share_tokens_get_all(api_client: TestClient, unique_user: TestUs
     database = unique_user.repos
 
     # Create 5 Tokens
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
     tokens = []
     for _ in range(5):
-        token = database.recipe_share_tokens.create(
-            RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+        token = run_db(
+            database.recipe_share_tokens.create(
+                RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+            )
         )
         tokens.append(token)
 
@@ -54,13 +57,15 @@ def test_recipe_share_tokens_get_all_with_id(api_client: TestClient, unique_user
     database = unique_user.repos
 
     # Create 5 Tokens
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
     tokens = []
     for _ in range(3):
-        token = database.recipe_share_tokens.create(
-            RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+        token = run_db(
+            database.recipe_share_tokens.create(
+                RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+            )
         )
         tokens.append(token)
 
@@ -74,7 +79,7 @@ def test_recipe_share_tokens_get_all_with_id(api_client: TestClient, unique_user
 
 def test_recipe_share_tokens_create_and_get_one(api_client: TestClient, unique_user: TestUser, slug: str):
     database = unique_user.repos
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
     payload = {
@@ -96,11 +101,11 @@ def test_recipe_share_tokens_delete_one(api_client: TestClient, unique_user: Tes
 
     # Create Token
     token: RecipeShareToken | None = None
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
-    token = database.recipe_share_tokens.create(
-        RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+    token = run_db(
+        database.recipe_share_tokens.create(RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id))
     )
 
     # Delete Token
@@ -108,14 +113,14 @@ def test_recipe_share_tokens_delete_one(api_client: TestClient, unique_user: Tes
     assert response.status_code == 200
 
     # Get Token
-    token = database.recipe_share_tokens.get_one(token.id)
+    token = run_db(database.recipe_share_tokens.get_one(token.id))
 
     assert token is None
 
 
 def test_share_recipe_from_different_group(api_client: TestClient, unique_user: TestUser, g2_user: TestUser, slug: str):
     database = unique_user.repos
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
     response = api_client.post(api_routes.shared_recipes, json={"recipeId": str(recipe.id)}, headers=g2_user.token)
@@ -126,7 +131,7 @@ def test_share_recipe_from_different_household(
     api_client: TestClient, unique_user: TestUser, h2_user: TestUser, slug: str
 ):
     database = unique_user.repos
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
     response = api_client.post(api_routes.shared_recipes, json={"recipeId": str(recipe.id)}, headers=h2_user.token)
@@ -135,11 +140,11 @@ def test_share_recipe_from_different_household(
 
 def test_get_recipe_from_token(api_client: TestClient, unique_user: TestUser, slug: str):
     database = unique_user.repos
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
-    token = database.recipe_share_tokens.create(
-        RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
+    token = run_db(
+        database.recipe_share_tokens.create(RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id))
     )
 
     response = api_client.get(api_routes.recipes_shared_token_id(token.id))
@@ -153,19 +158,21 @@ def test_get_recipe_from_expired_token_deletes_token_and_returns_404(
     api_client: TestClient, unique_user: TestUser, slug: str
 ):
     database = unique_user.repos
-    recipe = database.recipes.get_one(slug)
+    recipe = run_db(database.recipes.get_one(slug))
     assert recipe
 
-    token = database.recipe_share_tokens.create(
-        RecipeShareTokenSave(
-            recipe_id=recipe.id, group_id=unique_user.group_id, expiresAt=datetime.now(UTC) - timedelta(minutes=1)
+    token = run_db(
+        database.recipe_share_tokens.create(
+            RecipeShareTokenSave(
+                recipe_id=recipe.id, group_id=unique_user.group_id, expiresAt=datetime.now(UTC) - timedelta(minutes=1)
+            )
         )
     )
-    fetch_token = database.recipe_share_tokens.get_one(token.id)
+    fetch_token = run_db(database.recipe_share_tokens.get_one(token.id))
     assert fetch_token
 
     response = api_client.get(api_routes.recipes_shared_token_id(token.id), headers=unique_user.token)
     assert response.status_code == 404
 
-    fetch_token = database.recipe_share_tokens.get_one(token.id)
+    fetch_token = run_db(database.recipe_share_tokens.get_one(token.id))
     assert fetch_token is None

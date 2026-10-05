@@ -1,4 +1,3 @@
-import asyncio
 import json
 from contextlib import asynccontextmanager
 from typing import cast
@@ -7,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import UUID4
 
-from mealie.db.db_setup import session_context
 from mealie.lang.providers import get_locale_provider
 from mealie.schema.openai.recipe_ingredient import OpenAIIngredient, OpenAIIngredients
 from mealie.schema.recipe.recipe import Recipe
@@ -22,6 +20,7 @@ from mealie.schema.recipe.recipe_ingredient import (
 )
 from mealie.services.openai import OpenAIService
 from mealie.services.parser_services import RegisteredParser, get_parser
+from tests.fixtures.fixture_database import run_db, session_context
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -52,6 +51,7 @@ def test_openai_parser(
 
     def mock_openai_init(self, repos):
         self.repos = repos
+        self._initialized = True
         self.custom_prompt_dir = None
 
     monkeypatch.setattr(OpenAIService, "__init__", mock_openai_init)
@@ -60,7 +60,7 @@ def test_openai_parser(
         parser = get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
 
         inputs = [random_string() for _ in range(ingredient_count)]
-        parsed = asyncio.run(parser.parse(inputs))
+        parsed = run_db(parser.parse(inputs))
 
         # since OpenAI is mocked, we don't need to validate the data, we just need to make sure parsing works
         # and that it preserves order
@@ -96,6 +96,7 @@ def test_openai_parser_rejects_extra(
 
     def mock_openai_init(self, repos):
         self.repos = repos
+        self._initialized = True
         self.custom_prompt_dir = None
 
     monkeypatch.setattr(OpenAIService, "__init__", mock_openai_init)
@@ -104,7 +105,7 @@ def test_openai_parser_rejects_extra(
         parser = get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
 
         with pytest.raises(ValueError, match="Expected 1, got 2"):
-            asyncio.run(parser.parse(["1 tablespoon fresh lemon juice, plus 2 teaspoons zest"]))
+            run_db(parser.parse(["1 tablespoon fresh lemon juice, plus 2 teaspoons zest"]))
 
 
 def test_openai_parser_sanitize_output(
@@ -159,6 +160,7 @@ def test_openai_parser_sanitize_output(
         from unittest.mock import MagicMock
 
         self.repos = repos
+        self._initialized = True
         self.custom_prompt_dir = None
         self.default_provider = MagicMock()
         self.audio_provider = None
@@ -169,7 +171,7 @@ def test_openai_parser_sanitize_output(
     with session_context() as session:
         parser = get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
 
-        parsed = asyncio.run(parser.parse([""]))
+        parsed = run_db(parser.parse([""]))
 
         assert len(parsed) == 1
         parsed_ing = cast(ParsedIngredient, parsed[0])
@@ -178,16 +180,20 @@ def test_openai_parser_sanitize_output(
 
         # Make sure we can create a recipe with this ingredient
         assert isinstance(parsed_ing.ingredient.food, CreateIngredientFood)
-        food = unique_user.repos.ingredient_foods.create(
-            parsed_ing.ingredient.food.cast(SaveIngredientFood, group_id=unique_user.group_id)
+        food = run_db(
+            unique_user.repos.ingredient_foods.create(
+                parsed_ing.ingredient.food.cast(SaveIngredientFood, group_id=unique_user.group_id)
+            )
         )
         parsed_ing.ingredient.food = food
-        unique_user.repos.recipes.create(
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=random_string(),
-                recipe_ingredient=[parsed_ing.ingredient],
+        run_db(
+            unique_user.repos.recipes.create(
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=random_string(),
+                    recipe_ingredient=[parsed_ing.ingredient],
+                )
             )
         )
 
@@ -210,13 +216,15 @@ def test_openai_parser_substitutes(
             OpenAIParser, get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
         )
 
-        substitutions = parser._convert_substitutes(
-            ["onion", "thisismyalias", "   ", unknown, "potatoes"],
-            CreateIngredientFood(name="potatoes"),
+        substitutions = run_db(
+            parser._convert_substitutes(
+                ["onion", "thisismyalias", "   ", unknown, "potatoes"],
+                CreateIngredientFood(name="potatoes"),
+            )
         )
 
-        onion = parser.data_matcher.find_food_match("onion")
-        aliased = parser.data_matcher.find_food_match("thisismyalias")
+        onion = run_db(parser.data_matcher.find_food_match("onion"))
+        aliased = run_db(parser.data_matcher.find_food_match("thisismyalias"))
         assert onion and aliased
 
     # the blank is dropped, and "potatoes" resolves back to the ingredient's own food

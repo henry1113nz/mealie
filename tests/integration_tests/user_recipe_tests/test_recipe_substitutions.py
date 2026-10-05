@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from mealie.schema.recipe.recipe_ingredient import CreateIngredientFood, SaveIngredientFood
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -133,8 +134,8 @@ def test_substitute_food_from_another_group_is_dropped(
     leaks through every recipe page that renders the substitution.
     """
 
-    foreign_food = g2_user.repos.ingredient_foods.create(
-        SaveIngredientFood(name=random_string(10), group_id=g2_user.group_id)
+    foreign_food = run_db(
+        g2_user.repos.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=g2_user.group_id))
     )
 
     food = create_food(
@@ -154,7 +155,7 @@ def test_substitute_food_from_another_group_is_dropped(
     assert stored[0]["note"] == "a standalone note"
 
     # and nothing was manufactured in this group to satisfy the id
-    assert unique_user.repos.ingredient_foods.get_one(foreign_food.id) is None
+    assert run_db(unique_user.repos.ingredient_foods.get_one(foreign_food.id)) is None
 
 
 def test_recipe_substitutions_survive_a_resave(api_client: TestClient, unique_user: TestUser):
@@ -192,8 +193,8 @@ def test_recipe_substitutions_survive_a_resave(api_client: TestClient, unique_us
 def test_recipe_substitute_food_from_another_group_is_dropped(
     api_client: TestClient, unique_user: TestUser, g2_user: TestUser
 ):
-    foreign_food = g2_user.repos.ingredient_foods.create(
-        SaveIngredientFood(name=random_string(10), group_id=g2_user.group_id)
+    foreign_food = run_db(
+        g2_user.repos.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=g2_user.group_id))
     )
 
     recipe = create_recipe_with_substitutions(
@@ -228,10 +229,10 @@ def test_recipe_duplicate_carries_substitutions(api_client: TestClient, unique_u
 def test_explore_foods_include_substitutions(api_client: TestClient, unique_user: TestUser):
     database = unique_user.repos
 
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
     group.preferences.private_group = False
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
     substitute = create_food(unique_user, api_client)
     food = create_food(unique_user, api_client, substitutions=[{"substituteFoodId": substitute["id"]}])

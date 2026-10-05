@@ -57,7 +57,7 @@ class AIRecipeService(RecipeService):
                 on_progress=on_progress,
             )
 
-            recipe = self.create_one(recipe_data)
+            recipe = await self.create_one(recipe_data)
             if local_images:
                 with open(local_images[0], "rb") as f:
                     RecipeDataService(recipe.id).write_image(f.read(), "webp")
@@ -85,6 +85,7 @@ class AIRecipeService(RecipeService):
             raise NoRecipeDataError(self.t("recipe.import-errors.no-source"))
 
         ai_service = OpenAIService(self.repos)
+        await ai_service.initialize()
         self._validate_providers(ai_service, has_images=bool(workflow_input.images))
 
         ctx = WorkflowContext(

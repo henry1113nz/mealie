@@ -1,75 +1,121 @@
-import datetime
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Date, ForeignKey, String, Table, UniqueConstraint, orm
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from mealie.db.models.recipe.tag import Tag, plan_rules_to_tags
-
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
-from ..recipe.category import Category, plan_rules_to_categories
+from mealie.db.models._model_base import TortoiseModel
+from mealie.db.models._model_utils.datetime import DateField
+from mealie.db.models._model_utils.string import StringField
 
 if TYPE_CHECKING:
-    from ..group import Group
-    from ..recipe import RecipeModel
-    from ..users import User
-    from .household import Household
-
-plan_rules_to_households = Table(
-    "plan_rules_to_households",
-    SqlAlchemyBase.metadata,
-    Column("group_plan_rule_id", GUID, ForeignKey("group_meal_plan_rules.id"), index=True),
-    Column("household_id", GUID, ForeignKey("households.id"), index=True),
-    UniqueConstraint("group_plan_rule_id", "household_id", name="group_plan_rule_id_household_id_key"),
-)
+    from mealie.db.models.group.group import Group
+    from mealie.db.models.household.household import Household
+    from mealie.db.models.recipe.recipe import RecipeModel
+    from mealie.db.models.users.users import User
 
 
-class GroupMealPlanRules(BaseMixins, SqlAlchemyBase):
+class GroupMealPlanRules(TortoiseModel):
     __tablename__ = "group_meal_plan_rules"
+    __filterable_fields__ = {"day", "entry_type", "id", "household_id", "group_id"}
+    __association_proxies__ = {}
 
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    group_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("groups.id"), nullable=False, index=True)
-    household_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("households.id"), index=True)
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="group_meal_plan_rules_group",
+        source_field="group_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    household_id: UUID | None
+    household: fields.ForeignKeyNullableRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="group_meal_plan_rules_household",
+        source_field="household_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    day = fields.TextField(null=False, default="unset")
+    entry_type = fields.TextField(null=False, default="")
+    query_filter_string = fields.TextField(null=False, default="")
+    categories = fields.ManyToManyField(
+        "models.Category",
+        related_name="group_meal_plan_rules_categories",
+        through="plan_rules_to_categories",
+        backward_key="group_plan_rule_id",
+        forward_key="category_id",
+    )
+    tags = fields.ManyToManyField(
+        "models.Tag",
+        related_name="group_meal_plan_rules_tags",
+        through="plan_rules_to_tags",
+        backward_key="plan_rule_id",
+        forward_key="tag_id",
+    )
+    households = fields.ManyToManyField(
+        "models.Household",
+        related_name="group_meal_plan_rules_households",
+        through="plan_rules_to_households",
+        backward_key="group_plan_rule_id",
+        forward_key="household_id",
+    )
 
-    day: FilterableColumn[str] = mapped_column(
-        String, nullable=False, default="unset"
-    )  # "MONDAY", "TUESDAY", "WEDNESDAY", etc...
-    entry_type: FilterableColumn[str] = mapped_column(
-        String, nullable=False, default=""
-    )  # "breakfast", "lunch", "dinner", etc ...
-    query_filter_string: Mapped[str] = mapped_column(String, nullable=False, default="")
-
-    # Old filters - deprecated in favor of query filter strings
-    categories: Mapped[list[Category]] = orm.relationship(Category, secondary=plan_rules_to_categories)
-    tags: Mapped[list[Tag]] = orm.relationship(Tag, secondary=plan_rules_to_tags)
-    households: Mapped[list[Household]] = orm.relationship("Household", secondary=plan_rules_to_households)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "group_meal_plan_rules"
 
 
-class GroupMealPlan(SqlAlchemyBase, BaseMixins):
+class GroupMealPlan(TortoiseModel):
     __tablename__ = "group_meal_plans"
+    __filterable_fields__ = {"date", "entry_type", "title", "user_id", "text", "group_id", "recipe_id"}
+    __association_proxies__ = {"household_id": ["user", "household_id"], "household": ["user", "household"]}
 
-    date: FilterableColumn[datetime.date] = mapped_column(Date, index=True, nullable=False)
-    entry_type: FilterableColumn[str] = mapped_column(String, index=True, nullable=False)
-    title: FilterableColumn[str] = mapped_column(String, index=True, nullable=False)
-    text: FilterableColumn[str] = mapped_column(String, nullable=False)
+    date = DateField(null=False, db_index=True)
+    entry_type = StringField(null=False, db_index=True)
+    title = StringField(null=False, db_index=True)
+    text = fields.TextField(null=False)
+    group_id: UUID | None
+    group: fields.ForeignKeyNullableRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="mealplans",
+        source_field="group_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    user_id: UUID | None
+    user: fields.ForeignKeyNullableRelation[User] = fields.ForeignKeyField(
+        "models.User",
+        related_name="mealplans",
+        source_field="user_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="meal_entries",
+        source_field="recipe_id",
+        null=True,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
 
-    group_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("groups.id"), index=True)
-    group: Mapped[Group | None] = orm.relationship("Group", back_populates="mealplans")
-    household_id: AssociationProxy[GUID] = association_proxy("user", "household_id")
-    household: AssociationProxy[Household] = association_proxy("user", "household")
-    user_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("users.id"), index=True)
-    user: Mapped[User | None] = orm.relationship("User", back_populates="mealplans")
+    @property
+    def household_id(self):
+        parent = getattr(self, "user", None)
+        return getattr(parent, "household_id", None) if parent is not None else None
 
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("recipes.id"), index=True)
-    recipe: Mapped[RecipeModel | None] = orm.relationship("RecipeModel", back_populates="meal_entries", uselist=False)
+    @property
+    def household(self):
+        parent = getattr(self, "user", None)
+        return getattr(parent, "household", None) if parent is not None else None
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "group_meal_plans"
+        ordering = ("date", "id")

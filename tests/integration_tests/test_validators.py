@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from mealie.schema.recipe.recipe import Recipe
+from tests.fixtures.fixture_database import run_db
 from tests.utils import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -49,7 +50,7 @@ def test_validators_email(api_client: TestClient, unique_user: TestUser):
 
 def test_validators_group_name(api_client: TestClient, unique_user: TestUser):
     database = unique_user.repos
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group
 
     groups = [

@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import orm
 
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.guid import GUID
 from mealie.services.scraper.cleaner import clean_yield
 
 # revision identifiers, used by Alembic.

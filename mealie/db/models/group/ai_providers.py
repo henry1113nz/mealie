@@ -1,145 +1,125 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-import sqlalchemy as sa
-from sqlalchemy import orm
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
+from tortoise import fields
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
+from mealie.db.models._model_utils.string import StringField
 
 if TYPE_CHECKING:
-    from .group import Group
+    from mealie.db.models.group.group import Group
 
 
-def unwrap_headers_and_params(func):
-    """Decorator function to unpack headers and params into dicts"""
-
-    def unwrap(value: dict | None) -> list[dict]:
-        if value is None:
-            value = {}
-
-        return [{"key": k, "value": v} for k, v in value.items()]
-
-    def wrapper(*args, **kwargs):
-        headers = kwargs.pop("request_headers", {})
-        params = kwargs.pop("request_params", {})
-
-        return func(
-            *args,
-            request_headers=unwrap(headers),
-            request_params=unwrap(params),
-            **kwargs,
-        )
-
-    return wrapper
-
-
-class AIProviderKV:
-    """
-    Template for key-value pairs
-
-    This class is not an actual table, so it does not inherit from SqlAlchemyBase
-    """
-
-    id: orm.Mapped[int] = orm.mapped_column(sa.Integer, primary_key=True)
-    key_name: orm.Mapped[str | None] = orm.mapped_column(sa.String)
-    value: orm.Mapped[str | None] = orm.mapped_column(sa.String)
-
-    def __init__(self, key, value) -> None:
-        self.key_name = key
-        self.value = value
-
-
-class AIProviderHeaders(AIProviderKV, SqlAlchemyBase):
+class AIProviderHeaders(TortoiseModel):
     __tablename__ = "ai_provider_headers"
-    provider_id: orm.Mapped[GUID] = orm.mapped_column(GUID, sa.ForeignKey("ai_providers.id"), index=True)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
+
+    provider_id: UUID
+    provider: fields.ForeignKeyRelation[AIProvider] = fields.ForeignKeyField(
+        "models.AIProvider",
+        related_name="request_headers",
+        source_field="provider_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    id = fields.IntField(primary_key=True)
+    key_name = fields.TextField(null=True)
+    value = fields.TextField(null=True)
+
+    class Meta:
+        table = "ai_provider_headers"
 
 
-class AIProviderParams(AIProviderKV, SqlAlchemyBase):
+class AIProviderParams(TortoiseModel):
     __tablename__ = "ai_provider_params"
-    provider_id: orm.Mapped[GUID] = orm.mapped_column(GUID, sa.ForeignKey("ai_providers.id"), index=True)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
+
+    provider_id: UUID
+    provider: fields.ForeignKeyRelation[AIProvider] = fields.ForeignKeyField(
+        "models.AIProvider",
+        related_name="request_params",
+        source_field="provider_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    id = fields.IntField(primary_key=True)
+    key_name = fields.TextField(null=True)
+    value = fields.TextField(null=True)
+
+    class Meta:
+        table = "ai_provider_params"
 
 
-class AIProvider(SqlAlchemyBase, BaseMixins):
+class AIProvider(TortoiseModel):
     __tablename__ = "ai_providers"
-    __table_args__ = (sa.UniqueConstraint("name", "settings_id", name="ai_providers_name_settings_id_key"),)
-    id: orm.Mapped[GUID] = orm.mapped_column(GUID, primary_key=True, default=GUID.generate)
-    group_id: AssociationProxy[GUID] = association_proxy("settings", "group_id")
+    __filterable_fields__ = set()
+    __association_proxies__ = {"group_id": ["settings", "group_id"]}
 
-    settings_id: orm.Mapped[GUID] = orm.mapped_column(
-        GUID, sa.ForeignKey("ai_provider_settings.id"), nullable=False, index=True
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    settings_id: UUID
+    settings: fields.ForeignKeyRelation[AIProviderSettings] = fields.ForeignKeyField(
+        "models.AIProviderSettings",
+        related_name="providers",
+        source_field="settings_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
-    settings: orm.Mapped[AIProviderSettings] = orm.relationship(
-        "AIProviderSettings", foreign_keys="[AIProvider.settings_id]", back_populates="providers"
-    )
+    name = StringField(null=False, db_index=True)
+    base_url = fields.TextField(null=True)
+    api_key = fields.TextField(null=False)
+    model = fields.TextField(null=False)
+    timeout = fields.IntField(null=False, default=300)
 
-    name: orm.Mapped[str] = orm.mapped_column(sa.String, index=True, nullable=False)
-    base_url: orm.Mapped[str | None] = orm.mapped_column(sa.String, nullable=True)
-    api_key: orm.Mapped[str] = orm.mapped_column(sa.String, nullable=False)
-    model: orm.Mapped[str] = orm.mapped_column(sa.String, nullable=False)
-    timeout: orm.Mapped[int] = orm.mapped_column(sa.Integer, nullable=False, default=300)
+    @property
+    def group_id(self):
+        parent = getattr(self, "settings", None)
+        return getattr(parent, "group_id", None) if parent is not None else None
 
-    request_headers: orm.Mapped[list[AIProviderHeaders]] = orm.relationship(
-        "AIProviderHeaders", cascade="all, delete-orphan"
-    )
-    request_params: orm.Mapped[list[AIProviderParams]] = orm.relationship(
-        "AIProviderParams", cascade="all, delete-orphan"
-    )
-
-    @unwrap_headers_and_params
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "ai_providers"
+        unique_together = (("name", "settings_id"),)
 
 
-class AIProviderSettings(SqlAlchemyBase, BaseMixins):
+class AIProviderSettings(TortoiseModel):
     __tablename__ = "ai_provider_settings"
-    __table_args__ = (sa.UniqueConstraint("group_id", name="ai_provider_settings_group_id_key"),)
-    id: orm.Mapped[GUID] = orm.mapped_column(GUID, primary_key=True, default=GUID.generate)
+    __filterable_fields__ = set()
+    __association_proxies__ = {}
 
-    group_id: orm.Mapped[GUID] = orm.mapped_column(GUID, sa.ForeignKey("groups.id"), nullable=False, index=True)
-    group: orm.Mapped[Group] = orm.relationship("Group", back_populates="ai_provider_settings")
-    providers: orm.Mapped[list[AIProvider]] = orm.relationship(
-        AIProvider,
-        foreign_keys="[AIProvider.settings_id]",
-        back_populates="settings",
-        uselist=True,
-        single_parent=True,
-        cascade="all, delete-orphan",
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    group_id: UUID
+    group: fields.OneToOneRelation[Group] = fields.OneToOneField(
+        "models.Group",
+        related_name="ai_provider_settings",
+        source_field="group_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
+    # Optional selections point back to providers owned by these settings. Scalar
+    # UUIDs break the dependency cycle; the repository validates ownership.
+    default_provider_id = fields.UUIDField(null=True, db_index=True)
+    audio_provider_id = fields.UUIDField(null=True, db_index=True)
+    image_provider_id = fields.UUIDField(null=True, db_index=True)
 
-    # Configured Providers
-    default_provider_id: orm.Mapped[GUID | None] = orm.mapped_column(
-        GUID, sa.ForeignKey("ai_providers.id", use_alter=True), nullable=True, index=True
-    )
-    default_provider: orm.Mapped[AIProvider | None] = orm.relationship(
-        AIProvider,
-        foreign_keys="[AIProviderSettings.default_provider_id]",
-        uselist=False,
-        post_update=True,
-    )
+    @property
+    def default_provider(self):
+        return AIProvider.filter(id=self.default_provider_id, settings_id=self.id).first()
 
-    audio_provider_id: orm.Mapped[GUID | None] = orm.mapped_column(
-        GUID, sa.ForeignKey("ai_providers.id", use_alter=True), nullable=True, index=True
-    )
-    audio_provider: orm.Mapped[AIProvider | None] = orm.relationship(
-        AIProvider,
-        foreign_keys="[AIProviderSettings.audio_provider_id]",
-        uselist=False,
-        post_update=True,
-    )
+    @property
+    def audio_provider(self):
+        return AIProvider.filter(id=self.audio_provider_id, settings_id=self.id).first()
 
-    image_provider_id: orm.Mapped[GUID | None] = orm.mapped_column(
-        GUID, sa.ForeignKey("ai_providers.id", use_alter=True), nullable=True, index=True
-    )
-    image_provider: orm.Mapped[AIProvider | None] = orm.relationship(
-        AIProvider,
-        foreign_keys="[AIProviderSettings.image_provider_id]",
-        uselist=False,
-        post_update=True,
-    )
+    @property
+    def image_provider(self):
+        return AIProvider.filter(id=self.image_provider_id, settings_id=self.id).first()
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "ai_provider_settings"
+        unique_together = (("group_id",),)

@@ -22,12 +22,12 @@ class GroupService(BaseService):
         super().__init__()
 
     @staticmethod
-    def create_group(repos: AllRepositories, g_base: GroupBase, prefs: CreateGroupPreferences | None = None):
+    async def create_group(repos: AllRepositories, g_base: GroupBase, prefs: CreateGroupPreferences | None = None):
         """
         Creates a new group in the database with the required associated table references to ensure
         the group includes required preferences and default household.
         """
-        new_group = repos.groups.create(g_base)
+        new_group = await repos.groups.create(g_base)
 
         if prefs is None:
             prefs = CreateGroupPreferences(group_id=new_group.id)
@@ -35,11 +35,11 @@ class GroupService(BaseService):
             prefs.group_id = new_group.id
 
         group_repos = get_repositories(repos.session, group_id=new_group.id, household_id=None)
-        group_preferences = group_repos.group_preferences.create(prefs)
-        group_ai_provider_settings = group_repos.group_ai_provider_settings.create({"group_id": new_group.id})
+        group_preferences = await group_repos.group_preferences.create(prefs)
+        group_ai_provider_settings = await group_repos.group_ai_provider_settings.create({"group_id": new_group.id})
 
         settings = get_app_settings()
-        household = HouseholdService.create_household(
+        household = await HouseholdService.create_household(
             group_repos,
             HouseholdCreate(name=settings.DEFAULT_HOUSEHOLD, group_id=new_group.id),
             prefs=CreateHouseholdPreferences(
@@ -54,7 +54,7 @@ class GroupService(BaseService):
 
         return new_group
 
-    def calculate_group_storage(self, group_id: None | UUID4 = None) -> GroupStorage:
+    async def calculate_group_storage(self, group_id: None | UUID4 = None) -> GroupStorage:
         """
         calculate_group_storage calculates the storage used by the group and returns
         a GroupStorage object.
@@ -65,7 +65,7 @@ class GroupService(BaseService):
 
         target_id = group_id or self.group_id
 
-        all_ids = group_repos.recipes.all_ids(target_id)
+        all_ids = await group_repos.recipes.all_ids(target_id)
 
         used_size = sum(
             fs_stats.get_dir_size(f"{self.directories.RECIPE_DATA_DIR}/{recipe_id!s}") for recipe_id in all_ids

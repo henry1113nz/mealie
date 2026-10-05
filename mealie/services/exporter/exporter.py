@@ -21,14 +21,14 @@ class Exporter(BaseService):
         self.temp_path = temp_zip
         self.exporters = exporters
 
-    def run(self, db: AllRepositories) -> GroupDataExport:
+    async def run(self, db: AllRepositories) -> GroupDataExport:
         # Create Zip File
         self.temp_path.touch()
 
         # Open Zip File
         with zipfile.ZipFile(self.temp_path, "w") as zip:
             for exporter in self.exporters:
-                exporter.export(zip)
+                await exporter.export(zip)
 
         export_id = uuid4()
 
@@ -46,6 +46,6 @@ class Exporter(BaseService):
             expires=datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1),
         )
 
-        db.group_exports.create(group_data_export)
+        (await db.group_exports.create(group_data_export))
 
         return group_data_export

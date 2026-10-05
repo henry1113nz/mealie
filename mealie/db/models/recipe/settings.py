@@ -1,38 +1,47 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import Mapped, mapped_column
+from __future__ import annotations
 
-from mealie.db.models._model_base import FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from tortoise import fields
+
+from mealie.db.models._model_base import TortoiseModel
+
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class RecipeSettings(SqlAlchemyBase):
+class RecipeSettings(TortoiseModel):
     __tablename__ = "recipe_settings"
-    id: FilterableColumn[int] = mapped_column(sa.Integer, primary_key=True)
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
-    public: FilterableColumn[bool | None] = mapped_column(sa.Boolean)
-    show_nutrition: FilterableColumn[bool | None] = mapped_column(sa.Boolean)
-    show_assets: FilterableColumn[bool | None] = mapped_column(sa.Boolean)
-    landscape_view: FilterableColumn[bool | None] = mapped_column(sa.Boolean)
-    disable_comments: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=False)
-    locked: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=False)
+    __filterable_fields__ = {
+        "show_nutrition",
+        "landscape_view",
+        "public",
+        "disable_comments",
+        "id",
+        "locked",
+        "show_assets",
+        "recipe_id",
+    }
+    __association_proxies__ = {}
 
-    # Deprecated
-    disable_amount: Mapped[bool | None] = mapped_column(sa.Boolean, default=True)
+    id = fields.IntField(primary_key=True)
+    recipe_id: UUID
+    recipe: fields.OneToOneRelation[RecipeModel] = fields.OneToOneField(
+        "models.RecipeModel",
+        related_name="settings",
+        source_field="recipe_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    public = fields.BooleanField(null=True, default=True)
+    show_nutrition = fields.BooleanField(null=True, default=True)
+    show_assets = fields.BooleanField(null=True, default=True)
+    landscape_view = fields.BooleanField(null=True, default=True)
+    disable_comments = fields.BooleanField(null=True, default=False)
+    locked = fields.BooleanField(null=True, default=False)
+    disable_amount = fields.BooleanField(null=True, default=True)
 
-    def __init__(
-        self,
-        public=True,
-        show_nutrition=True,
-        show_assets=True,
-        landscape_view=True,
-        disable_amount=True,
-        disable_comments=False,
-        locked=False,
-    ) -> None:
-        self.locked = locked
-        self.public = public
-        self.show_nutrition = show_nutrition
-        self.show_assets = show_assets
-        self.landscape_view = landscape_view
-        self.disable_amount = disable_amount
-        self.disable_comments = disable_comments
+    class Meta:
+        table = "recipe_settings"

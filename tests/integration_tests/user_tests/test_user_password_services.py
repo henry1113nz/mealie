@@ -3,9 +3,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from mealie.db.db_setup import session_context
 from mealie.schema.user.user import PrivateUser
 from mealie.services.user_services.password_reset_service import PasswordResetService
+from tests.fixtures.fixture_database import run_db, session_context
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -28,7 +28,7 @@ def test_password_reset(api_client: TestClient, unique_user: TestUser, casing: s
 
     with session_context() as session:
         service = PasswordResetService(session)
-        token = service.generate_reset_token(cased_email)
+        token = run_db(service.generate_reset_token(cased_email))
         assert token is not None
 
     new_password = random_string(15)
@@ -76,5 +76,5 @@ def test_password_reset_ldap(ldap_user: PrivateUser, casing: str):
 
     with session_context() as session:
         service = PasswordResetService(session)
-        token = service.generate_reset_token(cased_email)
+        token = run_db(service.generate_reset_token(cased_email))
         assert token is None

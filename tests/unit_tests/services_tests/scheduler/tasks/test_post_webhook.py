@@ -12,6 +12,7 @@ from mealie.services.event_bus_service.event_types import (
     EventTypes,
     EventWebhookData,
 )
+from tests.fixtures.fixture_database import run_db
 from tests.utils import random_string
 from tests.utils.factories import random_bool
 from tests.utils.fixture_schemas import TestUser
@@ -58,14 +59,14 @@ def test_get_scheduled_webhooks_filter_query(unique_user: TestUser):
             scheduled_time=(start - timedelta(minutes=20)),
         )
 
-        database.webhooks.create(new_item)
-        database.webhooks.create(out_of_range_item)
+        run_db(database.webhooks.create(new_item))
+        run_db(database.webhooks.create(out_of_range_item))
 
         if new_item.enabled:
             expected.append(new_item)
 
     event_bus_listener = WebhookEventListener(UUID(unique_user.group_id), UUID(unique_user.household_id))
-    results = event_bus_listener.get_scheduled_webhooks(start, datetime.now(UTC) + timedelta(minutes=5))
+    results = run_db(event_bus_listener.get_scheduled_webhooks(start, datetime.now(UTC) + timedelta(minutes=5)))
 
     assert len(results) == len(expected)
 
@@ -94,15 +95,15 @@ def test_get_scheduled_webhooks_filter_query_spanning_midnight(unique_user_fn_sc
             scheduled_time=datetime(2026, 1, 1, hour, minute, tzinfo=UTC),
         )
 
-    before_midnight = database.webhooks.create(webhook_at(23, 58))
-    after_midnight = database.webhooks.create(webhook_at(0, 2))
-    out_of_range = database.webhooks.create(webhook_at(12, 0))
+    before_midnight = run_db(database.webhooks.create(webhook_at(23, 58)))
+    after_midnight = run_db(database.webhooks.create(webhook_at(0, 2)))
+    out_of_range = run_db(database.webhooks.create(webhook_at(12, 0)))
 
     start = datetime(2026, 1, 1, 23, 55, tzinfo=UTC)
     end = datetime(2026, 1, 2, 0, 5, tzinfo=UTC)
 
     event_bus_listener = WebhookEventListener(UUID(unique_user.group_id), UUID(unique_user.household_id))
-    results = event_bus_listener.get_scheduled_webhooks(start, end)
+    results = run_db(event_bus_listener.get_scheduled_webhooks(start, end))
 
     result_ids = {result.id for result in results}
     assert result_ids == {before_midnight.id, after_midnight.id}
@@ -119,27 +120,31 @@ def test_event_listener_get_meals_by_date_range(unique_user: TestUser):
     start_date = datetime.now(UTC) - timedelta(days=7)
     end_date = datetime.now(UTC)
 
-    meal_1 = meal_repo.create(
-        {
-            "date": start_date + timedelta(days=1),
-            "entry_type": "lunch",
-            "title": "Meal 1",
-            "text": "Test meal 1",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_1 = run_db(
+        meal_repo.create(
+            {
+                "date": start_date + timedelta(days=1),
+                "entry_type": "lunch",
+                "title": "Meal 1",
+                "text": "Test meal 1",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
-    meal_2 = meal_repo.create(
-        {
-            "date": start_date + timedelta(days=3),
-            "entry_type": "dinner",
-            "title": "Meal 2",
-            "text": "Test meal 2",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_2 = run_db(
+        meal_repo.create(
+            {
+                "date": start_date + timedelta(days=3),
+                "entry_type": "dinner",
+                "title": "Meal 2",
+                "text": "Test meal 2",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
 
     try:
@@ -157,9 +162,9 @@ def test_event_listener_get_meals_by_date_range(unique_user: TestUser):
         )
 
         event_bus_listener = WebhookEventListener(UUID(unique_user.group_id), UUID(unique_user.household_id))
-        subscribers = event_bus_listener.get_scheduled_webhooks(start_date, end_date)
+        subscribers = run_db(event_bus_listener.get_scheduled_webhooks(start_date, end_date))
 
-        event_bus_listener.publish_to_subscribers(event, subscribers)
+        run_db(event_bus_listener.publish_to_subscribers(event, subscribers))
 
         assert event.document_data.webhook_body is not None
         meals = event.document_data.webhook_body
@@ -169,8 +174,8 @@ def test_event_listener_get_meals_by_date_range(unique_user: TestUser):
         assert any(meal.title == "Meal 2" for meal in meals)
 
     finally:
-        meal_repo.delete(meal_1.id)
-        meal_repo.delete(meal_2.id)
+        run_db(meal_repo.delete(meal_1.id))
+        run_db(meal_repo.delete(meal_2.id))
 
 
 def test_get_meals_by_date_range(unique_user: TestUser):
@@ -179,42 +184,48 @@ def test_get_meals_by_date_range(unique_user: TestUser):
     start_date = datetime.now(UTC) - timedelta(days=7)
     end_date = datetime.now(UTC)
 
-    meal_1 = meal_repo.create(
-        {
-            "date": start_date + timedelta(days=1),
-            "entry_type": "breakfast",
-            "title": "Meal 1",
-            "text": "Test meal 1",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_1 = run_db(
+        meal_repo.create(
+            {
+                "date": start_date + timedelta(days=1),
+                "entry_type": "breakfast",
+                "title": "Meal 1",
+                "text": "Test meal 1",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
-    meal_2 = meal_repo.create(
-        {
-            "date": start_date + timedelta(days=3),
-            "entry_type": "lunch",
-            "title": "Meal 2",
-            "text": "Test meal 2",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_2 = run_db(
+        meal_repo.create(
+            {
+                "date": start_date + timedelta(days=3),
+                "entry_type": "lunch",
+                "title": "Meal 2",
+                "text": "Test meal 2",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
-    meal_3 = meal_repo.create(
-        {
-            "date": start_date - timedelta(days=10),
-            "entry_type": "dinner",
-            "title": "Meal 3",
-            "text": "Test meal 3",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_3 = run_db(
+        meal_repo.create(
+            {
+                "date": start_date - timedelta(days=10),
+                "entry_type": "dinner",
+                "title": "Meal 3",
+                "text": "Test meal 3",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
 
     try:
-        meals_in_range = meal_repo.get_meals_by_date_range(start_date, end_date)
+        meals_in_range = run_db(meal_repo.get_meals_by_date_range(start_date, end_date))
 
         assert len(meals_in_range) == 2
         assert any(meal.title == "Meal 1" for meal in meals_in_range)
@@ -223,9 +234,9 @@ def test_get_meals_by_date_range(unique_user: TestUser):
         assert all(meal.title != "Meal 3" for meal in meals_in_range)
 
     finally:
-        meal_repo.delete(meal_1.id)
-        meal_repo.delete(meal_2.id)
-        meal_repo.delete(meal_3.id)
+        run_db(meal_repo.delete(meal_1.id))
+        run_db(meal_repo.delete(meal_2.id))
+        run_db(meal_repo.delete(meal_3.id))
 
 
 def test_get_meals_by_date_range_no_meals(unique_user: TestUser):
@@ -237,7 +248,7 @@ def test_get_meals_by_date_range_no_meals(unique_user: TestUser):
     start_date = datetime.now(UTC) - timedelta(days=7)
     end_date = datetime.now(UTC)
 
-    meals_in_range = meal_repo.get_meals_by_date_range(start_date, end_date)
+    meals_in_range = run_db(meal_repo.get_meals_by_date_range(start_date, end_date))
 
     assert len(meals_in_range) == 0
 
@@ -250,27 +261,29 @@ def test_get_meals_by_date_range_single_day(unique_user: TestUser):
 
     single_day = datetime.now(UTC)
 
-    meal_1 = meal_repo.create(
-        {
-            "date": single_day,
-            "entry_type": "breakfast",
-            "title": "Single Day Meal",
-            "text": "Test meal for a single day",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_1 = run_db(
+        meal_repo.create(
+            {
+                "date": single_day,
+                "entry_type": "breakfast",
+                "title": "Single Day Meal",
+                "text": "Test meal for a single day",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
 
     try:
-        meals_in_range = meal_repo.get_meals_by_date_range(single_day, single_day)
+        meals_in_range = run_db(meal_repo.get_meals_by_date_range(single_day, single_day))
 
         assert len(meals_in_range) == 1
         assert meals_in_range[0].title == "Single Day Meal"
         assert meals_in_range[0].date == single_day.date()
 
     finally:
-        meal_repo.delete(meal_1.id)
+        run_db(meal_repo.delete(meal_1.id))
 
 
 def test_get_meals_by_date_range_no_overlap(unique_user: TestUser):
@@ -282,29 +295,31 @@ def test_get_meals_by_date_range_no_overlap(unique_user: TestUser):
     start_date = datetime.now(UTC) + timedelta(days=1)
     end_date = datetime.now(UTC) + timedelta(days=10)
 
-    meal_1 = meal_repo.create(
-        {
-            "date": datetime.now(UTC) - timedelta(days=5),
-            "entry_type": "dinner",
-            "title": "Meal Outside Range",
-            "text": "This meal is outside the tested date range",
-            "group_id": unique_user.group_id,
-            "household_id": unique_user.household_id,
-            "user_id": unique_user.user_id,
-        }
+    meal_1 = run_db(
+        meal_repo.create(
+            {
+                "date": datetime.now(UTC) - timedelta(days=5),
+                "entry_type": "dinner",
+                "title": "Meal Outside Range",
+                "text": "This meal is outside the tested date range",
+                "group_id": unique_user.group_id,
+                "household_id": unique_user.household_id,
+                "user_id": unique_user.user_id,
+            }
+        )
     )
 
-    meals_in_range = meal_repo.get_meals_by_date_range(start_date, end_date)
+    meals_in_range = run_db(meal_repo.get_meals_by_date_range(start_date, end_date))
 
     assert len(meals_in_range) == 0
 
     try:
-        meals_in_range = meal_repo.get_meals_by_date_range(start_date, end_date)
+        meals_in_range = run_db(meal_repo.get_meals_by_date_range(start_date, end_date))
 
         assert len(meals_in_range) == 0
 
     finally:
-        meal_repo.delete(meal_1.id)
+        run_db(meal_repo.delete(meal_1.id))
 
 
 def test_get_meals_by_date_range_invalid_date_range(unique_user: TestUser):
@@ -316,6 +331,6 @@ def test_get_meals_by_date_range_invalid_date_range(unique_user: TestUser):
     start_date = datetime.now(UTC)
     end_date = start_date - timedelta(days=1)
 
-    meals_in_range = meal_repo.get_meals_by_date_range(start_date, end_date)
+    meals_in_range = run_db(meal_repo.get_meals_by_date_range(start_date, end_date))
 
     assert len(meals_in_range) == 0

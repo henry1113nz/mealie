@@ -13,7 +13,7 @@ from sqlalchemy import orm
 
 import mealie.db.migration_types
 from alembic import op
-from mealie.db.models._model_utils.guid import GUID
+from tests.fixtures.legacy_types.guid import GUID
 
 # revision identifiers, used by Alembic.
 revision = "b04a08da2108"

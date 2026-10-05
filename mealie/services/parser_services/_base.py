@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 from pydantic import UUID4, BaseModel
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
 from mealie.lang.providers import Translator
@@ -36,31 +36,28 @@ class DataMatcher:
         self._foods_by_alias: dict[str, IngredientFood] | None = None
         self._units_by_alias: dict[str, IngredientUnit] | None = None
 
-    @property
-    def foods_by_id(self) -> dict[UUID4, IngredientFood]:
+    async def foods_by_id(self) -> dict[UUID4, IngredientFood]:
         if self._foods_by_id is None:
             foods_repo = self.repos.ingredient_foods
             query = PaginationQuery(page=1, per_page=-1)
-            all_foods = foods_repo.page_all(query).items
+            all_foods = (await foods_repo.page_all(query)).items
             self._foods_by_id = {food.id: food for food in all_foods}
 
         return self._foods_by_id
 
-    @property
-    def units_by_id(self) -> dict[UUID4, IngredientUnit]:
+    async def units_by_id(self) -> dict[UUID4, IngredientUnit]:
         if self._units_by_id is None:
             units_repo = self.repos.ingredient_units
             query = PaginationQuery(page=1, per_page=-1)
-            all_units = units_repo.page_all(query).items
+            all_units = (await units_repo.page_all(query)).items
             self._units_by_id = {unit.id: unit for unit in all_units}
 
         return self._units_by_id
 
-    @property
-    def foods_by_alias(self) -> dict[str, IngredientFood]:
+    async def foods_by_alias(self) -> dict[str, IngredientFood]:
         if self._foods_by_alias is None:
             foods_by_alias: dict[str, IngredientFood] = {}
-            for food in self.foods_by_id.values():
+            for food in (await self.foods_by_id()).values():
                 if food.name:
                     foods_by_alias[IngredientFoodModel.normalize(food.name)] = food
                 if food.plural_name:
@@ -74,11 +71,10 @@ class DataMatcher:
 
         return self._foods_by_alias
 
-    @property
-    def units_by_alias(self) -> dict[str, IngredientUnit]:
+    async def units_by_alias(self) -> dict[str, IngredientUnit]:
         if self._units_by_alias is None:
             units_by_alias: dict[str, IngredientUnit] = {}
-            for unit in self.units_by_id.values():
+            for unit in (await self.units_by_id()).values():
                 if unit.name:
                     units_by_alias[IngredientUnitModel.normalize(unit.name)] = unit
                 if unit.plural_name:
@@ -102,7 +98,7 @@ class DataMatcher:
     ) -> T | None:
         return find_match(match_value, store_map=store_map, fuzzy_match_threshold=fuzzy_match_threshold)
 
-    def find_food_match(self, food: IngredientFood | CreateIngredientFood | str) -> IngredientFood | None:
+    async def find_food_match(self, food: IngredientFood | CreateIngredientFood | str) -> IngredientFood | None:
         if isinstance(food, IngredientFood):
             return food
 
@@ -110,11 +106,11 @@ class DataMatcher:
         match_value = IngredientFoodModel.normalize(food_name)
         return self.find_match(
             match_value,
-            store_map=self.foods_by_alias,
+            store_map=await self.foods_by_alias(),
             fuzzy_match_threshold=self._food_fuzzy_match_threshold,
         )
 
-    def find_unit_match(self, unit: IngredientUnit | CreateIngredientUnit | str) -> IngredientUnit | None:
+    async def find_unit_match(self, unit: IngredientUnit | CreateIngredientUnit | str) -> IngredientUnit | None:
         if isinstance(unit, IngredientUnit):
             return unit
 
@@ -122,7 +118,7 @@ class DataMatcher:
         match_value = IngredientUnitModel.normalize(unit_name)
         return self.find_match(
             match_value,
-            store_map=self.units_by_alias,
+            store_map=await self.units_by_alias(),
             fuzzy_match_threshold=self._unit_fuzzy_match_threshold,
         )
 
@@ -162,11 +158,15 @@ class ABCIngredientParser(ABC):
     @abstractmethod
     async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]: ...
 
-    def find_ingredient_match(self, ingredient: ParsedIngredient) -> ParsedIngredient:
-        if ingredient.ingredient.food and (food_match := self.data_matcher.find_food_match(ingredient.ingredient.food)):
+    async def find_ingredient_match(self, ingredient: ParsedIngredient) -> ParsedIngredient:
+        if ingredient.ingredient.food and (
+            food_match := (await self.data_matcher.find_food_match(ingredient.ingredient.food))
+        ):
             ingredient.ingredient.food = food_match
 
-        if ingredient.ingredient.unit and (unit_match := self.data_matcher.find_unit_match(ingredient.ingredient.unit)):
+        if ingredient.ingredient.unit and (
+            unit_match := (await self.data_matcher.find_unit_match(ingredient.ingredient.unit))
+        ):
             ingredient.ingredient.unit = unit_match
 
         # Parser might have wrongly split a food into a unit and food.
@@ -176,7 +176,7 @@ class ABCIngredientParser(ABC):
         unit_name = ingredient.ingredient.unit.name if ingredient.ingredient.unit else ""
 
         if not food_is_matched and not unit_is_matched and food_name and unit_name:
-            food_match = self.data_matcher.find_food_match(f"{unit_name} {food_name}")
+            food_match = await self.data_matcher.find_food_match(f"{unit_name} {food_name}")
 
             if food_match:
                 ingredient.ingredient.food = food_match

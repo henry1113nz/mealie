@@ -1,4 +1,4 @@
-from sqlalchemy.exc import IntegrityError
+from tortoise.exceptions import IntegrityError
 
 from mealie.lang.providers import Translator
 

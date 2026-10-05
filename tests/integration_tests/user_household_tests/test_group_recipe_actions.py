@@ -11,6 +11,7 @@ from mealie.schema.household.group_recipe_action import (
     SaveGroupRecipeAction,
 )
 from mealie.schema.recipe.recipe import Recipe
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes, assert_deserialize
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -159,15 +160,15 @@ def test_group_recipe_actions_trigger_post(
     if missing_action:
         action_id = uuid4()
     else:
-        recipe_action = unique_user.repos.group_recipe_actions.create(
-            save_action(unique_user, GroupRecipeActionType.post)
+        recipe_action = run_db(
+            unique_user.repos.group_recipe_actions.create(save_action(unique_user, GroupRecipeActionType.post))
         )
         action_id = recipe_action.id
 
     if missing_recipe:
         recipe_slug = random_string()
     else:
-        recipe = unique_user.repos.recipes.create(new_recipe(unique_user))
+        recipe = run_db(unique_user.repos.recipes.create(new_recipe(unique_user)))
         recipe_slug = recipe.slug
 
     response = api_client.post(
@@ -184,8 +185,10 @@ def test_group_recipe_actions_trigger_post(
 
 
 def test_group_recipe_actions_trigger_invalid_type(api_client: TestClient, unique_user: TestUser):
-    recipe_action = unique_user.repos.group_recipe_actions.create(save_action(unique_user, GroupRecipeActionType.link))
-    recipe = unique_user.repos.recipes.create(new_recipe(unique_user))
+    recipe_action = run_db(
+        unique_user.repos.group_recipe_actions.create(save_action(unique_user, GroupRecipeActionType.link))
+    )
+    recipe = run_db(unique_user.repos.recipes.create(new_recipe(unique_user)))
 
     response = api_client.post(
         api_routes.households_recipe_actions_item_id_trigger_recipe_slug(recipe_action.id, recipe.id),

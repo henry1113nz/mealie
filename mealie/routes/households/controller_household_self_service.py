@@ -29,21 +29,21 @@ class HouseholdSelfServiceController(BaseUserController):
         return self.household
 
     @router.get("/self/recipes/{recipe_slug}", response_model=HouseholdRecipeSummary)
-    def get_household_recipe(self, recipe_slug: str):
+    async def get_household_recipe(self, recipe_slug: str):
         """Returns recipe data for the current household"""
-        response = self.service.get_household_recipe(recipe_slug)
+        response = await self.service.get_household_recipe(recipe_slug)
         if not response:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Recipe not found")
 
         return response
 
     @router.get("/members", response_model=PaginationBase[UserOut])
-    def get_household_members(self, q: PaginationQuery = Depends()):
+    async def get_household_members(self, q: PaginationQuery = Depends()):
         """Returns all users belonging to the current household"""
         self.checks.can_manage()
         q.query_filter = QueryFilterBuilder.combine_filters(q.query_filter, f"household_id={self.household_id}")
 
-        response = self.repos.users.page_all(q, override=UserOut)
+        response = await self.repos.users.page_all(q, override=UserOut)
 
         response.set_pagination_guides(router.url_path_for("get_household_members"), q.model_dump())
         return response
@@ -53,16 +53,16 @@ class HouseholdSelfServiceController(BaseUserController):
         return self.household.preferences
 
     @router.put("/preferences", response_model=ReadHouseholdPreferences)
-    def update_household_preferences(self, new_pref: UpdateHouseholdPreferences):
+    async def update_household_preferences(self, new_pref: UpdateHouseholdPreferences):
         self.checks.can_manage_household()
 
-        return self.repos.household_preferences.update(self.household_id, new_pref)
+        return await self.repos.household_preferences.update(self.household_id, new_pref)
 
     @router.put("/permissions", response_model=UserOut)
-    def set_member_permissions(self, permissions: SetPermissions):
+    async def set_member_permissions(self, permissions: SetPermissions):
         self.checks.can_manage()
 
-        target_user = self.repos.users.get_one(permissions.user_id)
+        target_user = await self.repos.users.get_one(permissions.user_id)
 
         if not target_user:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -81,8 +81,8 @@ class HouseholdSelfServiceController(BaseUserController):
         target_user.can_manage_household = permissions.can_manage_household
         target_user.can_organize = permissions.can_organize
 
-        return self.repos.users.update(permissions.user_id, target_user)
+        return await self.repos.users.update(permissions.user_id, target_user)
 
     @router.get("/statistics", response_model=HouseholdStatistics)
-    def get_statistics(self):
-        return self.service.calculate_statistics()
+    async def get_statistics(self):
+        return await self.service.calculate_statistics()

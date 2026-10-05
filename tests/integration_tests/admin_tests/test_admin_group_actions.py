@@ -1,10 +1,11 @@
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.config import get_app_settings
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.group.ai_providers import AIProviderCreate, AIProviderSettingsUpdate
 from mealie.schema.user.user import GroupInDB
+from tests.fixtures.fixture_database import run_db
 from tests.fixtures.fixture_users import build_unique_user
 from tests.utils import api_routes
 from tests.utils.assertion_helpers import assert_ignore_keys
@@ -96,8 +97,10 @@ def test_admin_update_group_name_only(api_client: TestClient, admin_user: TestUs
 
 def test_admin_update_group_ai_provider_settings(api_client: TestClient, admin_user: TestUser, unique_user: TestUser):
     """Admin can update ai_provider_settings for a group via the PUT endpoint."""
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
     try:
         update_payload = {
@@ -122,19 +125,23 @@ def test_admin_update_group_ai_provider_settings(api_client: TestClient, admin_u
         assert settings["imageProviderId"] == str(provider.id)
     finally:
         # Clear provider references before deleting the provider
-        unique_user.repos.group_ai_provider_settings.update(
-            unique_user.repos.group_id,
-            AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+        run_db(
+            unique_user.repos.group_ai_provider_settings.update(
+                unique_user.repos.group_id,
+                AIProviderSettingsUpdate(default_provider_id=None, audio_provider_id=None, image_provider_id=None),
+            )
         )
-        unique_user.repos.group_ai_providers.delete(provider.id)
+        run_db(unique_user.repos.group_ai_providers.delete(provider.id))
 
 
 def test_admin_update_group_ai_provider_settings_clear(
     api_client: TestClient, admin_user: TestUser, unique_user: TestUser
 ):
     """Admin can clear ai_provider_settings provider IDs for a group."""
-    provider = unique_user.repos.group_ai_providers.create(
-        AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+    provider = run_db(
+        unique_user.repos.group_ai_providers.create(
+            AIProviderCreate(name=random_string(), model="gpt-4o", api_key="test-key")
+        )
     )
     try:
         # First set the providers
@@ -173,11 +180,11 @@ def test_admin_update_group_ai_provider_settings_clear(
         assert settings["audioProviderId"] is None
         assert settings["imageProviderId"] is None
     finally:
-        unique_user.repos.group_ai_providers.delete(provider.id)
+        run_db(unique_user.repos.group_ai_providers.delete(provider.id))
 
 
 def test_admin_delete_group(unfiltered_database: AllRepositories, api_client: TestClient, admin_user: TestUser):
-    group = unfiltered_database.groups.create({"name": random_string()})
+    group = run_db(unfiltered_database.groups.create({"name": random_string()}))
     response = api_client.delete(api_routes.admin_groups_item_id(group.id), headers=admin_user.token)
     assert response.status_code == 200
 

@@ -1,10 +1,11 @@
 import re
 
-from sqlalchemy import Select
-from sqlalchemy.orm import Session
 from text_unidecode import unidecode
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.models import Model
+from tortoise.queryset import QuerySet
 
-from ...db.models._model_base import NORMALIZE_PUNCTUATION, SqlAlchemyBase
+from ...db.models._model_base import NORMALIZE_PUNCTUATION
 from .._mealie import MealieModel, SearchType
 
 
@@ -53,8 +54,8 @@ class SearchFilter:
         # remove padding whitespace inside quotes
         return [x.strip() for x in search_list]
 
-    def __init__(self, session: Session, search: str, normalize_characters: bool = False) -> None:
-        if session.get_bind().name != "postgresql" or self.quoted_regex.search(search.strip()):
+    def __init__(self, session: BaseDBAsyncClient, search: str, normalize_characters: bool = False) -> None:
+        if session.capabilities.dialect != "postgres" or self.quoted_regex.search(search.strip()):
             self.search_type = SearchType.tokenized
         else:
             self.search_type = SearchType.fuzzy
@@ -63,5 +64,5 @@ class SearchFilter:
         self.search = self._normalize_search(search, normalize_characters)
         self.search_list = self._build_search_list(self.search)
 
-    def filter_query_by_search(self, query: Select, schema: type[MealieModel], model: type[SqlAlchemyBase]) -> Select:
+    def filter_query_by_search(self, query: QuerySet, schema: type[MealieModel], model: type[Model]) -> QuerySet:
         return schema.filter_search_query(model, query, self.session, self.search_type, self.search, self.search_list)

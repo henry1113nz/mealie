@@ -1,14 +1,14 @@
 import argparse
+import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import sqlalchemy as sa
 from PIL import Image, UnidentifiedImageError
 from pydantic import UUID4
 
 from mealie.core import root_logger
-from mealie.db.db_setup import session_context
+from mealie.db.db_setup import close_database, initialize_database, session_context
 from mealie.db.models.recipe import RecipeModel
 from mealie.services.recipe.recipe_data_service import RecipeDataService
 
@@ -56,13 +56,11 @@ def check_needs_reprocess(recipe_id: UUID4) -> bool:
         return False
 
 
-def fetch_recipe_ids(force_all: bool = False) -> set[UUID4]:
+async def fetch_recipe_ids(force_all: bool = False) -> set[UUID4]:
     logger.info("Fetching recipes for image reprocessing")
 
-    with session_context() as session:
-        result = session.execute(sa.text(f"SELECT id FROM {RecipeModel.__tablename__}"))
-
-    recipe_ids = {UUID4(str(row[0])) for row in result}
+    async with session_context() as session:
+        recipe_ids = set(await RecipeModel.all().using_db(session).values_list("id", flat=True))
     if force_all:
         logger.info("!!Force processing all recipes regardless of current image state")
         return recipe_ids
@@ -156,7 +154,7 @@ def process_all_recipes(recipe_ids: set[UUID4], force_all: bool = False, max_wor
     return failed_recipe_ids
 
 
-def main() -> None:
+async def main() -> None:
     parser = argparse.ArgumentParser(
         description="Reprocess old recipe images to improve compression and upgrade quality"
     )
@@ -168,7 +166,7 @@ def main() -> None:
     workers: int = max(1, args.workers)
     force_all: bool = args.force_all
 
-    recipe_ids = fetch_recipe_ids(force_all=force_all)
+    recipe_ids = await fetch_recipe_ids(force_all=force_all)
     if not recipe_ids:
         logger.info("No recipes need image reprocessing. Exiting...")
         exit(0)
@@ -191,5 +189,13 @@ def main() -> None:
     exit(0)
 
 
+async def _cli() -> None:
+    await initialize_database()
+    try:
+        await main()
+    finally:
+        await close_database()
+
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(_cli())

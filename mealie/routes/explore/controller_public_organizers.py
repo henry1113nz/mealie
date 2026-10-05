@@ -22,12 +22,12 @@ class PublicCategoriesController(BasePublicGroupExploreController):
         return self.repos.categories
 
     @categories_router.get("", response_model=PaginationBase[RecipeCategory])
-    def get_all(
+    async def get_all(
         self,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
         search: str | None = None,
     ) -> PaginationBase[RecipeCategory]:
-        response = self.categories.page_all(
+        response = await self.categories.page_all(
             pagination=q,
             override=RecipeCategory,
             search=search,
@@ -37,8 +37,8 @@ class PublicCategoriesController(BasePublicGroupExploreController):
         return response
 
     @categories_router.get("/{item_id}", response_model=CategoryOut)
-    def get_one(self, item_id: UUID4) -> CategoryOut:
-        item = self.categories.get_one(item_id)
+    async def get_one(self, item_id: UUID4) -> CategoryOut:
+        item = await self.categories.get_one(item_id)
         if not item:
             raise HTTPException(404, "category not found")
 
@@ -52,12 +52,12 @@ class PublicTagsController(BasePublicGroupExploreController):
         return self.repos.tags
 
     @tags_router.get("", response_model=PaginationBase[RecipeTag])
-    def get_all(
+    async def get_all(
         self,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
         search: str | None = None,
     ) -> PaginationBase[RecipeTag]:
-        response = self.tags.page_all(
+        response = await self.tags.page_all(
             pagination=q,
             override=RecipeTag,
             search=search,
@@ -67,8 +67,8 @@ class PublicTagsController(BasePublicGroupExploreController):
         return response
 
     @tags_router.get("/{item_id}", response_model=TagOut)
-    def get_one(self, item_id: UUID4) -> TagOut:
-        item = self.tags.get_one(item_id)
+    async def get_one(self, item_id: UUID4) -> TagOut:
+        item = await self.tags.get_one(item_id)
         if not item:
             raise HTTPException(404, "tag not found")
 
@@ -82,12 +82,12 @@ class PublicToolsController(BasePublicGroupExploreController):
         return self.repos.tools
 
     @tools_router.get("", response_model=PaginationBase[RecipeTool])
-    def get_all(
+    async def get_all(
         self,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
         search: str | None = None,
     ) -> PaginationBase[RecipeTool]:
-        response = self.tools.page_all(
+        response = await self.tools.page_all(
             pagination=q,
             override=RecipeTool,
             search=search,
@@ -97,8 +97,8 @@ class PublicToolsController(BasePublicGroupExploreController):
         return response
 
     @tools_router.get("/{item_id}", response_model=RecipeToolOut)
-    def get_one(self, item_id: UUID4) -> RecipeToolOut:
-        item = self.tools.get_one(item_id)
+    async def get_one(self, item_id: UUID4) -> RecipeToolOut:
+        item = await self.tools.get_one(item_id)
         if not item:
             raise HTTPException(404, "tool not found")
 

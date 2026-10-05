@@ -8,6 +8,7 @@ from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_settings import RecipeSettings
 from mealie.services.recipe.recipe_service import RecipeDataService
 from tests import data
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
@@ -147,12 +148,14 @@ def test_other_user_cant_delete_recipe(api_client: TestClient, user_tuple: list[
     slug = random_string(10)
     unique_user, other_user = user_tuple
 
-    unique_user.repos.recipes.create(
-        Recipe(
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            name=slug,
-            settings=RecipeSettings(locked=True),
+    run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                name=slug,
+                settings=RecipeSettings(locked=True),
+            )
         )
     )
 
@@ -165,12 +168,14 @@ def test_other_user_cant_delete_unlocked_recipe(api_client: TestClient, user_tup
     slug = random_string(10)
     unique_user, other_user = user_tuple
 
-    unique_user.repos.recipes.create(
-        Recipe(
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            name=slug,
-            settings=RecipeSettings(locked=False),
+    run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                name=slug,
+                settings=RecipeSettings(locked=False),
+            )
         )
     )
 
@@ -183,20 +188,24 @@ def test_other_user_bulk_delete(api_client: TestClient, user_tuple: list[TestUse
     slug_unlocked = random_string(10)
     unique_user, other_user = user_tuple
 
-    unique_user.repos.recipes.create(
-        Recipe(
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            name=slug_locked,
-            settings=RecipeSettings(locked=True),
+    run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                name=slug_locked,
+                settings=RecipeSettings(locked=True),
+            )
         )
     )
-    unique_user.repos.recipes.create(
-        Recipe(
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            name=slug_unlocked,
-            settings=RecipeSettings(locked=False),
+    run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                name=slug_unlocked,
+                settings=RecipeSettings(locked=False),
+            )
         )
     )
 
@@ -215,12 +224,14 @@ def test_other_user_cant_bulk_delete_unlocked_recipes(api_client: TestClient, us
     unique_user, other_user = user_tuple
 
     for slug in (slug_1, slug_2):
-        unique_user.repos.recipes.create(
-            Recipe(
-                user_id=unique_user.user_id,
-                group_id=unique_user.group_id,
-                name=slug,
-                settings=RecipeSettings(locked=False),
+        run_db(
+            unique_user.repos.recipes.create(
+                Recipe(
+                    user_id=unique_user.user_id,
+                    group_id=unique_user.group_id,
+                    name=slug,
+                    settings=RecipeSettings(locked=False),
+                )
             )
         )
 
@@ -236,21 +247,23 @@ def test_admin_can_delete_locked_recipe_owned_by_another_user(
     api_client: TestClient, unfiltered_database: AllRepositories, unique_user: TestUser, admin_user: TestUser
 ):
     slug = random_string(10)
-    unique_user.repos.recipes.create(
-        Recipe(
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            name=slug,
-            settings=RecipeSettings(locked=True),
+    run_db(
+        unique_user.repos.recipes.create(
+            Recipe(
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                name=slug,
+                settings=RecipeSettings(locked=True),
+            )
         )
     )
 
     # Make sure admin belongs to same group/household as user
-    admin_data = unfiltered_database.users.get_one(admin_user.user_id)
+    admin_data = run_db(unfiltered_database.users.get_one(admin_user.user_id))
     assert admin_data
     admin_data.group_id = UUID(unique_user.group_id)
     admin_data.household_id = UUID(unique_user.household_id)
-    unfiltered_database.users.update(admin_user.user_id, admin_data)
+    run_db(unfiltered_database.users.update(admin_user.user_id, admin_data))
 
     response = api_client.delete(api_routes.recipes_slug(slug), headers=admin_user.token)
     assert response.status_code == 200
@@ -260,15 +273,15 @@ def test_user_can_update_recipe_image(api_client: TestClient, unique_user: TestU
     data_payload = {"extension": "jpg"}
     file_payload = {"image": data.images_test_image_1.read_bytes()}
 
-    household = unique_user.repos.households.get_one(unique_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(unique_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = True
     household.preferences.lock_recipe_edits_from_other_households = True
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe_json = unique_user.repos.recipes.get_one(response.json())
+    recipe_json = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe_json and recipe_json.id
     assert recipe_json.image is None
     recipe_id = str(recipe_json.id)
@@ -293,15 +306,15 @@ def test_user_can_delete_recipe_image(api_client: TestClient, unique_user: TestU
     data_payload = {"extension": "jpg"}
     file_payload = {"image": data.images_test_image_1.read_bytes()}
 
-    household = unique_user.repos.households.get_one(unique_user.household_id)
+    household = run_db(unique_user.repos.households.get_one(unique_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = True
     household.preferences.lock_recipe_edits_from_other_households = True
-    unique_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(unique_user.repos.household_preferences.update(household.id, household.preferences))
 
     response = api_client.post(api_routes.recipes, json={"name": random_string()}, headers=unique_user.token)
     assert response.status_code == 201
-    recipe_json = unique_user.repos.recipes.get_one(response.json())
+    recipe_json = run_db(unique_user.repos.recipes.get_one(response.json()))
     assert recipe_json and recipe_json.id
     assert recipe_json.image is None
     recipe_id = str(recipe_json.id)

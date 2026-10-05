@@ -3,7 +3,7 @@ from logging import Logger
 
 from fastapi import Depends, HTTPException
 from pydantic import UUID4, ConfigDict
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.config import get_app_dirs, get_app_settings
 from mealie.core.dependencies.dependencies import (
@@ -27,6 +27,20 @@ from mealie.schema.household.household import HouseholdInDB
 from mealie.schema.user.user import GroupInDB, PrivateUser
 from mealie.services.event_bus_service.event_bus_service import EventBusService
 from mealie.services.event_bus_service.event_types import EventDocumentDataBase, EventTypes
+
+
+async def get_controller_group(
+    user: PrivateUser = Depends(get_current_user), session: Session = Depends(generate_session)
+) -> GroupInDB:
+    return await get_repositories(session, group_id=user.group_id, household_id=None).groups.get_one(user.group_id)
+
+
+async def get_controller_household(
+    user: PrivateUser = Depends(get_current_user), session: Session = Depends(generate_session)
+) -> HouseholdInDB:
+    return await get_repositories(session, group_id=user.group_id, household_id=user.household_id).households.get_one(
+        user.household_id
+    )
 
 
 class _BaseController(ABC):  # noqa: B024
@@ -99,8 +113,8 @@ class BasePublicGroupExploreController(BasePublicController):
     def group_id(self) -> UUID4 | None | NotSet:
         return self.group.id
 
-    def get_public_household(self, household_slug_or_id: str | UUID4) -> HouseholdInDB:
-        household = self.repos.households.get_by_slug_or_id(household_slug_or_id)
+    async def get_public_household(self, household_slug_or_id: str | UUID4) -> HouseholdInDB:
+        household = await self.repos.households.get_by_slug_or_id(household_slug_or_id)
         if not household or household.preferences.private_household:
             raise HTTPException(404, "household not found")
         return household
@@ -139,6 +153,8 @@ class BaseUserController(_BaseController):
     user: PrivateUser = Depends(get_current_user)
     integration_id: str = Depends(get_integration_id)
     translator: Translator = Depends(get_locale_provider)
+    group: GroupInDB = Depends(get_controller_group)
+    household: HouseholdInDB = Depends(get_controller_household)
 
     # Manual Cache
     _checks: OperationChecks
@@ -156,14 +172,6 @@ class BaseUserController(_BaseController):
     @property
     def household_id(self) -> UUID4:
         return self.user.household_id
-
-    @property
-    def group(self) -> GroupInDB:
-        return self.repos.groups.get_one(self.group_id)
-
-    @property
-    def household(self) -> HouseholdInDB:
-        return self.repos.households.get_one(self.household_id)
 
     @property
     def checks(self) -> OperationChecks:
@@ -196,7 +204,7 @@ class BaseCrudController(BaseUserController):
 
     event_bus: EventBusService = Depends(EventBusService.as_dependency)
 
-    def publish_event(
+    async def publish_event(
         self,
         event_type: EventTypes,
         document_data: EventDocumentDataBase,
@@ -204,11 +212,13 @@ class BaseCrudController(BaseUserController):
         household_id: UUID4 | None,
         message: str = "",
     ) -> None:
-        self.event_bus.dispatch(
-            integration_id=self.integration_id,
-            group_id=group_id,
-            household_id=household_id,
-            event_type=event_type,
-            document_data=document_data,
-            message=message,
+        (
+            await self.event_bus.dispatch(
+                integration_id=self.integration_id,
+                group_id=group_id,
+                household_id=household_id,
+                event_type=event_type,
+                document_data=document_data,
+                message=message,
+            )
         )

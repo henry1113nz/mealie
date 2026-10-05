@@ -41,7 +41,7 @@ class BackupV2(BaseService):
     def _postgres(self) -> None:
         pass
 
-    def backup(self) -> Path:
+    async def backup(self) -> Path:
         # sourcery skip: merge-nested-ifs, reintroduce-else, remove-redundant-continue
         timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y.%m.%d.%H.%M.%S")
         short_hash = self.settings.GIT_COMMIT_HASH[:7]
@@ -55,10 +55,11 @@ class BackupV2(BaseService):
 
         backup_file = self.directories.BACKUP_DIR / backup_name
 
-        database_json = self.db_exporter.dump()
+        database_json = await self.db_exporter.dump()
 
         with ZipFile(backup_file, "w") as zip_file:
             zip_file.writestr("database.json", json.dumps(database_json))
+            zip_file.writestr("data/", "")
 
             for data_file in self.directories.DATA_DIR.glob("**/*"):
                 if data_file.name in self.EXCLUDE_FILES:
@@ -92,7 +93,7 @@ class BackupV2(BaseService):
         get_app_settings.cache_clear()
         self.settings = get_app_settings()
 
-    def restore(self, backup_path: Path) -> None:
+    async def restore(self, backup_path: Path) -> None:
         self.logger.info("initializing backup restore")
 
         backup = BackupFile(backup_path)
@@ -116,14 +117,13 @@ class BackupV2(BaseService):
             # ================================
             # Purge Database
 
-            self.logger.info("dropping all database tables")
-            self.db_exporter.drop_all()
+            # The exporter replaces rows in one transaction and retains Aerich metadata.
 
             # ================================
             # Restore Database
 
             self.logger.info("importing database tables")
-            self.db_exporter.restore(database_json)
+            await self.db_exporter.restore(database_json)
 
             self.logger.info("database tables imported successfully")
 

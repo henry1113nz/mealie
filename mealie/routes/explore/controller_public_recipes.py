@@ -29,7 +29,7 @@ class PublicRecipesController(BasePublicHouseholdExploreController):
         return self.cross_household_repos.recipes
 
     @router.get("", response_model=PaginationBase[RecipeSummary])
-    def get_all(
+    async def get_all(
         self,
         request: Request,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
@@ -51,18 +51,18 @@ class PublicRecipesController(BasePublicHouseholdExploreController):
                     cb_match_attr = "id"
                 except ValueError:
                     cb_match_attr = "slug"
-            cookbook_data = self.cross_household_cookbooks.get_one(search_query.cookbook, cb_match_attr)
+            cookbook_data = await self.cross_household_cookbooks.get_one(search_query.cookbook, cb_match_attr)
 
             if cookbook_data is None or not cookbook_data.public:
                 raise COOKBOOK_NOT_FOUND_EXCEPTION
-            household = self.repos.households.get_one(cookbook_data.household_id)
+            household = await self.repos.households.get_one(cookbook_data.household_id)
             if not household or household.preferences.private_household:
                 raise COOKBOOK_NOT_FOUND_EXCEPTION
 
         public_filter = "(household.preferences.privateHousehold = FALSE AND settings.public = TRUE)"
         q.query_filter = QueryFilterBuilder.combine_filters(q.query_filter, public_filter)
 
-        pagination_response = self.cross_household_recipes.page_all(
+        pagination_response = await self.cross_household_recipes.page_all(
             pagination=q,
             cookbook=cookbook_data,
             categories=categories,
@@ -90,7 +90,7 @@ class PublicRecipesController(BasePublicHouseholdExploreController):
         return JSONBytes(content=json_compatible_response)
 
     @router.get("/suggestions", response_model=RecipeSuggestionResponse)
-    def suggest_recipes(
+    async def suggest_recipes(
         self,
         q: RecipeSuggestionQuery = Depends(make_dependable(RecipeSuggestionQuery)),
         foods: list[UUID4] | None = Query(None),
@@ -99,7 +99,7 @@ class PublicRecipesController(BasePublicHouseholdExploreController):
         public_filter = "(household.preferences.privateHousehold = FALSE AND settings.public = TRUE)"
         q.query_filter = QueryFilterBuilder.combine_filters(q.query_filter, public_filter)
 
-        recipes = self.cross_household_recipes.find_suggested_recipes(q, foods, tools)
+        recipes = await self.cross_household_recipes.find_suggested_recipes(q, foods, tools)
         response = RecipeSuggestionResponse(items=recipes)
         json_compatible_response = orjson.dumps(response.model_dump(by_alias=True))
 
@@ -107,13 +107,13 @@ class PublicRecipesController(BasePublicHouseholdExploreController):
         return JSONBytes(content=json_compatible_response)
 
     @router.get("/{recipe_slug}", response_model=Recipe)
-    def get_recipe(self, recipe_slug: str) -> Recipe:
+    async def get_recipe(self, recipe_slug: str) -> Recipe:
         RECIPE_NOT_FOUND_EXCEPTION = HTTPException(404, "recipe not found")
-        recipe = self.cross_household_recipes.get_one(recipe_slug)
+        recipe = await self.cross_household_recipes.get_one(recipe_slug)
 
         if not recipe or not recipe.settings.public:
             raise RECIPE_NOT_FOUND_EXCEPTION
-        household = self.repos.households.get_one(recipe.household_id)
+        household = await self.repos.households.get_one(recipe.household_id)
         if not household or household.preferences.private_household:
             raise RECIPE_NOT_FOUND_EXCEPTION
 

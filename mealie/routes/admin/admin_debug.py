@@ -16,7 +16,7 @@ router = APIRouter(prefix="/debug")
 class AdminDebugController(BaseAdminController):
     @router.post("/openai/{provider_id}", response_model=DebugResponse)
     async def debug_openai(self, provider_id: UUID4, image: UploadFile | None = File(None)):
-        provider = self.repos.group_ai_providers.get_one(provider_id)
+        provider = await self.repos.group_ai_providers.get_one(provider_id)
         if not provider:
             return DebugResponse(success=False, response="Provider not found")
 

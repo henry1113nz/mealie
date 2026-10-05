@@ -1,60 +1,56 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import mapped_column
+from __future__ import annotations
 
-from mealie.db.models._model_base import FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from tortoise import fields
+
+from mealie.db.models._model_base import TortoiseModel
+
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class Nutrition(SqlAlchemyBase):
+class Nutrition(TortoiseModel):
     __tablename__ = "recipe_nutrition"
-    id: FilterableColumn[int] = mapped_column(sa.Integer, primary_key=True)
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
+    __filterable_fields__ = {
+        "sugar_content",
+        "cholesterol_content",
+        "carbohydrate_content",
+        "calories",
+        "id",
+        "protein_content",
+        "saturated_fat_content",
+        "fat_content",
+        "sodium_content",
+        "unsaturated_fat_content",
+        "trans_fat_content",
+        "recipe_id",
+        "fiber_content",
+    }
+    __association_proxies__ = {}
 
-    calories: FilterableColumn[str | None] = mapped_column(sa.String)
-    carbohydrate_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    cholesterol_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    fat_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    fiber_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    protein_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    saturated_fat_content: FilterableColumn[str | None] = mapped_column(sa.String)
+    id = fields.IntField(primary_key=True)
+    recipe_id: UUID
+    recipe: fields.OneToOneRelation[RecipeModel] = fields.OneToOneField(
+        "models.RecipeModel",
+        related_name="nutrition",
+        source_field="recipe_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
+    )
+    calories = fields.TextField(null=True)
+    carbohydrate_content = fields.TextField(null=True)
+    cholesterol_content = fields.TextField(null=True)
+    fat_content = fields.TextField(null=True)
+    fiber_content = fields.TextField(null=True)
+    protein_content = fields.TextField(null=True)
+    saturated_fat_content = fields.TextField(null=True)
+    sodium_content = fields.TextField(null=True)
+    sugar_content = fields.TextField(null=True)
+    trans_fat_content = fields.TextField(null=True)
+    unsaturated_fat_content = fields.TextField(null=True)
 
-    # `serving_size` is not a scaling factor, but a per-serving volume or mass
-    # according to schema.org. E.g., "2 L", "500 g", "5 cups", etc.
-    #
-    # Ignoring for now because it's too difficult to work around variable units
-    # in translation for the frontend. Also, it causes cognitive dissonance wrt
-    # "servings" (i.e., "serves 2" etc.), which is an unrelated concept that
-    # might cause confusion.
-    #
-    # serving_size: Mapped[str | None] = mapped_column(sa.String)
-
-    sodium_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    sugar_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    trans_fat_content: FilterableColumn[str | None] = mapped_column(sa.String)
-    unsaturated_fat_content: FilterableColumn[str | None] = mapped_column(sa.String)
-
-    def __init__(
-        self,
-        calories=None,
-        carbohydrate_content=None,
-        cholesterol_content=None,
-        fat_content=None,
-        fiber_content=None,
-        protein_content=None,
-        saturated_fat_content=None,
-        sodium_content=None,
-        sugar_content=None,
-        trans_fat_content=None,
-        unsaturated_fat_content=None,
-    ) -> None:
-        self.calories = calories
-        self.carbohydrate_content = carbohydrate_content
-        self.cholesterol_content = cholesterol_content
-        self.fat_content = fat_content
-        self.fiber_content = fiber_content
-        self.protein_content = protein_content
-        self.saturated_fat_content = saturated_fat_content
-        self.sodium_content = sodium_content
-        self.sugar_content = sugar_content
-        self.trans_fat_content = trans_fat_content
-        self.unsaturated_fat_content = unsaturated_fat_content
+    class Meta:
+        table = "recipe_nutrition"

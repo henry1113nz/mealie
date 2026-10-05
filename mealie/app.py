@@ -63,36 +63,42 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
     logger.info("start: database initialization")
     import mealie.db.init_db as init_db
 
-    init_db.main()
-    logger.info("end: database initialization")
+    try:
+        await init_db.main()
+        logger.info("end: database initialization")
 
-    await start_scheduler()
+        if not settings.TESTING:
+            await start_scheduler()
 
-    logger.info("-----SYSTEM STARTUP-----")
-    logger.info("------APP SETTINGS------")
-    logger.info(
-        settings.model_dump_json(
-            indent=4,
-            exclude={
-                "SECRET",
-                "SESSION_SECRET",
-                "DB_URL",  # replace by DB_URL_PUBLIC for logs
-                "DB_PROVIDER",
-            },
+        logger.info("-----SYSTEM STARTUP-----")
+        logger.info("------APP SETTINGS------")
+        logger.info(
+            settings.model_dump_json(
+                indent=4,
+                exclude={
+                    "SECRET",
+                    "SESSION_SECRET",
+                    "DB_URL",  # replace by DB_URL_PUBLIC for logs
+                    "DB_PROVIDER",
+                },
+            )
         )
-    )
-    logger.info("------APP FEATURES------")
-    logger.info("--------==SMTP==--------")
-    logger.info(settings.SMTP_FEATURE)
-    logger.info("--------==LDAP==--------")
-    logger.info(settings.LDAP_FEATURE)
-    logger.info("--------==OIDC==--------")
-    logger.info(settings.OIDC_FEATURE)
-    logger.info("------------------------")
+        logger.info("------APP FEATURES------")
+        logger.info("--------==SMTP==--------")
+        logger.info(settings.SMTP_FEATURE)
+        logger.info("--------==LDAP==--------")
+        logger.info(settings.LDAP_FEATURE)
+        logger.info("--------==OIDC==--------")
+        logger.info(settings.OIDC_FEATURE)
+        logger.info("------------------------")
 
-    yield
+        yield
+    finally:
+        from mealie.db.db_setup import close_database
 
-    logger.info("-----SYSTEM SHUTDOWN----- \n")
+        await SchedulerService.stop()
+        await close_database()
+        logger.info("-----SYSTEM SHUTDOWN----- \n")
 
 
 app = FastAPI(

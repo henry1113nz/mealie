@@ -89,7 +89,7 @@ class OpenAIParser(ABCIngredientParser):
             comment=note_conf,
         )
 
-    def _convert_substitutes(
+    async def _convert_substitutes(
         self, substitutes: list[str], food: CreateIngredientFood | None
     ) -> list[RecipeIngredientSubstitution]:
         """
@@ -101,7 +101,7 @@ class OpenAIParser(ABCIngredientParser):
         fallback is what keeps the alternative from being lost either way.
         """
 
-        ingredient_food = self.data_matcher.find_food_match(food) if food else None
+        ingredient_food = (await self.data_matcher.find_food_match(food)) if food else None
 
         substitutions: list[RecipeIngredientSubstitution] = []
         for substitute in substitutes:
@@ -109,7 +109,7 @@ class OpenAIParser(ABCIngredientParser):
             if not substitute:
                 continue
 
-            food_match = self.data_matcher.find_food_match(substitute)
+            food_match = await self.data_matcher.find_food_match(substitute)
             if not food_match:
                 substitutions.append(RecipeIngredientSubstitution(note=substitute))
             elif not ingredient_food or food_match.id != ingredient_food.id:
@@ -118,7 +118,7 @@ class OpenAIParser(ABCIngredientParser):
 
         return substitutions
 
-    def _convert_ingredient(self, original_text: str, openai_ing: OpenAIIngredient) -> ParsedIngredient:
+    async def _convert_ingredient(self, original_text: str, openai_ing: OpenAIIngredient) -> ParsedIngredient:
         food = CreateIngredientFood(name=openai_ing.food) if openai_ing.food else None
         ingredient = RecipeIngredient(
             original_text=original_text,
@@ -126,7 +126,7 @@ class OpenAIParser(ABCIngredientParser):
             unit=CreateIngredientUnit(name=openai_ing.unit) if openai_ing.unit else None,
             food=food,
             note=openai_ing.note,
-            substitutions=self._convert_substitutes(openai_ing.substitutes, food),
+            substitutions=(await self._convert_substitutes(openai_ing.substitutes, food)),
         )
 
         parsed_ingredient = ParsedIngredient(
@@ -135,10 +135,10 @@ class OpenAIParser(ABCIngredientParser):
             ingredient=ingredient,
         )
 
-        return self.find_ingredient_match(parsed_ingredient)
+        return await self.find_ingredient_match(parsed_ingredient)
 
-    def _get_prompt(self, service: OpenAIService) -> str:
-        if self.data_matcher.units_by_alias:
+    async def _get_prompt(self, service: OpenAIService) -> str:
+        if await self.data_matcher.units_by_alias():
             data_injections = [
                 OpenAIDataInjection(
                     description=(
@@ -147,7 +147,7 @@ class OpenAIParser(ABCIngredientParser):
                         "find a unit in the input that does not exist in this list. This should not prevent "
                         "you from parsing that text as a unit."
                     ),
-                    value=list(set(self.data_matcher.units_by_alias)),
+                    value=list(set(await self.data_matcher.units_by_alias())),
                 ),
             ]
 
@@ -158,7 +158,7 @@ class OpenAIParser(ABCIngredientParser):
 
     async def _parse(self, ingredients: list[str]) -> OpenAIIngredients:
         service = OpenAIService(self.repos)
-        prompt = self._get_prompt(service)
+        prompt = await self._get_prompt(service)
 
         response = await service.get_response(
             prompt, json.dumps(ingredients, separators=(",", ":")), response_schema=OpenAIIngredients
@@ -182,6 +182,6 @@ class OpenAIParser(ABCIngredientParser):
             )
 
         return [
-            self._convert_ingredient(original_text, ing)
+            (await self._convert_ingredient(original_text, ing))
             for original_text, ing in zip(ingredients, response.ingredients, strict=True)
         ]

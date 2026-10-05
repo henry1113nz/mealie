@@ -13,6 +13,7 @@ from mealie.schema.household.group_shopping_list import (
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import RecipeIngredient, SaveIngredientFood
 from tests import utils
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.assertion_helpers import assert_deserialize
 from tests.utils.factories import random_int, random_string
@@ -256,62 +257,74 @@ def test_shopping_lists_add_nested_recipe_ingredients(
     database = unique_user.repos
 
     # Create three food items for the base recipes
-    food_c = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food_c = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
-    food_b = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food_b = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
-    food_a = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
+    food_a = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+            )
         )
     )
 
     # Create recipe_c with a single food ingredient (base recipe)
-    recipe_c: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note=f"ingredient from recipe c - {food_c.name}", food=food_c, quantity=1),
-            ],
+    recipe_c: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note=f"ingredient from recipe c - {food_c.name}", food=food_c, quantity=1),
+                ],
+            )
         )
     )
 
     # Create recipe_b with its own food ingredient and a reference to recipe_c (c -> b)
-    recipe_b: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note=f"ingredient from recipe b - {food_b.name}", food=food_b, quantity=2),
-                RecipeIngredient(note="nested recipe c", referenced_recipe=recipe_c),
-            ],
+    recipe_b: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note=f"ingredient from recipe b - {food_b.name}", food=food_b, quantity=2),
+                    RecipeIngredient(note="nested recipe c", referenced_recipe=recipe_c),
+                ],
+            )
         )
     )
 
     # Create recipe_a with its own food ingredient and a reference to recipe_b (b -> a, creating chain c -> b -> a)
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note=f"ingredient from recipe a - {food_a.name}", food=food_a, quantity=3),
-                RecipeIngredient(note="nested recipe b", referenced_recipe=recipe_b),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note=f"ingredient from recipe a - {food_a.name}", food=food_a, quantity=3),
+                    RecipeIngredient(note="nested recipe b", referenced_recipe=recipe_b),
+                ],
+            )
         )
     )
 
@@ -375,19 +388,21 @@ def test_shopping_lists_add_cross_household_recipe(
     item_name = random_string(10)
 
     # set up household
-    household = h2_user.repos.households.get_one(h2_user.household_id)
+    household = run_db(h2_user.repos.households.get_one(h2_user.household_id))
     assert household and household.preferences
     household.preferences.private_household = is_private_household
     household.preferences.lock_recipe_edits_from_other_households = household_lock_recipe_edits
-    h2_user.repos.household_preferences.update(household.id, household.preferences)
+    run_db(h2_user.repos.household_preferences.update(household.id, household.preferences))
 
     # set up recipe
-    recipe = h2_user.repos.recipes.create(
-        Recipe(
-            user_id=h2_user.user_id,
-            group_id=h2_user.group_id,
-            name=random_string(10),
-            recipe_ingredient=[{"note": item_name, "quantity": 1}],
+    recipe = run_db(
+        h2_user.repos.recipes.create(
+            Recipe(
+                user_id=h2_user.user_id,
+                group_id=h2_user.group_id,
+                name=random_string(10),
+                recipe_ingredient=[{"note": item_name, "quantity": 1}],
+            )
         )
     )
 
@@ -683,26 +698,32 @@ def test_shopping_list_nested_recipe_refs_restored_when_unchecked(
 ):
     database = unique_user.repos
     food_a, food_b = (
-        database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+        run_db(
+            database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
+        )
         for _ in range(2)
     )
-    recipe_b: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[RecipeIngredient(note=food_b.name, food=food_b, quantity=2)],
+    recipe_b: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[RecipeIngredient(note=food_b.name, food=food_b, quantity=2)],
+            )
         )
     )
-    recipe_a: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note=food_a.name, food=food_a, quantity=3),
-                RecipeIngredient(note="nested recipe b", referenced_recipe=recipe_b),
-            ],
+    recipe_a: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note=food_a.name, food=food_a, quantity=3),
+                    RecipeIngredient(note="nested recipe b", referenced_recipe=recipe_b),
+                ],
+            )
         )
     )
 
@@ -1609,27 +1630,31 @@ def test_shopping_lists_add_recipe_on_hand_food(
     shopping_list = random.choice(shopping_lists)
     database = unique_user.repos
 
-    household = database.households.get_by_slug_or_id(unique_user.household_id)
+    household = run_db(database.households.get_by_slug_or_id(unique_user.household_id))
     assert household
-    on_hand_food = database.ingredient_foods.create(
-        SaveIngredientFood(
-            name=random_string(10),
-            group_id=unique_user.group_id,
-            households_with_ingredient_food=[household.slug],
+    on_hand_food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+                households_with_ingredient_food=[household.slug],
+            )
         )
     )
-    other_food = database.ingredient_foods.create(
-        SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id)
+    other_food = run_db(
+        database.ingredient_foods.create(SaveIngredientFood(name=random_string(10), group_id=unique_user.group_id))
     )
-    recipe: Recipe = database.recipes.create(
-        Recipe(
-            name=random_string(10),
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            recipe_ingredient=[
-                RecipeIngredient(note=random_string(10), food=on_hand_food, quantity=1),
-                RecipeIngredient(note=random_string(10), food=other_food, quantity=1),
-            ],
+    recipe: Recipe = run_db(
+        database.recipes.create(
+            Recipe(
+                name=random_string(10),
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                recipe_ingredient=[
+                    RecipeIngredient(note=random_string(10), food=on_hand_food, quantity=1),
+                    RecipeIngredient(note=random_string(10), food=other_food, quantity=1),
+                ],
+            )
         )
     )
 

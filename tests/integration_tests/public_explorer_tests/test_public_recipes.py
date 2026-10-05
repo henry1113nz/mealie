@@ -10,6 +10,7 @@ from mealie.schema.cookbook.cookbook import SaveCookBook
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_category import TagSave
 from mealie.schema.recipe.recipe_ingredient import RecipeIngredient, SaveIngredientFood
+from tests.fixtures.fixture_database import run_db
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
@@ -27,11 +28,11 @@ def test_get_all_public_recipes(
     is_household_2_private: bool,
 ):
     ## Set Up Public and Private Recipes
-    group = unique_user.repos.groups.get_one(unique_user.group_id)
+    group = run_db(unique_user.repos.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = is_private_group
-    unique_user.repos.group_preferences.update(group.id, group.preferences)
+    run_db(unique_user.repos.group_preferences.update(group.id, group.preferences))
 
     household_private_map: dict[UUID4, bool] = {}
     public_recipes: list[Recipe] = []
@@ -41,23 +42,25 @@ def test_get_all_public_recipes(
         (h2_user, is_household_2_private),
     ]:
         database = user.repos
-        household = database.households.get_one(user.household_id)
+        household = run_db(database.households.get_one(user.household_id))
         assert household and household.preferences
 
         household_private_map[household.id] = is_private_household
         household.preferences.private_household = is_private_household
         household.preferences.recipe_public = not is_private_household
-        database.household_preferences.update(household.id, household.preferences)
+        run_db(database.household_preferences.update(household.id, household.preferences))
 
-        default_recipes = database.recipes.create_many(
-            [
-                Recipe(
-                    user_id=user.user_id,
-                    group_id=user.group_id,
-                    name=random_string(),
-                )
-                for _ in range(random_int(15, 20))
-            ],
+        default_recipes = run_db(
+            database.recipes.create_many(
+                [
+                    Recipe(
+                        user_id=user.user_id,
+                        group_id=user.group_id,
+                        name=random_string(),
+                    )
+                    for _ in range(random_int(15, 20))
+                ],
+            )
         )
 
         random.shuffle(default_recipes)
@@ -73,7 +76,7 @@ def test_get_all_public_recipes(
             assert recipe.settings
             recipe.settings.public = False
 
-        database.recipes.update_many(default_recipes)
+        run_db(database.recipes.update_many(default_recipes))
 
     ## Query All Recipes
     response = api_client.get(api_routes.explore_groups_group_slug_recipes(group.slug))
@@ -122,22 +125,22 @@ def test_get_all_public_recipes_filtered(
     database = unique_user.repos
 
     ## Set Up Recipe
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = False
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = False
     household.preferences.recipe_public = True
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     assert random_recipe.settings
     random_recipe.settings.public = True
-    database.recipes.update(random_recipe.slug, random_recipe.model_dump() | recipe_data)
+    run_db(database.recipes.update(random_recipe.slug, random_recipe.model_dump() | recipe_data))
 
     ## Query All Recipes
     response = api_client.get(
@@ -159,22 +162,22 @@ def test_get_all_public_recipes_filter_cannot_escape_public_filter(
 
     database = unique_user.repos
 
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = False
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = False
     household.preferences.recipe_public = True
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     assert random_recipe.settings
     random_recipe.settings.public = False
-    database.recipes.update(random_recipe.slug, random_recipe.model_dump())
+    run_db(database.recipes.update(random_recipe.slug, random_recipe.model_dump()))
 
     response = api_client.get(
         api_routes.explore_groups_group_slug_recipes(group.slug),
@@ -197,28 +200,28 @@ def test_get_one_recipe(
     database = unique_user.repos
 
     ## Set Up Group
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = is_private_group
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
     ## Set Up Household
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = is_private_household
     household.preferences.recipe_public = not is_private_household
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     ## Set Recipe `settings.public` attribute
     assert random_recipe.settings
     random_recipe.settings.public = not is_private_recipe
-    database.recipes.update(random_recipe.slug, random_recipe)
+    run_db(database.recipes.update(random_recipe.slug, random_recipe))
 
     ## Try to access recipe
-    recipe_group = database.groups.get_by_slug_or_id(random_recipe.group_id)
-    recipe_household = database.households.get_by_slug_or_id(random_recipe.household_id)
+    recipe_group = run_db(database.groups.get_by_slug_or_id(random_recipe.group_id))
+    recipe_household = run_db(database.households.get_by_slug_or_id(random_recipe.household_id))
     assert recipe_group
     assert recipe_household
     response = api_client.get(
@@ -246,27 +249,29 @@ def test_public_recipe_cookbook_filter(
     database = unique_user.repos
 
     ## Set Up Group
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = False
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
     ## Set Up Household
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = False
     household.preferences.recipe_public = True
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     ## Set Up Cookbook
-    cookbook = database.cookbooks.create(
-        SaveCookBook(
-            name=random_string(),
-            group_id=unique_user.group_id,
-            household_id=unique_user.household_id,
-            public=not is_private_cookbook,
+    cookbook = run_db(
+        database.cookbooks.create(
+            SaveCookBook(
+                name=random_string(),
+                group_id=unique_user.group_id,
+                household_id=unique_user.household_id,
+                public=not is_private_cookbook,
+            )
         )
     )
 
@@ -285,30 +290,31 @@ def test_public_recipe_cookbook_filter_with_recipes(
     api_client: TestClient, unique_user: TestUser, h2_user: TestUser, other_household_private: bool
 ):
     database = unique_user.repos
-    database.session.rollback()
 
     # Create a public and private recipe with a known tag
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = False
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = False
     household.preferences.recipe_public = True
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
-    tag = database.tags.create(TagSave(name=random_string(), group_id=unique_user.group_id))
-    public_recipe, private_recipe = database.recipes.create_many(
-        Recipe(
-            user_id=unique_user.user_id,
-            group_id=unique_user.group_id,
-            name=random_string(),
+    tag = run_db(database.tags.create(TagSave(name=random_string(), group_id=unique_user.group_id)))
+    public_recipe, private_recipe = run_db(
+        database.recipes.create_many(
+            Recipe(
+                user_id=unique_user.user_id,
+                group_id=unique_user.group_id,
+                name=random_string(),
+            )
+            for _ in range(2)
         )
-        for _ in range(2)
     )
 
     assert public_recipe.settings
@@ -319,37 +325,41 @@ def test_public_recipe_cookbook_filter_with_recipes(
     private_recipe.settings.public = False
     private_recipe.tags = [tag]
 
-    database.recipes.update_many([public_recipe, private_recipe])
+    run_db(database.recipes.update_many([public_recipe, private_recipe]))
 
     # Create a recipe in another household with the same known tag
     other_database = h2_user.repos
-    other_household = other_database.households.get_one(h2_user.household_id)
+    other_household = run_db(other_database.households.get_one(h2_user.household_id))
     assert other_household and other_household.preferences
 
     other_household.preferences.private_household = other_household_private
     other_household.preferences.recipe_public = True
-    other_database.household_preferences.update(other_household.id, other_household.preferences)
+    run_db(other_database.household_preferences.update(other_household.id, other_household.preferences))
 
-    other_household_recipe = other_database.recipes.create(
-        Recipe(
-            user_id=h2_user.user_id,
-            group_id=h2_user.group_id,
-            name=random_string(),
+    other_household_recipe = run_db(
+        other_database.recipes.create(
+            Recipe(
+                user_id=h2_user.user_id,
+                group_id=h2_user.group_id,
+                name=random_string(),
+            )
         )
     )
     assert other_household_recipe.settings
     other_household_recipe.settings.public = True
     other_household_recipe.tags = [tag]
-    other_database.recipes.update(other_household_recipe.slug, other_household_recipe)
+    run_db(other_database.recipes.update(other_household_recipe.slug, other_household_recipe))
 
     # Create a public cookbook with tag
-    cookbook = database.cookbooks.create(
-        SaveCookBook(
-            name=random_string(),
-            group_id=unique_user.group_id,
-            household_id=unique_user.household_id,
-            public=True,
-            query_filter_string=f'tags.id IN ["{tag.id}"]',
+    cookbook = run_db(
+        database.cookbooks.create(
+            SaveCookBook(
+                name=random_string(),
+                group_id=unique_user.group_id,
+                household_id=unique_user.household_id,
+                public=True,
+                query_filter_string=f'tags.id IN ["{tag.id}"]',
+            )
         )
     )
 
@@ -387,35 +397,37 @@ def test_get_suggested_recipes(
     database = unique_user.repos
 
     ## Set Up Group
-    group = database.groups.get_one(unique_user.group_id)
+    group = run_db(database.groups.get_one(unique_user.group_id))
     assert group and group.preferences
 
     group.preferences.private_group = is_private_group
-    database.group_preferences.update(group.id, group.preferences)
+    run_db(database.group_preferences.update(group.id, group.preferences))
 
     ## Set Up Household
-    household = database.households.get_one(unique_user.household_id)
+    household = run_db(database.households.get_one(unique_user.household_id))
     assert household and household.preferences
 
     household.preferences.private_household = is_private_household
     household.preferences.recipe_public = not is_private_household
-    database.household_preferences.update(household.id, household.preferences)
+    run_db(database.household_preferences.update(household.id, household.preferences))
 
     ## Set Recipe `settings.public` attribute
     assert random_recipe.settings
     random_recipe.settings.public = not is_private_recipe
-    database.recipes.update(random_recipe.slug, random_recipe)
+    run_db(database.recipes.update(random_recipe.slug, random_recipe))
 
     ## Add a known food to the recipe
-    known_food = database.ingredient_foods.create(
-        SaveIngredientFood(id=uuid4(), name=random_string(), group_id=unique_user.group_id)
+    known_food = run_db(
+        database.ingredient_foods.create(
+            SaveIngredientFood(id=uuid4(), name=random_string(), group_id=unique_user.group_id)
+        )
     )
     random_recipe.recipe_ingredient = [RecipeIngredient(food_id=known_food.id, food=known_food)]
-    database.recipes.update(random_recipe.slug, random_recipe)
+    run_db(database.recipes.update(random_recipe.slug, random_recipe))
 
     ## Try to find suggested recipes
-    recipe_group = database.groups.get_by_slug_or_id(random_recipe.group_id)
-    recipe_household = database.households.get_by_slug_or_id(random_recipe.household_id)
+    recipe_group = run_db(database.groups.get_by_slug_or_id(random_recipe.group_id))
+    recipe_household = run_db(database.households.get_by_slug_or_id(random_recipe.household_id))
     assert recipe_group
     assert recipe_household
     response = api_client.get(

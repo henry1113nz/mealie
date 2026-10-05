@@ -4,7 +4,6 @@
 import asyncio
 import inspect
 import logging
-from asyncio import ensure_future
 from collections.abc import Callable, Coroutine
 from functools import wraps
 from traceback import format_exception
@@ -15,6 +14,16 @@ from starlette.concurrency import run_in_threadpool
 NoArgsNoReturnFuncT = Callable[[], None]
 NoArgsNoReturnAsyncFuncT = Callable[[], Coroutine[Any, Any, None]]
 NoArgsNoReturnDecorator = Callable[[NoArgsNoReturnFuncT | NoArgsNoReturnAsyncFuncT], NoArgsNoReturnAsyncFuncT]
+
+
+SCHEDULED_TASKS: set[asyncio.Task] = set()
+
+
+def register_task(coroutine: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+    task = asyncio.create_task(coroutine)
+    SCHEDULED_TASKS.add(task)
+    task.add_done_callback(SCHEDULED_TASKS.discard)
+    return task
 
 
 def repeat_every(
@@ -77,7 +86,7 @@ def repeat_every(
                             raise exc
                     await asyncio.sleep(minutes * 60)
 
-            ensure_future(loop())
+            register_task(loop())
 
         return wrapped
 

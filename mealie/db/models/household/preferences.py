@@ -1,44 +1,59 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-import sqlalchemy as sa
-import sqlalchemy.orm as orm
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._model_base import TortoiseModel
 
 if TYPE_CHECKING:
-    from .household import Household
+    from mealie.db.models.household.household import Household
 
 
-class HouseholdPreferencesModel(SqlAlchemyBase, BaseMixins):
+class HouseholdPreferencesModel(TortoiseModel):
     __tablename__ = "household_preferences"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+    __filterable_fields__ = {
+        "recipe_disable_comments",
+        "first_day_of_week",
+        "recipe_public",
+        "id",
+        "lock_recipe_edits_from_other_households",
+        "recipe_landscape_view",
+        "private_household",
+        "show_announcements",
+        "household_id",
+        "recipe_show_assets",
+        "recipe_disable_amount",
+        "recipe_show_nutrition",
+    }
+    __association_proxies__ = {"group_id": ["household", "group_id"]}
 
-    household_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("households.id"), nullable=False, index=True
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    household_id: UUID
+    household: fields.OneToOneRelation[Household] = fields.OneToOneField(
+        "models.Household",
+        related_name="preferences",
+        source_field="household_id",
+        null=False,
+        on_delete=fields.CASCADE,
+        db_index=True,
     )
-    household: Mapped[Household | None] = orm.relationship("Household", back_populates="preferences")
-    group_id: AssociationProxy[GUID] = association_proxy("household", "group_id")
+    private_household = fields.BooleanField(null=True, default=True)
+    show_announcements = fields.BooleanField(null=False, default=True)
+    lock_recipe_edits_from_other_households = fields.BooleanField(null=True, default=True)
+    first_day_of_week = fields.IntField(null=True, default=0)
+    recipe_public = fields.BooleanField(null=True, default=True)
+    recipe_show_nutrition = fields.BooleanField(null=True, default=False)
+    recipe_show_assets = fields.BooleanField(null=True, default=False)
+    recipe_landscape_view = fields.BooleanField(null=True, default=False)
+    recipe_disable_comments = fields.BooleanField(null=True, default=False)
+    recipe_disable_amount = fields.BooleanField(null=True, default=True)
 
-    private_household: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=True)
-    show_announcements: FilterableColumn[bool] = mapped_column(sa.Boolean, default=True)
+    @property
+    def group_id(self):
+        parent = getattr(self, "household", None)
+        return getattr(parent, "group_id", None) if parent is not None else None
 
-    lock_recipe_edits_from_other_households: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=True)
-    first_day_of_week: FilterableColumn[int | None] = mapped_column(sa.Integer, default=0)
-
-    # Recipe Defaults
-    recipe_public: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=True)
-    recipe_show_nutrition: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=False)
-    recipe_show_assets: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=False)
-    recipe_landscape_view: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=False)
-    recipe_disable_comments: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=False)
-
-    # Deprecated
-    recipe_disable_amount: FilterableColumn[bool | None] = mapped_column(sa.Boolean, default=True)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "household_preferences"

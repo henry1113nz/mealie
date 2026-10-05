@@ -7,5 +7,5 @@ from .repository_generic import HouseholdRepositoryGeneric
 
 
 class RepositoryShoppingList(HouseholdRepositoryGeneric[ShoppingListOut, ShoppingList]):
-    def update(self, item_id: UUID4, data: ShoppingListUpdate) -> ShoppingListOut:  # type: ignore
-        return super().update(item_id, data)
+    async def update(self, item_id: UUID4, data: ShoppingListUpdate) -> ShoppingListOut:  # type: ignore
+        return await super().update(item_id, data)
