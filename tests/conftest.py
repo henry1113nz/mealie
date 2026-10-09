@@ -41,16 +41,20 @@ if _WORKER_ID:
             conn.execute(text(f'CREATE DATABASE "{worker_db}"'))
         mp.setenv("POSTGRES_DB", worker_db)
 
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from mealie.app import app
 from mealie.core import config
 from mealie.db.db_setup import SessionLocal, generate_session
 from mealie.db.init_db import main
+from mealie.db.tortoise.setup import close_tortoise, init_tortoise
 from tests import data as test_data
 from tests.fixtures import *  # noqa: F403 F401
 
 main()
+asyncio.run(init_tortoise())
 
 
 def override_get_db():
@@ -104,4 +108,18 @@ def global_cleanup() -> Generator[None]:
     """Purges the .temp directory used for testing"""
 
     yield None
+    with contextlib.suppress(Exception):
+        import asyncio
+
+        from mealie.db.tortoise.setup import close_tortoise
+
+        asyncio.run(close_tortoise())
     _clean_temp_dir()
+
+
+@fixture
+async def tortoise_db():
+    from mealie.db.tortoise.setup import init_tortoise
+
+    await init_tortoise()
+    yield

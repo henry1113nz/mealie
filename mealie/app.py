@@ -66,6 +66,10 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
     init_db.main()
     logger.info("end: database initialization")
 
+    from mealie.db.tortoise import close_tortoise, init_tortoise
+
+    await init_tortoise()
+
     await start_scheduler()
 
     logger.info("-----SYSTEM STARTUP-----")
@@ -90,9 +94,11 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
     logger.info(settings.OIDC_FEATURE)
     logger.info("------------------------")
 
-    yield
-
-    logger.info("-----SYSTEM SHUTDOWN----- \n")
+    try:
+        yield
+    finally:
+        await close_tortoise()
+        logger.info("-----SYSTEM SHUTDOWN----- \n")
 
 
 app = FastAPI(
