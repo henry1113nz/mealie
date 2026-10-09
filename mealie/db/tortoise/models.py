@@ -37,14 +37,20 @@ class TortoiseBase(models.Model):
 
 
 class IntIdModel(TortoiseBase):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
 
     class Meta:
         abstract = True
 
 
 class UUIDIdModel(TortoiseBase):
-    id = fields.UUIDField(pk=True, default=uuid4)
+    id = fields.UUIDField(primary_key=True, default=uuid4)
 
     class Meta:
         abstract = True
+
+
+class TortoiseModelRegistry(TortoiseBase):
+    class Meta:
+        table = "_tortoise_model_registry"
+

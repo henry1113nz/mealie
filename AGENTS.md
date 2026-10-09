@@ -253,15 +253,17 @@ section at the start of every session and update it at the end.
 - Test command: uv run pytest -n 4 --dist loadfile
 
 ### Conventions
-(Add naming, model, query and session conventions here as they are decided.)
+- Use `primary_key=True` for Tortoise primary key fields (`pk=True` is deprecated).
+- Register models via `mealie.db.tortoise.models` with concrete models (such as `TortoiseModelRegistry`) to satisfy Tortoise model discovery.
 
 ### Decisions log
-(One line per decision: session, decision, reason.)
+- s01: Added Tortoise ORM scaffolding (config, setup, models, conftest integration) alongside existing SQLAlchemy infrastructure.
+- s02: Used primary_key=True instead of deprecated pk=True in base models; added TortoiseModelRegistry concrete model to satisfy Tortoise model discovery without warnings.
 
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
-| C1 | Foundation | not started | | |
+| C1 | Foundation | in progress | s02 | 35 |
 | C2 | server | not started | | |
 | C3 | users | not started | | |
 | C4 | group | not started | | |

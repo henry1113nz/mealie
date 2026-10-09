@@ -9,7 +9,7 @@ def get_db_url(db_url: str | None = None) -> str:
         url = db_url
     else:
         settings = get_app_settings()
-        url = settings.DB_URL
+        url = settings.DB_URL or ""
 
     # asyncpg expects 'postgres://' or 'postgresql://'
     return url
