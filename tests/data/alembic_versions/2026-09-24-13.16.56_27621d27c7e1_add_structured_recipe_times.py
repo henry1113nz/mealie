@@ -36,7 +36,7 @@ down_revision: str | None = "3527efeeec34"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
-LOCALES_DIR = Path(__file__).parents[2] / "lang" / "messages"
+LOCALES_DIR = Path(__file__).parents[3] / "mealie" / "lang" / "messages"
 
 MAX_SECONDS = 2**31 - 1
 """Postgres INTEGER max"""

@@ -9,8 +9,6 @@ dependencies = [
     "Jinja2==3.1.6",
     "Pillow==12.3.0",
     "PyYAML==6.0.3",
-    "SQLAlchemy==2.0.54",
-    "alembic==1.20.0",
     "apprise==1.13.1",
     "bcrypt==5.0.0",
     "extruct==0.18.0",
@@ -46,15 +44,17 @@ dependencies = [
     "ingredient-parser-nlp==2.8.0",
     "pint==0.26.1",
     "httpx-curl-cffi==0.1.5",
+    "tortoise-orm==1.1.8",
+    "aerich==0.10.1",
+    "aiosqlite==0.22.1",
+    "asyncpg==0.31.0",
 ]
 
 [project.scripts]
 mealie = "mealie.main:main"
 
 [project.optional-dependencies]
-pgsql = [
-    "psycopg2-binary==2.9.13"
-]
+pgsql = []
 
 [dependency-groups]
 docs = [
