@@ -259,11 +259,11 @@ section at the start of every session and update it at the end.
 ### Decisions log
 - s01: Added Tortoise ORM scaffolding (config, setup, models, conftest integration) alongside existing SQLAlchemy infrastructure.
 - s02: Used primary_key=True instead of deprecated pk=True in base models; added TortoiseModelRegistry concrete model to satisfy Tortoise model discovery without warnings.
-
+- s03: C1 marked blocked after 3 sessions. Agent made zero code changes; test results are flaky (same commit produced 32 failures in s02 and 5 failures + 10 errors in s03). Root cause is likely the Tortoise/event-loop interaction across pytest-xdist workers, not a specific bug. Workflow C's gate cannot be applied reliably to a flaky suite.
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
-| C1 | Foundation | in progress | s02 | 35 |
+| C1 | Foundation | blocked | s03 | 5-32(flaky) |
 | C2 | server | not started | | |
 | C3 | users | not started | | |
 | C4 | group | not started | | |
