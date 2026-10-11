@@ -278,9 +278,9 @@ async def test_group_delete_cleans_owned_domains_and_preserves_other_group(
     )
     task = await ServerTaskModel.create(group_id=group_id, name="Delete", status="pending")
     other_task = await ServerTaskModel.create(group_id=other.group_id, name="Keep", status="pending")
-    # Populate household and recipe dependents through the still-legacy repositories.
+    # Populate household and recipe dependents through their native repositories.
     owner = await create_native_user(repos, "former-owner")
-    recipe = repos.recipes.create(
+    recipe = await repos.recipes.create(
         Recipe.model_validate(
             {
                 "name": "Delete recipe",

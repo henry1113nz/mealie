@@ -11,7 +11,7 @@ from pydantic import UUID4, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.recipe import IngredientFoodModel, IngredientFoodSubstitutionModel
+from mealie.db.models._legacy_recipe import IngredientFoodModel, IngredientFoodSubstitutionModel
 from mealie.lang.locale_config import LocalePluralFoodHandling
 from mealie.lang.providers import get_locale_context
 from mealie.schema._mealie import MealieModel

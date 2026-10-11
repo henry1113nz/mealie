@@ -117,7 +117,7 @@ class TandoorMigrator(BaseMigrator):
                         )
                     )
 
-            recipes = [self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
+            recipes = [await self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
             results = await self.import_recipes_to_database(recipes)
             recipe_lookup = {r.slug: r for r in recipes}
             for slug, recipe_id, status in results:
@@ -130,4 +130,4 @@ class TandoorMigrator(BaseMigrator):
                     except StopIteration:
                         continue
 
-                    self.import_image(slug, r.image, recipe_id, extraction_root=source_dir)
+                    await self.import_image(slug, r.image, recipe_id, extraction_root=source_dir)

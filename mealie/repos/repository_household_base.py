@@ -67,7 +67,7 @@ class AsyncHouseholdRepository[Schema: MealieModel, DBModel: Model](AsyncUserRep
         super().__init__(session, primary_key, sql_model, schema, group_id=group_id)
         if household_id is NOT_SET and sql_model is not Household:
             raise ValueError("household_id must be set")
-        self.household_id = household_id if isinstance(household_id, UUID) else None
+        self.household_id = UUID(str(household_id)) if household_id and household_id is not NOT_SET else None
 
     def _scope_key(self, key: str) -> str:
         root, *suffix = key.split("__", 1)
@@ -292,8 +292,11 @@ class AsyncHouseholdRepository[Schema: MealieModel, DBModel: Model](AsyncUserRep
             await ShoppingList.filter(id=entry.shopping_list_id).update(update_at=datetime.now(UTC))
         elif isinstance(entry, HouseholdToRecipe) and entry.last_made:
             # Preserve the historical monotonic value, including on deletion.
-            await bridge.execute(
-                "UPDATE recipes SET last_made = ?, update_at = ? WHERE id = ? AND (last_made IS NULL OR last_made < ?)",
-                [entry.last_made, datetime.now(UTC), entry.recipe_id, entry.last_made],
-            )
+            from tortoise.expressions import Q
+
+            from mealie.db.models.recipe.recipe import RecipeModel
+
+            await RecipeModel.filter(
+                Q(last_made__isnull=True) | Q(last_made__lt=entry.last_made), id=entry.recipe_id
+            ).update(last_made=entry.last_made, update_at=datetime.now(UTC))
         await super()._after_write(entry)

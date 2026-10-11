@@ -9,6 +9,9 @@ from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UU
 
 if TYPE_CHECKING:
     from ..group.group import Group
+    from ..recipe.ingredient import IngredientFoodModel, IngredientUnitModel
+    from ..recipe.labels import MultiPurposeLabel
+    from ..recipe.recipe import RecipeModel
     from ..users.users import User
 
 
@@ -69,9 +72,33 @@ class ShoppingListItem(TortoiseBase):
     checked: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
     quantity: fields.FloatField[float | None] = fields.FloatField(default=1, null=True)
     note: fields.TextField[str | None] = UnboundedCharField(null=True)
-    unit_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
-    food_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
-    label_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
+    unit_id: UUID | None
+    unit: fields.ForeignKeyNullableRelation[IngredientUnitModel] = fields.ForeignKeyField(
+        "models.IngredientUnitModel",
+        related_name="shopping_list_items",
+        source_field="unit_id",
+        null=True,
+        db_index=False,
+        on_delete=fields.RESTRICT,
+    )
+    food_id: UUID | None
+    food: fields.ForeignKeyNullableRelation[IngredientFoodModel] = fields.ForeignKeyField(
+        "models.IngredientFoodModel",
+        related_name="shopping_list_items",
+        source_field="food_id",
+        null=True,
+        db_index=False,
+        on_delete=fields.RESTRICT,
+    )
+    label_id: UUID | None
+    label: fields.ForeignKeyNullableRelation[MultiPurposeLabel] = fields.ForeignKeyField(
+        "models.MultiPurposeLabel",
+        related_name="shopping_list_items",
+        source_field="label_id",
+        null=True,
+        db_index=False,
+        on_delete=fields.RESTRICT,
+    )
     is_food: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
     recipe_references: fields.ReverseRelation[ShoppingListItemRecipeReference]
     extras: fields.ReverseRelation[ShoppingListItemExtras]
@@ -102,7 +129,15 @@ class ShoppingListRecipeReference(TortoiseBase):
         db_index=False,
         on_delete=fields.RESTRICT,
     )
-    recipe_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="shopping_list_refs",
+        source_field="recipe_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
     recipe_quantity = fields.FloatField()
 
     class Meta:
@@ -120,7 +155,15 @@ class ShoppingListItemRecipeReference(TortoiseBase):
         db_index=False,
         on_delete=fields.RESTRICT,
     )
-    recipe_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="shopping_list_item_refs",
+        source_field="recipe_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
     recipe_quantity = fields.FloatField()
     recipe_scale = fields.FloatField(default=1)
     recipe_note: fields.TextField[str | None] = UnboundedCharField(null=True)
@@ -140,7 +183,15 @@ class ShoppingListMultiPurposeLabel(TortoiseBase):
         db_index=False,
         on_delete=fields.RESTRICT,
     )
-    label_id: fields.UUIDField[UUID] = UUIDField()
+    label_id: UUID
+    label: fields.ForeignKeyRelation[MultiPurposeLabel] = fields.ForeignKeyField(
+        "models.MultiPurposeLabel",
+        related_name="shopping_lists_label_settings",
+        source_field="label_id",
+        null=False,
+        db_index=False,
+        on_delete=fields.RESTRICT,
+    )
     position = fields.IntField(default=0)
 
     class Meta:

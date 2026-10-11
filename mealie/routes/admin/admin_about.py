@@ -41,9 +41,9 @@ class AdminAboutController(BaseAdminController):
     @router.get("/statistics", response_model=AppStatistics)
     async def get_app_statistics(self):
         return AppStatistics(
-            total_recipes=self.repos.recipes.count_all(),
-            uncategorized_recipes=self.repos.recipes.count_uncategorized(),  # type: ignore
-            untagged_recipes=self.repos.recipes.count_untagged(),  # type: ignore
+            total_recipes=(await self.repos.recipes.count_all()),
+            uncategorized_recipes=(await self.repos.recipes.count_uncategorized()),  # type: ignore
+            untagged_recipes=(await self.repos.recipes.count_untagged()),  # type: ignore
             total_users=await self.repos.users.count_all(),
             total_households=await self.repos.households.count_all(),
             total_groups=await self.repos.groups.count_all(),

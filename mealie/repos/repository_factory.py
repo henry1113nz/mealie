@@ -2,8 +2,8 @@ from collections.abc import Sequence
 from functools import cached_property
 
 from pydantic import UUID4
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import Session, with_expression
+from sqlalchemy.orm import Session
+from tortoise.transactions import in_transaction
 
 from mealie.db.models._model_utils.guid import GUID
 from mealie.db.models.group import Group, ReportEntryModel, ReportModel
@@ -26,14 +26,14 @@ from mealie.db.models.household.shopping_list import (
     ShoppingListRecipeReference,
 )
 from mealie.db.models.household.webhooks import GroupWebhooksModel
-from mealie.db.models.recipe.category import Category, recipes_to_categories
+from mealie.db.models.recipe.category import Category
 from mealie.db.models.recipe.comment import RecipeComment
 from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
 from mealie.db.models.recipe.labels import MultiPurposeLabel
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.recipe_timeline import RecipeTimelineEvent
 from mealie.db.models.recipe.shared import RecipeShareTokenModel
-from mealie.db.models.recipe.tag import Tag, recipes_to_tags
+from mealie.db.models.recipe.tag import Tag
 from mealie.db.models.recipe.tool import Tool
 from mealie.db.models.users import LongLiveToken, User
 from mealie.db.models.users.password_reset import PasswordResetModel
@@ -75,10 +75,10 @@ from mealie.schema.user.user import UserRatingOut
 from mealie.schema.user.user_passwords import PrivatePasswordResetToken
 
 from ._utils import NOT_SET, NotSet
-from .repository_generic import GroupRepositoryGeneric
 from .repository_group import AsyncGroupRepository, RepositoryGroup
 from .repository_household_base import AsyncHouseholdRepository
 from .repository_meals import RepositoryMeals
+from .repository_recipe_base import AsyncRecipeRepository
 from .repository_recipes import RepositoryRecipes
 from .repository_shopping_list import RepositoryShoppingList
 from .repository_users import AsyncUserRepository, RepositoryUserRatings, RepositoryUsers
@@ -90,83 +90,36 @@ PK_GROUP_ID = "group_id"
 PK_HOUSEHOLD_ID = "household_id"
 
 
-class RepositoryCategories(GroupRepositoryGeneric[CategoryOut, Category]):
-    def _query(self, override_schema=None, with_options=True):
-        q = super()._query(override_schema=override_schema, with_options=with_options)
-        count_sq = (
-            select(func.count(recipes_to_categories.c.recipe_id))
-            .where(recipes_to_categories.c.category_id == Category.id)
-            .correlate(Category)
-            .scalar_subquery()
-        )
-        return q.options(with_expression(Category.recipe_count, count_sq))
+class RepositoryCategories(AsyncRecipeRepository[CategoryOut, Category]):
+    async def get_empty(self) -> Sequence[Category]:
+        return [entry for entry in await (await self._query()) if not await entry.recipes.all().exists()]
 
-    def get_empty(self) -> Sequence[Category]:
-        stmt = select(Category).filter(~Category.recipes.any())
-
-        return self.session.execute(stmt).scalars().all()
-
-    def merge(self, from_category: UUID4, to_category: UUID4) -> CategoryOut | None:
-        already_in_to = select(recipes_to_categories.c.recipe_id).where(
-            recipes_to_categories.c.category_id == to_category
-        )
-
-        try:
-            self.session.execute(
-                update(recipes_to_categories)
-                .where(recipes_to_categories.c.category_id == from_category)
-                .where(recipes_to_categories.c.recipe_id.not_in(already_in_to))
-                .values(category_id=to_category)
-            )
-            self.session.execute(
-                delete(recipes_to_categories).where(recipes_to_categories.c.category_id == from_category)
-            )
-
-            from_model = self._query_one(from_category)
-            self.session.delete(from_model)
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-        return self.get_one(to_category)
+    async def merge(self, from_category: UUID4, to_category: UUID4) -> CategoryOut | None:
+        async with in_transaction("default"):
+            source, target = await self._query_one(from_category), await self._query_one(to_category)
+            if source.id != target.id:
+                recipes = await source.recipes.all()
+                if recipes:
+                    await target.recipes.add(*recipes)
+                await source.delete()
+                await self._after_write(source)
+            return await self.get_one(to_category)
 
 
-class RepositoryTags(GroupRepositoryGeneric[TagOut, Tag]):
-    def _query(self, override_schema=None, with_options=True):
-        q = super()._query(override_schema=override_schema, with_options=with_options)
-        count_sq = (
-            select(func.count(recipes_to_tags.c.recipe_id))
-            .where(recipes_to_tags.c.tag_id == Tag.id)
-            .correlate(Tag)
-            .scalar_subquery()
-        )
-        return q.options(with_expression(Tag.recipe_count, count_sq))
+class RepositoryTags(AsyncRecipeRepository[TagOut, Tag]):
+    async def get_empty(self) -> Sequence[Tag]:
+        return [entry for entry in await (await self._query()) if not await entry.recipes.all().exists()]
 
-    def get_empty(self) -> Sequence[Tag]:
-        stmt = select(Tag).filter(~Tag.recipes.any())
-        return self.session.execute(stmt).scalars().all()
-
-    def merge(self, from_tag: UUID4, to_tag: UUID4) -> TagOut | None:
-        already_in_to = select(recipes_to_tags.c.recipe_id).where(recipes_to_tags.c.tag_id == to_tag)
-
-        try:
-            self.session.execute(
-                update(recipes_to_tags)
-                .where(recipes_to_tags.c.tag_id == from_tag)
-                .where(recipes_to_tags.c.recipe_id.not_in(already_in_to))
-                .values(tag_id=to_tag)
-            )
-            self.session.execute(delete(recipes_to_tags).where(recipes_to_tags.c.tag_id == from_tag))
-
-            from_model = self._query_one(from_tag)
-            self.session.delete(from_model)
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-        return self.get_one(to_tag)
+    async def merge(self, from_tag: UUID4, to_tag: UUID4) -> TagOut | None:
+        async with in_transaction("default"):
+            source, target = await self._query_one(from_tag), await self._query_one(to_tag)
+            if source.id != target.id:
+                recipes = await source.recipes.all()
+                if recipes:
+                    await target.recipes.add(*recipes)
+                await source.delete()
+                await self._after_write(source)
+            return await self.get_one(to_tag)
 
 
 class AllRepositories:
@@ -212,14 +165,14 @@ class AllRepositories:
         return RepositoryUnit(self.session, PK_ID, IngredientUnitModel, IngredientUnit, group_id=self.group_id)
 
     @cached_property
-    def tools(self) -> GroupRepositoryGeneric[RecipeToolOut, Tool]:
-        return GroupRepositoryGeneric(self.session, PK_ID, Tool, RecipeToolOut, group_id=self.group_id)
+    def tools(self) -> AsyncRecipeRepository[RecipeToolOut, Tool]:
+        return AsyncRecipeRepository(self.session, PK_ID, Tool, RecipeToolOut, group_id=self.group_id)
 
     @cached_property
-    def comments(self) -> GroupRepositoryGeneric[RecipeCommentOut, RecipeComment]:
+    def comments(self) -> AsyncRecipeRepository[RecipeCommentOut, RecipeComment]:
         # Since users can comment on recipes that belong to other households,
         # this is a group repository, rather than a household repository.
-        return GroupRepositoryGeneric(self.session, PK_ID, RecipeComment, RecipeCommentOut, group_id=self.group_id)
+        return AsyncRecipeRepository(self.session, PK_ID, RecipeComment, RecipeCommentOut, group_id=self.group_id)
 
     @cached_property
     def categories(self) -> RepositoryCategories:
@@ -230,16 +183,16 @@ class AllRepositories:
         return RepositoryTags(self.session, PK_ID, Tag, TagOut, group_id=self.group_id)
 
     @cached_property
-    def recipe_share_tokens(self) -> GroupRepositoryGeneric[RecipeShareToken, RecipeShareTokenModel]:
-        return GroupRepositoryGeneric(
+    def recipe_share_tokens(self) -> AsyncRecipeRepository[RecipeShareToken, RecipeShareTokenModel]:
+        return AsyncRecipeRepository(
             self.session, PK_ID, RecipeShareTokenModel, RecipeShareToken, group_id=self.group_id
         )
 
     @cached_property
-    def recipe_timeline_events(self) -> GroupRepositoryGeneric[RecipeTimelineEventOut, RecipeTimelineEvent]:
+    def recipe_timeline_events(self) -> AsyncRecipeRepository[RecipeTimelineEventOut, RecipeTimelineEvent]:
         # Since users can post events on recipes that belong to other households,
         # this is a group repository, rather than a household repository.
-        return GroupRepositoryGeneric(
+        return AsyncRecipeRepository(
             self.session, PK_ID, RecipeTimelineEvent, RecipeTimelineEventOut, group_id=self.group_id
         )
 
@@ -436,8 +389,8 @@ class AllRepositories:
         )
 
     @cached_property
-    def group_multi_purpose_labels(self) -> GroupRepositoryGeneric[MultiPurposeLabelOut, MultiPurposeLabel]:
-        return GroupRepositoryGeneric(
+    def group_multi_purpose_labels(self) -> AsyncRecipeRepository[MultiPurposeLabelOut, MultiPurposeLabel]:
+        return AsyncRecipeRepository(
             self.session, PK_ID, MultiPurposeLabel, MultiPurposeLabelOut, group_id=self.group_id
         )
 

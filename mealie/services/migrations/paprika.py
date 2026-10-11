@@ -68,7 +68,7 @@ class PaprikaMigrator(BaseMigrator):
 
     async def _migrate(self) -> None:
         recipes = [r for r in paprika_recipes(self.archive) if "name" in r]
-        recipe_models = [self.clean_recipe_dictionary(r) for r in recipes]
+        recipe_models = [await self.clean_recipe_dictionary(r) for r in recipes]
         results = await self.import_recipes_to_database(recipe_models)
 
         for (slug, recipe_id, status), recipe in zip(results, recipes, strict=True):
@@ -87,6 +87,6 @@ class PaprikaMigrator(BaseMigrator):
                     temp_file.write(image.read())
                     temp_file.flush()
                     path = Path(temp_file.name)
-                    self.import_image(slug, path, recipe_id, extraction_root=path.parent)
+                    await self.import_image(slug, path, recipe_id, extraction_root=path.parent)
             except Exception as e:
                 self.logger.error(f"Failed to import image for {slug}: {e}")

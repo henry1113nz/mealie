@@ -5,7 +5,7 @@ from pydantic import UUID4, BaseModel, ConfigDict
 
 from mealie.repos.all_repositories import get_repositories
 from mealie.routes._base import BaseCrudController, controller
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.schema import mapper
 from mealie.schema.recipe import CategoryIn, RecipeCategoryResponse
 from mealie.schema.recipe.recipe import RecipeCategory, RecipeCategoryPagination
@@ -34,12 +34,12 @@ class RecipeCategoryController(BaseCrudController):
 
     @cached_property
     def mixins(self):
-        return HttpRepo[CategorySave, CategoryOut, CategorySave](self.repo, self.logger)
+        return AsyncHttpRepo[CategorySave, CategoryOut, CategorySave](self.repo, self.logger)
 
     @router.get("", response_model=RecipeCategoryPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
         """Returns a list of available categories in the database"""
-        response = self.repo.page_all(
+        response = await self.repo.page_all(
             pagination=q,
             override=RecipeCategory,
             search=search,
@@ -53,7 +53,7 @@ class RecipeCategoryController(BaseCrudController):
         """Creates a Category in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(category, CategorySave, group_id=self.group_id)
-        new_category = self.mixins.create_one(save_data)
+        new_category = await self.mixins.create_one(save_data)
         if new_category:
             await self.publish_event(
                 event_type=EventTypes.category_created,
@@ -70,29 +70,29 @@ class RecipeCategoryController(BaseCrudController):
         return new_category
 
     @router.get("/empty", response_model=list[CategoryBase])
-    def get_all_empty(self):
+    async def get_all_empty(self):
         """Returns a list of categories that do not contain any recipes"""
-        return self.repos.categories.get_empty()
+        return await self.repos.categories.get_empty()
 
     @router.post("/merge", response_model=CategoryOut)
-    def merge_categories(self, body: CategoryMerge):
+    async def merge_categories(self, body: CategoryMerge):
         """Merges the from_id category into the to_id category, then deletes from_id."""
         self.checks.can_organize()
 
         if body.from_id == body.to_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "from_id and to_id must be different")
 
-        if not self.repos.categories.get_one(body.from_id):
+        if not (await self.repos.categories.get_one(body.from_id)):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "from_id category not found")
-        if not self.repos.categories.get_one(body.to_id):
+        if not (await self.repos.categories.get_one(body.to_id)):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "to_id category not found")
 
-        return self.repos.categories.merge(body.from_id, body.to_id)
+        return await self.repos.categories.merge(body.from_id, body.to_id)
 
     @router.get("/{item_id}", response_model=CategorySummary)
-    def get_one(self, item_id: UUID4):
+    async def get_one(self, item_id: UUID4):
         """Returns a list of recipes associated with the provided category."""
-        category_obj = self.mixins.get_one(item_id)
+        category_obj = await self.mixins.get_one(item_id)
         category_obj = CategorySummary.model_validate(category_obj)
         return category_obj
 
@@ -101,7 +101,7 @@ class RecipeCategoryController(BaseCrudController):
         """Updates an existing Tag in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(update_data, CategorySave, group_id=self.group_id)
-        category = self.mixins.update_one(save_data, item_id)
+        category = await self.mixins.update_one(save_data, item_id)
 
         if category:
             await self.publish_event(
@@ -126,7 +126,7 @@ class RecipeCategoryController(BaseCrudController):
         from any recipes that contain it
         """
         self.checks.can_organize()
-        if category := self.mixins.delete_one(item_id):
+        if category := (await self.mixins.delete_one(item_id)):
             await self.publish_event(
                 event_type=EventTypes.category_deleted,
                 document_data=EventCategoryData(operation=EventOperation.delete, category_id=category.id),
@@ -139,12 +139,12 @@ class RecipeCategoryController(BaseCrudController):
     # Read All Operations
 
     @router.get("/slug/{category_slug}")
-    def get_one_by_slug(self, category_slug: str):
+    async def get_one_by_slug(self, category_slug: str):
         """Returns a category object with the associated recieps relating to the category"""
-        category: RecipeCategory = self.mixins.get_one(category_slug, "slug")
+        category: RecipeCategory = await self.mixins.get_one(category_slug, "slug")
 
         group_recipes = get_repositories(self.repos.session, group_id=self.group_id, household_id=None).recipes
-        recipe_data = group_recipes.page_all(
+        recipe_data = await group_recipes.page_all(
             PaginationQuery(per_page=-1, query_filter=f'recipe_category.id IN ["{category.id}"]')
         )
 

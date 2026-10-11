@@ -8,9 +8,9 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.config import get_app_dirs
+from mealie.db.models._legacy_recipe.recipe_timeline import RecipeTimelineEvent
 from mealie.db.models._legacy_users import User
 from mealie.db.models._model_utils.datetime import get_utc_now
-from mealie.db.models.recipe.recipe_timeline import RecipeTimelineEvent
 from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema.recipe.recipe import Recipe

@@ -33,21 +33,21 @@ class RecipeBulkActionsController(BaseUserController):
     # TODO Should these actions return some success response?
     @router.post("/tag")
     async def bulk_tag_recipes(self, tag_data: AssignTags):
-        (await self.get_service()).assign_tags(tag_data.recipes, tag_data.tags)
+        (await (await self.get_service()).assign_tags(tag_data.recipes, tag_data.tags))
 
     @router.post("/settings")
     async def bulk_settings_recipes(self, settings_data: AssignSettings):
-        (await self.get_service()).set_settings(settings_data.recipes, settings_data.settings)
+        (await (await self.get_service()).set_settings(settings_data.recipes, settings_data.settings))
 
     @router.post("/categorize")
     async def bulk_categorize_recipes(self, assign_cats: AssignCategories):
-        (await self.get_service()).assign_categories(assign_cats.recipes, assign_cats.categories)
+        (await (await self.get_service()).assign_categories(assign_cats.recipes, assign_cats.categories))
 
     @router.post("/delete")
     async def bulk_delete_recipes(self, delete_recipes: DeleteRecipes):
         # TODO: this route should be migrated to the standard recipe controller
         try:
-            (await self.get_recipe_service()).delete_many(delete_recipes.recipes)
+            (await (await self.get_recipe_service()).delete_many(delete_recipes.recipes))
         except PermissionDenied as e:
             self.logger.error("Permission Denied on recipe controller action")
             raise HTTPException(

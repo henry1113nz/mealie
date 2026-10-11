@@ -1,6 +1,6 @@
 import zipfile
 from abc import abstractmethod, abstractproperty
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -40,12 +40,12 @@ class ABCExporter(BaseService):
     def destination_dir(self) -> str: ...
 
     @abstractmethod
-    def items(self) -> Iterator[ExportedItem]: ...
+    def items(self) -> AsyncIterator[ExportedItem]: ...
 
     def _post_export_hook(self, _: BaseModel) -> None:
         pass
 
-    def export(self, zip: zipfile.ZipFile) -> list[ReportEntryCreate]:  # type: ignore
+    async def export(self, zip: zipfile.ZipFile) -> list[ReportEntryCreate]:  # type: ignore
         """
         Export takes in a zip file and exports the recipes to it. Note that the zip
         file open/close is NOT handled by this method. You must handle it yourself.
@@ -58,7 +58,7 @@ class ABCExporter(BaseService):
         """
         self.write_dir_to_zip = self.write_dir_to_zip_func(zip)
 
-        for item in self.items():
+        async for item in self.items():
             if item is None:
                 self.logger.error("Failed to export item. no item found")
                 continue

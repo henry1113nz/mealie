@@ -116,7 +116,7 @@ class RegistrationService:
             group_repos = get_repositories(self.repos.session, group_id=group.id)
             seeder_service = SeederService(group_repos)
             await seeder_service.seed_foods(registration.locale)
-            seeder_service.seed_units(registration.locale)
+            await seeder_service.seed_units(registration.locale)
 
         if token_entry and user:
             token_entry.uses_left = token_entry.uses_left - 1

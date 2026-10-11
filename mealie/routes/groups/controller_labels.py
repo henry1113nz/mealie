@@ -5,7 +5,7 @@ from pydantic import UUID4
 
 from mealie.routes._base.base_controllers import BaseCrudController
 from mealie.routes._base.controller import controller
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.routes._base.routers import MealieCrudRoute
 from mealie.schema.labels import (
     MultiPurposeLabelCreate,
@@ -38,12 +38,12 @@ class MultiPurposeLabelsController(BaseCrudController):
     # CRUD Operations
 
     @property
-    def mixins(self) -> HttpRepo:
-        return HttpRepo(self.repo, self.logger, self.registered_exceptions, self.t("generic.server-error"))
+    def mixins(self) -> AsyncHttpRepo:
+        return AsyncHttpRepo(self.repo, self.logger, self.registered_exceptions, self.t("generic.server-error"))
 
     @router.get("", response_model=MultiPurposeLabelPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
-        response = self.repo.page_all(
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
+        response = await self.repo.page_all(
             pagination=q,
             override=MultiPurposeLabelSummary,
             search=search,
@@ -69,12 +69,12 @@ class MultiPurposeLabelsController(BaseCrudController):
         return new_label
 
     @router.get("/{item_id}", response_model=MultiPurposeLabelOut)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=MultiPurposeLabelOut)
     async def update_one(self, item_id: UUID4, data: MultiPurposeLabelUpdate):
-        label = self.mixins.update_one(data, item_id)
+        label = await self.mixins.update_one(data, item_id)
         await self.publish_event(
             event_type=EventTypes.label_updated,
             document_data=EventLabelData(operation=EventOperation.update, label_id=label.id),
@@ -86,7 +86,7 @@ class MultiPurposeLabelsController(BaseCrudController):
 
     @router.delete("/{item_id}", response_model=MultiPurposeLabelOut)
     async def delete_one(self, item_id: UUID4):
-        label = self.mixins.delete_one(item_id)
+        label = await self.mixins.delete_one(item_id)
         if label:
             await self.publish_event(
                 event_type=EventTypes.label_deleted,

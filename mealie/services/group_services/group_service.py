@@ -56,7 +56,7 @@ class GroupService(BaseService):
 
         return new_group
 
-    def calculate_group_storage(self, group_id: None | UUID4 = None) -> GroupStorage:
+    async def calculate_group_storage(self, group_id: None | UUID4 = None) -> GroupStorage:
         """
         calculate_group_storage calculates the storage used by the group and returns
         a GroupStorage object.
@@ -67,7 +67,7 @@ class GroupService(BaseService):
 
         target_id = group_id or self.group_id
 
-        all_ids = group_repos.recipes.all_ids(target_id)
+        all_ids = await group_repos.recipes.all_ids(target_id)
 
         used_size = sum(
             fs_stats.get_dir_size(f"{self.directories.RECIPE_DATA_DIR}/{recipe_id!s}") for recipe_id in all_ids

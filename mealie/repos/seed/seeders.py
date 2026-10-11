@@ -1,5 +1,5 @@
 import pathlib
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from functools import cached_property
 
 from mealie.lang.locale_config import resolve_food_plural, resolve_plural
@@ -22,13 +22,13 @@ class IngredientUnitsSeeder(AbstractSeeder):
         locale_path = cls.resources / "units" / "locales" / f"{locale}.json"
         return locale_path if locale_path.exists() else units.en_US
 
-    def get_all_units(self) -> list[IngredientUnit]:
-        return self.repos.ingredient_units.get_all()
+    async def get_all_units(self) -> list[IngredientUnit]:
+        return await self.repos.ingredient_units.get_all()
 
-    def load_data(self, locale: str | None = None) -> Generator[SaveIngredientUnit]:
+    async def load_data(self, locale: str | None = None) -> AsyncGenerator[SaveIngredientUnit]:
         file = self.get_file(locale)
 
-        seen_unit_names = {unit.name for unit in self.get_all_units()}
+        seen_unit_names = {unit.name for unit in await self.get_all_units()}
         for key, unit in self.load_file(file).items():
             if unit["name"] in seen_unit_names:
                 continue
@@ -56,11 +56,11 @@ class IngredientUnitsSeeder(AbstractSeeder):
                 ),
             )
 
-    def seed(self, locale: str | None = None) -> None:
+    async def seed(self, locale: str | None = None) -> None:
         self.logger.info("Seeding Ingredient Units")
-        for unit in self.load_data(locale):
+        async for unit in self.load_data(locale):
             try:
-                self.repos.ingredient_units.create(unit)
+                await self.repos.ingredient_units.create(unit)
             except Exception as e:
                 self.logger.error(e)
 
@@ -77,15 +77,15 @@ class IngredientFoodsSeeder(AbstractSeeder):
         locale_path = cls.resources / "foods" / "locales" / f"{locale}.json"
         return locale_path if locale_path.exists() else foods.en_US
 
-    def get_label(self, value: str) -> MultiPurposeLabelOut | None:
-        return self.repos.group_multi_purpose_labels.get_one(value, "name")
+    async def get_label(self, value: str) -> MultiPurposeLabelOut | None:
+        return await self.repos.group_multi_purpose_labels.get_one(value, "name")
 
-    def get_all_foods(self) -> list[IngredientFood]:
-        return self.repos.ingredient_foods.get_all()
+    async def get_all_foods(self) -> list[IngredientFood]:
+        return await self.repos.ingredient_foods.get_all()
 
     async def seed_labels(self, locale: str | None = None) -> None:
         """Create any labels from the seed file that don't already exist in the group."""
-        seen_label_names = {label.name for label in self.repos.group_multi_purpose_labels.get_all()}
+        seen_label_names = {label.name for label in await self.repos.group_multi_purpose_labels.get_all()}
         for label in self.load_file(self.get_file(locale)).values():
             name = label["name"]
             if not name or name in seen_label_names:
@@ -97,14 +97,14 @@ class IngredientFoodsSeeder(AbstractSeeder):
             except Exception as e:
                 self.logger.error(e)
 
-    def load_data(self, locale: str | None = None) -> Generator[SaveIngredientFood]:
+    async def load_data(self, locale: str | None = None) -> AsyncGenerator[SaveIngredientFood]:
         file = self.get_file(locale)
 
         # de-duplicate on the localized name rather than the English seed key, otherwise seeding
         # a second locale skips every food whose English key already exists in the group
-        seen_foods_names = {food.name for food in self.get_all_foods()}
+        seen_foods_names = {food.name for food in await self.get_all_foods()}
         for label_key, values in self.load_file(file).items():
-            label_out = self.get_label(values["name"])
+            label_out = await self.get_label(values["name"])
             source_foods = self.source_data.get(label_key, {}).get("foods", {})
 
             for food_key, attributes in values["foods"].items():
@@ -135,16 +135,16 @@ class IngredientFoodsSeeder(AbstractSeeder):
         # labels must exist before foods so each food can be linked to its label
         await self.seed_labels(locale)
 
-        to_seed = list(self.load_data(locale))
+        to_seed = [food async for food in self.load_data(locale)]
         if not to_seed:
             return
 
         try:
-            self.repos.ingredient_foods.create_many(to_seed)
+            await self.repos.ingredient_foods.create_many(to_seed)
         except Exception:
             self.logger.exception("Failed to seed ingredient foods in bulk, falling back to one at a time")
             for food in to_seed:
                 try:
-                    self.repos.ingredient_foods.create(food)
+                    await self.repos.ingredient_foods.create(food)
                 except Exception as e:
                     self.logger.error(e)

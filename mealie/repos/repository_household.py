@@ -11,7 +11,6 @@ from mealie.db.models.household import Household, HouseholdToRecipe
 from mealie.db.models.users import User
 from mealie.schema.household import HouseholdInDB, HouseholdRecipeOut, HouseholdStatistics
 
-from . import _users_coexistence as bridge
 from .repository_household_base import AsyncHouseholdRepository
 
 
@@ -54,21 +53,14 @@ class RepositoryHousehold(AsyncHouseholdRepository[HouseholdInDB, Household]):
         return await self.get_one(slug_or_id, key="id" if isinstance(slug_or_id, UUID) else "slug")
 
     async def statistics(self, group_id: UUID, household_id: UUID) -> HouseholdStatistics:
-        async def model_count(table: str, *, filter_household: bool = True) -> int:
-            parameters = [group_id]
-            sql = f'SELECT COUNT(*) AS count FROM "{table}" WHERE group_id = ?'
-            if filter_household:
-                sql += " AND user_id IN (SELECT id FROM users WHERE household_id = ?)"
-                parameters.append(household_id)
-            rows = await bridge.execute(sql, parameters)
-            return int(rows[0]["count"])
+        from mealie.db.models.recipe import Category, RecipeModel, Tag, Tool
 
         return HouseholdStatistics(
-            total_recipes=await model_count("recipes"),
+            total_recipes=await RecipeModel.filter(group_id=group_id, user__household_id=household_id).count(),
             total_users=await User.filter(group_id=group_id, household_id=household_id).count(),
-            total_categories=await model_count("categories", filter_household=False),
-            total_tags=await model_count("tags", filter_household=False),
-            total_tools=await model_count("tools", filter_household=False),
+            total_categories=await Category.filter(group_id=group_id).count(),
+            total_tags=await Tag.filter(group_id=group_id).count(),
+            total_tools=await Tool.filter(group_id=group_id).count(),
         )
 
 

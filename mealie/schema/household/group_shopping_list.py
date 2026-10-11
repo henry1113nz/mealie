@@ -13,8 +13,8 @@ from mealie.db.models._legacy_household import (
     ShoppingListMultiPurposeLabel,
     ShoppingListRecipeReference,
 )
+from mealie.db.models._legacy_recipe import IngredientFoodModel, IngredientFoodSubstitutionModel, RecipeModel
 from mealie.db.models._legacy_users import User
-from mealie.db.models.recipe import IngredientFoodModel, IngredientFoodSubstitutionModel, RecipeModel
 from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema._mealie.types import NoneFloat

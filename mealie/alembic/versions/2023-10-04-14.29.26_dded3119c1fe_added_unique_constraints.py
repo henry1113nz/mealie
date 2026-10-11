@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session, load_only
 
 from alembic import op
 from mealie.db.models._model_utils.guid import GUID
-from mealie.db.models.recipe.labels import MultiPurposeLabel
-from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel, RecipeIngredientModel
+from mealie.db.models._legacy_recipe.labels import MultiPurposeLabel
+from mealie.db.models._legacy_recipe.ingredient import IngredientFoodModel, IngredientUnitModel, RecipeIngredientModel
 
 # revision identifiers, used by Alembic.
 revision = "dded3119c1fe"

@@ -78,10 +78,11 @@ class CooknMigrator(BaseMigrator):
         self.key_aliases = []
         self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
 
-    def _parse_units_table(self, db: DSVParser):
+    async def _parse_units_table(self, db: DSVParser):
         """Parses the Cook'n units table and adds missing units to Mealie DB."""
         _units_table = db.get_table("temp_unit")
         for _unit_row in _units_table:
+            await self.matcher.load_data()
             name = db.get_data(_unit_row, "NAME")
             plural_name = db.get_data(_unit_row, "PLURAL_NAME")
             abbreviation = db.get_data(_unit_row, "ABBREVIATION")
@@ -102,16 +103,17 @@ class CooknMigrator(BaseMigrator):
                 # update DataMatcher
                 self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
                 try:
-                    self.db.ingredient_units.create(save)
+                    (await self.db.ingredient_units.create(save))
                 except Exception as e:
                     self.logger.error(e)
             else:
                 self.logger.debug("Fuzzy match for unit (%s -> %s)", name, match.name)
 
-    def _parse_foods_table(self, db: DSVParser):
+    async def _parse_foods_table(self, db: DSVParser):
         """Parses the Cook'n food table and adds missing foods to Mealie DB."""
         _foods_table = db.get_table("temp_food")
         for _food_row in _foods_table:
+            await self.matcher.load_data()
             name = db.get_data(_food_row, "NAME")
             plural_name = db.get_data(_food_row, "PLURAL_NAME")
 
@@ -125,7 +127,7 @@ class CooknMigrator(BaseMigrator):
                 # update DataMatcher
                 self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
                 try:
-                    self.db.ingredient_foods.create(save)
+                    (await self.db.ingredient_foods.create(save))
                 except Exception as e:
                     self.logger.error(e)
             else:
@@ -356,10 +358,12 @@ class CooknMigrator(BaseMigrator):
         source_dir = self.get_zip_base_path(path)
         db = DSVParser(source_dir)
         # Load units and foods from Cook'n
-        self._parse_units_table(db)
-        self._parse_foods_table(db)
+        (await self._parse_units_table(db))
+        (await self._parse_foods_table(db))
         # Reload DataMatcher with updated tables
         self.matcher = DataMatcher(self.db, food_fuzzy_match_threshold=95, unit_fuzzy_match_threshold=100)
+
+        await self.matcher.load_data()
 
         # Load recipes from cookn
         _recipe_table = db.get_table("temp_recipe")
@@ -383,7 +387,7 @@ class CooknMigrator(BaseMigrator):
         for r in recipes_as_dicts:
             # Clean recipes and re-add ingredient w/ amounts
             ingredients = r["_parsed_ingredients"]
-            r = self.clean_recipe_dictionary(r)
+            r = await self.clean_recipe_dictionary(r)
             r.recipe_ingredient = ingredients
             recipes.append(r)
 
@@ -395,14 +399,14 @@ class CooknMigrator(BaseMigrator):
                 recipe = recipe_lookup.get(slug)
                 if recipe:
                     if recipe.image:
-                        self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory)
+                        await self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory)
                 else:
                     index_len = len(slug.split("-")[-1])
                     recipe = recipe_lookup.get(slug[: -(index_len + 1)])
                     if recipe:
                         self.logger.warning("Duplicate recipe (%s) found! Saved as copy...", recipe.name)
                         if recipe.image:
-                            self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory)
+                            await self.import_image(slug, recipe.image, recipe_id, extraction_root=db.directory)
                     else:
                         self.logger.warning("Failed to lookup recipe! (%s)", slug)
 

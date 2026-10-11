@@ -1,34 +1,90 @@
-import re as re
+from __future__ import annotations
+
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
-from typing import Self
+from math import ceil
+from typing import Any, Self
 from uuid import UUID
 
 import sqlalchemy as sa
-from pydantic import UUID4
-from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
+from pydantic import UUID4, BaseModel
+from slugify import slugify
+from tortoise import Model, connections
+from tortoise.exceptions import IntegrityError
+from tortoise.queryset import QuerySet
+from tortoise.transactions import in_transaction
 
-from mealie.db.models._legacy_household import Household, HouseholdToRecipe
+from mealie.core.root_logger import get_logger
+from mealie.db.models._legacy_household import HouseholdToRecipe
+from mealie.db.models._legacy_recipe.category import Category as LegacyCategory
+from mealie.db.models._legacy_recipe.ingredient import RecipeIngredientModel as LegacyIngredient
+from mealie.db.models._legacy_recipe.ingredient import RecipeIngredientSubstitutionModel as LegacySubstitution
+from mealie.db.models._legacy_recipe.recipe import RecipeModel as LegacyRecipe
+from mealie.db.models._legacy_recipe.tag import Tag as LegacyTag
+from mealie.db.models._legacy_recipe.tool import Tool as LegacyTool
 from mealie.db.models._legacy_users import User, UserToRecipe
+from mealie.db.models.household.household import Household
 from mealie.db.models.recipe.category import Category
-from mealie.db.models.recipe.ingredient import RecipeIngredientModel, RecipeIngredientSubstitutionModel
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.tag import Tag
 from mealie.db.models.recipe.tool import Tool
 from mealie.pkgs import cache
+from mealie.schema._mealie import MealieModel, SearchType
 from mealie.schema.cookbook.cookbook import ReadCookBook
 from mealie.schema.recipe import Recipe
 from mealie.schema.recipe.recipe import RecipePagination, RecipeSummary, create_recipe_slug
 from mealie.schema.response.pagination import PaginationQuery
+from mealie.schema.response.query_search import SearchFilter
 from mealie.services.query_filter.builder import QueryFilterBuilder
 
-from ..db.models._model_base import SqlAlchemyBase
+from ._recipe_persistence import recipe_data, replace_recipe_children
+from ._recipe_query import SearchSession, execute_select, query_identifiers
 from ._recipe_suggestions import RecipeSuggestionMixin
-from .repository_generic import HouseholdRepositoryGeneric
+from ._utils import NOT_SET, NotSet
+from .repository_users import AsyncUserRepository, LegacySession
 
 
-class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe, RecipeModel]):
+class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, RecipeModel]):
     user_id: UUID4 | None = None
+
+    def __init__(
+        self,
+        session: LegacySession,
+        primary_key: str,
+        sql_model: type[RecipeModel],
+        schema: type[Recipe],
+        *,
+        group_id: UUID | None | NotSet,
+        household_id: UUID | None | NotSet,
+    ) -> None:
+        super().__init__(session, primary_key, sql_model, schema, group_id=group_id)
+        if household_id is NOT_SET:
+            raise ValueError("household_id must be set")
+        self.household_id = UUID(str(household_id)) if household_id else None
+        self.logger = get_logger()
+
+    def _filter_builder(self, **kwargs: Any) -> dict[str, Any]:
+        filters = dict(kwargs)
+        if self.group_id:
+            filters["group_id"] = self.group_id
+        if self.household_id:
+            filters["household_id"] = self.household_id
+        return filters
+
+    async def _query(self) -> QuerySet[RecipeModel]:
+        query = self.model.all()
+        if self.group_id:
+            query = query.filter(group_id=self.group_id)
+        if self.household_id:
+            query = query.filter(user__household_id=self.household_id)
+        return query
+
+    async def _serialize(self, entry: Model, schema: type[MealieModel] | None = None) -> Any:
+        if not isinstance(entry, RecipeModel):
+            raise TypeError("Expected a recipe")
+        schema = schema or self.schema
+        return schema.model_validate(await recipe_data(entry, summary=not issubclass(schema, Recipe)))
 
     @property
     def column_aliases(self):
@@ -55,10 +111,10 @@ class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe
         last_made_subquery = (
             sa.select(HouseholdToRecipe.last_made)
             .where(
-                HouseholdToRecipe.recipe_id == self.model.id,
+                HouseholdToRecipe.recipe_id == LegacyRecipe.id,
                 HouseholdToRecipe.household_id == user_household_subquery,
             )
-            .correlate(self.model)
+            .correlate(LegacyRecipe)
             .scalar_subquery()
         )
         return sa.func.coalesce(last_made_subquery, datetime(year=1900, month=1, day=1, tzinfo=UTC))
@@ -69,297 +125,257 @@ class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe
         effective_rating = sa.case(
             (
                 sa.exists().where(
-                    UserToRecipe.recipe_id == self.model.id,
+                    UserToRecipe.recipe_id == LegacyRecipe.id,
                     UserToRecipe.user_id == self.user_id,
                     UserToRecipe.rating != None,  # noqa E711
                     UserToRecipe.rating > 0,
                 ),
                 sa.select(sa.func.max(UserToRecipe.rating))
-                .where(UserToRecipe.recipe_id == self.model.id, UserToRecipe.user_id == self.user_id)
-                .correlate(self.model)
+                .where(UserToRecipe.recipe_id == LegacyRecipe.id, UserToRecipe.user_id == self.user_id)
+                .correlate(LegacyRecipe)
                 .scalar_subquery(),
             ),
             else_=sa.case(
-                (self.model.rating == 0, None),
-                else_=self.model.rating,
+                (LegacyRecipe.rating == 0, None),
+                else_=LegacyRecipe.rating,
             ),
         )
         return sa.cast(effective_rating, sa.Float)
 
-    def create(self, document: Recipe) -> Recipe:  # type: ignore
-        max_retries = 10
-        original_name: str = document.name  # type: ignore
-
-        for i in range(1, 11):
+    async def create(self, document: Recipe | BaseModel | dict[str, Any]) -> Recipe:
+        data = document.copy() if isinstance(document, dict) else document.model_dump()
+        original_name = data.get("name")
+        for attempt in range(1, 11):
             try:
-                return super().create(document)
+                async with in_transaction("default"):
+                    values = {key: value for key, value in data.items() if key in self.model._meta.db_fields}
+                    if values.get("id") is None:
+                        values.pop("id", None)
+                    if values.get("date_added") is None:
+                        values["date_added"] = datetime.now(UTC).date()
+                    values["date_updated"] = datetime.now(UTC)
+                    entry = await self.model.create(**values)
+                    await self._write_organizers(entry, data)
+                    await replace_recipe_children(entry, data, creating=True)
+                    await self._after_write(entry)
+                    return await self._serialize(entry)
             except IntegrityError:
-                self.session.rollback()
-                document.name = f"{original_name} ({i})"
-                document.slug = create_recipe_slug(document.name)
-
-                if i >= max_retries:
+                data["name"] = f"{original_name} ({attempt})"
+                data["slug"] = create_recipe_slug(data["name"])
+                if isinstance(document, Recipe):
+                    document.name, document.slug = data["name"], data["slug"]
+                if attempt == 10:
                     raise
+        raise RuntimeError("Could not create recipe")
 
-    def _delete_recipe(self, recipe: RecipeModel) -> Recipe:
-        recipe_as_model = self.schema.model_validate(recipe)
+    async def _resolve_organizer(
+        self, model: type[Category] | type[Tag] | type[Tool], group_id: UUID, name: str
+    ) -> Model:
+        name = name.strip()
+        for attempt in range(10):
+            existing = await model.filter(group_id=group_id, name__iexact=name).first()
+            if existing:
+                return existing
+            try:
+                # A savepoint keeps a competing organizer insert from rolling
+                # back the entire recipe or poisoning a PostgreSQL transaction.
+                async with in_transaction("default"):
+                    return await model.create(group_id=group_id, name=name, slug=slugify(name))
+            except IntegrityError:
+                if attempt == 9:
+                    raise
+        raise RuntimeError("Could not resolve organizer")
 
-        # first remove UserToRecipe entries so we don't run into stale data errors
-        try:
-            user_to_recipe_delete_query = sa.delete(UserToRecipe).where(UserToRecipe.recipe_id == recipe.id)
-            self.session.execute(user_to_recipe_delete_query)
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
+    async def _write_organizers(self, entry: RecipeModel, data: dict[str, Any]) -> None:
+        for key, model in (("recipe_category", Category), ("tags", Tag), ("tools", Tool)):
+            resolved = []
+            for organizer in data.get(key) or []:
+                identifier = organizer.get("id")
+                existing = None
+                if identifier:
+                    try:
+                        existing = await model.get_or_none(id=UUID(str(identifier)), group_id=entry.group_id)
+                    except ValueError:
+                        pass
+                if existing is None and organizer.get("name"):
+                    existing = await self._resolve_organizer(model, entry.group_id, organizer["name"])
+                if existing is not None:
+                    resolved.append(existing)
+            relation = getattr(entry, key)
+            await relation.clear()
+            if resolved:
+                await relation.add(*resolved)
 
-        # remove the recipe
-        try:
-            self.session.delete(recipe)
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
+    async def update(self, match_value: Any, new_data: dict[str, Any] | BaseModel) -> Recipe:
+        data = new_data.copy() if isinstance(new_data, dict) else new_data.model_dump()
+        async with in_transaction("default"):
+            entry = await self._query_one(match_value)
+            if name := data.get("name"):
+                data["slug"] = entry.slug if name == entry.name else create_recipe_slug(name)
+            data["slug"] = data.get("slug") or entry.slug
+            for key in ("id", "user_id", "group_id"):
+                data[key] = getattr(entry, key)
+            values = {key: value for key, value in data.items() if key in self.model._meta.db_fields and key != "id"}
+            values["date_updated"] = datetime.now(UTC)
+            # Aggregate ratings are changed through the user-rating repository.
+            # Legacy recipe writes only recalculated when the supplied value changed.
+            if "rating" in values and values["rating"] != entry.rating:
+                from tortoise.functions import Avg
 
-        return recipe_as_model
+                from mealie.db.models.users.user_to_recipe import UserToRecipe as NativeUserRating
 
-    def delete(self, value, match_key: str | None = None) -> Recipe:
-        match_key = match_key or self.primary_key
-        recipe_in_db = self._query_one(value, match_key)
-        return self._delete_recipe(recipe_in_db)
+                averages = (
+                    await NativeUserRating.filter(recipe_id=entry.id, rating__gt=0)
+                    .annotate(value=Avg("rating"))
+                    .values("value")
+                )
+                values["rating"] = averages[0]["value"] if averages else None
+            entry.update_from_dict(values)
+            await entry.save()
+            await self._write_organizers(entry, data)
+            await replace_recipe_children(entry, data, creating=False)
+            await self._after_write(entry)
+            return await self._serialize(entry)
 
-    def delete_many(self, values: Iterable) -> list[Recipe]:
-        query = self._query().filter(self.model.slug.in_(values)).filter_by(**self._filter_builder())
-        recipes_in_db = self.session.execute(query).unique().scalars().all()
-        results: list[Recipe] = []
+    async def delete_many(self, values: Iterable[Any]) -> list[Recipe]:
+        async with in_transaction("default"):
+            entries = await (await self._query()).filter(slug__in=list(values))
+            return [await self.delete(entry.slug) for entry in entries]
 
-        # we create a delete statement for each row
-        # we don't delete the whole query in one statement because postgres doesn't cascade correctly
-        for recipe_in_db in recipes_in_db:
-            results.append(self._delete_recipe(recipe_in_db))
+    async def delete_all(self) -> None:
+        await self.delete_many(await (await self._query()).values_list("slug", flat=True))
 
-        try:
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-        return results
-
-    def update_image(self, slug: str, _: str | None = None) -> str:
-        entry: RecipeModel = self._query_one(match_value=slug)
+    async def update_image(self, slug: str, _: str | None = None) -> str:
+        entry = await self._query_one(slug)
         entry.image = cache.new_key()
-        self.session.commit()
-
+        await entry.save(update_fields=["image", "update_at"])
+        await self._after_write(entry)
         return entry.image
 
-    def delete_image(self, slug: str, _: str | None = None):
-        entry: RecipeModel = self._query_one(match_value=slug)
+    async def delete_image(self, slug: str, _: str | None = None) -> None:
+        entry = await self._query_one(slug)
         entry.image = None
-        self.session.commit()
+        await entry.save(update_fields=["image", "update_at"])
+        await self._after_write(entry)
 
-    def count_uncategorized(self, count=True, override_schema=None):
-        return self._count_attribute(
-            attribute_name=RecipeModel.recipe_category,
-            attr_match=None,
-            count=count,
-            override_schema=override_schema,
-        )
+    async def count_uncategorized(self, count: bool = True, override_schema: type[MealieModel] | None = None) -> Any:
+        return await self._count_organizer("recipe_category", count, override_schema)
 
-    def count_untagged(self, count=True, override_schema=None):
-        return self._count_attribute(
-            attribute_name=RecipeModel.tags,
-            attr_match=None,
-            count=count,
-            override_schema=override_schema,
-        )
+    async def count_untagged(self, count: bool = True, override_schema: type[MealieModel] | None = None) -> Any:
+        return await self._count_organizer("tags", count, override_schema)
 
-    def _uuids_for_items(self, items: list[UUID | str] | None, model: type[SqlAlchemyBase]) -> list[UUID] | None:
+    async def _count_organizer(self, field: str, count: bool, schema: type[MealieModel] | None) -> Any:
+        query = (await self._query()).filter(**{field + "__id__isnull": True})
+        return await query.count() if count else [await self._serialize(entry, schema) for entry in await query]
+
+    async def _uuids_for_items(self, items: list[UUID | str] | None, model: Any) -> list[UUID] | None:
         if not items:
             return None
-        ids: list[UUID] = []
-        slugs: list[str] = []
-
-        for i in items:
-            if isinstance(i, UUID):
-                ids.append(i)
-            else:
-                try:
-                    i_as_uuid = UUID(i)
-                    ids.append(i_as_uuid)
-                except ValueError:
-                    slugs.append(i)
-
-        if not slugs:
-            return ids
-        additional_ids = self.session.execute(sa.select(model.id).filter(model.slug.in_(slugs))).scalars().all()
-        return ids + additional_ids
-
-    def _resolve_organizer(self, model: type[Tag] | type[Category] | type[Tool], name: str) -> dict:
-        """Look up an organizer (tag/category/tool) by name in this group, creating it if absent.
-
-        Race-safe under concurrent updates: if two requests create the same organizer name
-        at once, the loser's IntegrityError is caught and it re-selects the winner's row
-        instead of erroring or creating a duplicate.
-        """
-        normalized_name = name.strip()
-        max_attempts = 10
-
-        for attempt in range(1, max_attempts + 1):
-            existing = self.session.execute(
-                sa.select(model).where(
-                    model.group_id == self.group_id, sa.func.lower(model.name) == normalized_name.lower()
-                )
-            ).scalar_one_or_none()
-            if existing:
-                return {
-                    "id": str(existing.id),
-                    "group_id": str(existing.group_id),
-                    "name": existing.name,
-                    "slug": existing.slug,
-                }
-
-            new_obj = model(session=self.session, name=normalized_name, group_id=self.group_id)
-            self.session.add(new_obj)
+        ids, slugs = [], []
+        for item in items:
             try:
-                self.session.flush()
-            except IntegrityError:
-                self.session.rollback()
-                if attempt >= max_attempts:
-                    raise
-                continue
+                ids.append(UUID(str(item)))
+            except ValueError:
+                slugs.append(str(item))
+        if slugs:
+            ids.extend(await model.filter(slug__in=slugs).values_list("id", flat=True))
+        return ids
 
-            return {
-                "id": str(new_obj.id),
-                "group_id": str(new_obj.group_id),
-                "name": new_obj.name,
-                "slug": new_obj.slug,
-            }
+    async def _search_query(self, query: sa.Select, search: str) -> sa.Select:
+        parser = SearchFilter(SearchSession(), search, self.schema._normalize_search)  # type: ignore[arg-type]
+        if parser.search_type is SearchType.fuzzy:
+            ingredients = sa.select(LegacyIngredient.id).where(
+                sa.or_(
+                    LegacyIngredient.note_normalized.op("%>")(parser.search),
+                    LegacyIngredient.original_text_normalized.op("%>")(parser.search),
+                )
+            )
+            identifiers = [row["id"] for row in await execute_select(ingredients)]
+            await connections.get("default").execute_query(
+                f"SET pg_trgm.word_similarity_threshold = {self.schema._fuzzy_similarity_threshold}"
+            )
+            return query.where(
+                sa.or_(
+                    LegacyRecipe.name_normalized.op("%>")(parser.search),
+                    LegacyRecipe.description_normalized.op("%>")(parser.search),
+                    LegacyRecipe.recipe_ingredient.any(LegacyIngredient.id.in_(identifiers)),
+                )
+            ).order_by(sa.func.least(LegacyRecipe.name_normalized.op("<->>")(parser.search)))
+        ingredients = sa.select(LegacyIngredient.id).where(
+            sa.or_(
+                *[LegacyIngredient.note_normalized.like(f"%{part}%") for part in parser.search_list],
+                *[LegacyIngredient.original_text_normalized.like(f"%{part}%") for part in parser.search_list],
+            )
+        )
+        identifiers = [row["id"] for row in await execute_select(ingredients)]
+        return query.where(
+            sa.or_(
+                *[LegacyRecipe.name_normalized.like(f"%{part}%") for part in parser.search_list],
+                *[LegacyRecipe.description_normalized.like(f"%{part}%") for part in parser.search_list],
+                LegacyRecipe.recipe_ingredient.any(LegacyIngredient.id.in_(identifiers)),
+            )
+        ).order_by(sa.desc(LegacyRecipe.name_normalized.like(f"%{parser.search}%")))
 
-        raise RuntimeError(f"Failed to resolve organizer '{name}' after {max_attempts} attempts")
-
-    def update(self, match_value: str | int | UUID4, new_data: dict | Recipe) -> Recipe:
-        new_data = new_data if isinstance(new_data, dict) else new_data.model_dump()
-        entry = self._query_one(match_value=match_value)
-
-        if new_name := new_data.get("name"):
-            new_data["slug"] = entry.slug if new_name == entry.name else create_recipe_slug(new_name)
-
-        # Always preserve identity/ownership fields from the existing DB entry.
-        # User-provided JSON may omit or null these, which would cause integrity errors.
-        for field in ("id", "user_id", "household_id", "group_id"):
-            new_data[field] = getattr(entry, field)
-
-        # If slug is still missing after name-based recalculation, fall back to existing slug.
-        if not new_data.get("slug"):
-            new_data["slug"] = entry.slug
-
-        # Resolve organizers by id (validated to belong to this group) or by name, creating them
-        # in the group if needed. A client-supplied id from another group is never trusted as-is.
-        organizer_models = {"tags": Tag, "recipe_category": Category, "tools": Tool}
-        for field, model in organizer_models.items():
-            resolved = []
-            for organizer in new_data.get(field) or []:
-                existing = None
-                organizer_id = organizer.get("id")
-                if organizer_id:
-                    try:
-                        organizer_uuid = organizer_id if isinstance(organizer_id, UUID) else UUID(str(organizer_id))
-                    except ValueError:
-                        organizer_uuid = None
-
-                    if organizer_uuid:
-                        existing = self.session.execute(
-                            sa.select(model).where(model.id == organizer_uuid, model.group_id == self.group_id)
-                        ).scalar_one_or_none()
-
-                if existing:
-                    resolved.append(
-                        {
-                            "id": str(existing.id),
-                            "group_id": str(existing.group_id),
-                            "name": existing.name,
-                            "slug": existing.slug,
-                        }
-                    )
-                elif organizer.get("name"):
-                    resolved.append(self._resolve_organizer(model, organizer["name"]))
-            new_data[field] = resolved
-
-        entry.update(session=self.session, **new_data)
-        self.session.commit()
-        return self.schema.model_validate(entry)
-
-    def page_all(  # type: ignore
+    async def page_all(  # type: ignore[override]
         self,
         pagination: PaginationQuery,
-        override=None,
+        override: type[MealieModel] | None = None,
         cookbook: ReadCookBook | None = None,
         categories: list[UUID4 | str] | None = None,
         tags: list[UUID4 | str] | None = None,
         tools: list[UUID4 | str] | None = None,
         foods: list[UUID4 | str] | None = None,
         households: list[UUID4 | str] | None = None,
-        require_all_categories=True,
-        require_all_tags=True,
-        require_all_tools=True,
-        require_all_foods=True,
+        require_all_categories: bool = True,
+        require_all_tags: bool = True,
+        require_all_tools: bool = True,
+        require_all_foods: bool = True,
         search: str | None = None,
     ) -> RecipePagination:
-        # Copy this, because calling methods (e.g. tests) might rely on it not getting mutated
-        pagination_result = pagination.model_copy()
-        q = sa.select(self.model).filter(self.model.household_id.is_not(None))
-
-        fltr = self._filter_builder()
-        q = q.filter_by(**fltr)
-
+        paging = pagination.model_copy()
+        query = (
+            sa.select(LegacyRecipe.id)
+            .filter(LegacyRecipe.household_id.is_not(None))
+            .filter_by(**self._filter_builder())
+        )
         if cookbook:
-            pagination_result.query_filter = QueryFilterBuilder.combine_filters(
-                pagination_result.query_filter, cookbook.query_filter_string
-            )
+            paging.query_filter = QueryFilterBuilder.combine_filters(paging.query_filter, cookbook.query_filter_string)
         else:
-            category_ids = self._uuids_for_items(categories, Category)
-            tag_ids = self._uuids_for_items(tags, Tag)
-            tool_ids = self._uuids_for_items(tools, Tool)
-            household_ids = self._uuids_for_items(households, Household)
-            filters = self._build_recipe_filter(
-                categories=category_ids,
-                tags=tag_ids,
-                tools=tool_ids,
-                foods=foods,
-                households=household_ids,
-                require_all_categories=require_all_categories,
-                require_all_tags=require_all_tags,
-                require_all_tools=require_all_tools,
-                require_all_foods=require_all_foods,
+            query = query.filter(
+                *self._build_recipe_filter(
+                    categories=await self._uuids_for_items(categories, Category),
+                    tags=await self._uuids_for_items(tags, Tag),
+                    tools=await self._uuids_for_items(tools, Tool),
+                    foods=foods,
+                    households=await self._uuids_for_items(households, Household),
+                    require_all_categories=require_all_categories,
+                    require_all_tags=require_all_tags,
+                    require_all_tools=require_all_tools,
+                    require_all_foods=require_all_foods,
+                )
             )
-            q = q.filter(*filters)
         if search:
-            q = self.add_search_to_query(q, self.schema, search)
-
-        if not pagination_result.order_by and not search:
-            # default ordering if not searching
-            pagination_result.order_by = "created_at"
-
-        q, count, total_pages = self.add_pagination_to_query(q, pagination_result)
-
-        # Apply options late, so they do not get used for counting
-        q = q.options(*RecipeSummary.loader_options())
+            query = await self._search_query(query, search)
         try:
-            self.logger.debug(f"Recipe Pagination Query: {pagination_result}")
-            data = self.session.execute(q).scalars().unique().all()
-        except Exception as e:
-            self._log_exception(e)
-            self.session.rollback()
-            raise e
-
-        items = [RecipeSummary.model_validate(item) for item in data]
+            identifiers = await query_identifiers(LegacyRecipe, paging, query=query, column_aliases=self.column_aliases)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        count = len(identifiers)
+        if paging.per_page == -1:
+            paging.per_page = count
+        pages = ceil(count / paging.per_page) if paging.per_page else 0
+        if paging.page == -1:
+            paging.page = pages
+        paging.page = max(1, paging.page)
+        start = (paging.page - 1) * paging.per_page
+        identifiers = identifiers[start : start + paging.per_page]
+        entries = {entry.id: entry for entry in await (await self._query()).filter(id__in=identifiers)}
         return RecipePagination(
-            page=pagination_result.page,
-            per_page=pagination_result.per_page,
+            page=paging.page,
+            per_page=paging.per_page,
             total=count,
-            total_pages=total_pages,
-            items=items,
+            total_pages=pages,
+            items=[await self._serialize(entries[UUID(str(key))], RecipeSummary) for key in identifiers],
         )
 
     @staticmethod
@@ -372,15 +388,15 @@ class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe
         """
 
         return sa.or_(
-            RecipeIngredientModel.food_id == food,
-            RecipeIngredientModel.substitutions.any(RecipeIngredientSubstitutionModel.substitute_food_id == food),
+            LegacyIngredient.food_id == food,
+            LegacyIngredient.substitutions.any(LegacySubstitution.substitute_food_id == food),
         )
 
     @staticmethod
     def _ingredient_uses_any_food(foods: list[UUID4]) -> sa.ColumnElement:
         return sa.or_(
-            RecipeIngredientModel.food_id.in_(foods),
-            RecipeIngredientModel.substitutions.any(RecipeIngredientSubstitutionModel.substitute_food_id.in_(foods)),
+            LegacyIngredient.food_id.in_(foods),
+            LegacyIngredient.substitutions.any(LegacySubstitution.substitute_food_id.in_(foods)),
         )
 
     def _build_recipe_filter(
@@ -397,54 +413,49 @@ class RepositoryRecipes(RecipeSuggestionMixin, HouseholdRepositoryGeneric[Recipe
     ) -> list:
         fltr: list[sa.ColumnElement] = []
         if self.group_id:
-            fltr.append(RecipeModel.group_id == self.group_id)
+            fltr.append(LegacyRecipe.group_id == self.group_id)
         if self.household_id:
-            fltr.append(RecipeModel.household_id == self.household_id)
+            fltr.append(LegacyRecipe.household_id == self.household_id)
 
         if categories:
             if require_all_categories:
-                fltr.extend(RecipeModel.recipe_category.any(Category.id == cat_id) for cat_id in categories)
+                fltr.extend(LegacyRecipe.recipe_category.any(LegacyCategory.id == cat_id) for cat_id in categories)
             else:
-                fltr.append(RecipeModel.recipe_category.any(Category.id.in_(categories)))
+                fltr.append(LegacyRecipe.recipe_category.any(LegacyCategory.id.in_(categories)))
 
         if tags:
             if require_all_tags:
-                fltr.extend(RecipeModel.tags.any(Tag.id == tag_id) for tag_id in tags)
+                fltr.extend(LegacyRecipe.tags.any(LegacyTag.id == tag_id) for tag_id in tags)
             else:
-                fltr.append(RecipeModel.tags.any(Tag.id.in_(tags)))
+                fltr.append(LegacyRecipe.tags.any(LegacyTag.id.in_(tags)))
 
         if tools:
             if require_all_tools:
-                fltr.extend(RecipeModel.tools.any(Tool.id == tool_id) for tool_id in tools)
+                fltr.extend(LegacyRecipe.tools.any(LegacyTool.id == tool_id) for tool_id in tools)
             else:
-                fltr.append(RecipeModel.tools.any(Tool.id.in_(tools)))
+                fltr.append(LegacyRecipe.tools.any(LegacyTool.id.in_(tools)))
         if foods:
             if require_all_foods:
-                fltr.extend(RecipeModel.recipe_ingredient.any(self._ingredient_uses_food(food)) for food in foods)
+                fltr.extend(LegacyRecipe.recipe_ingredient.any(self._ingredient_uses_food(food)) for food in foods)
             else:
-                fltr.append(RecipeModel.recipe_ingredient.any(self._ingredient_uses_any_food(foods)))
+                fltr.append(LegacyRecipe.recipe_ingredient.any(self._ingredient_uses_any_food(foods)))
         if households:
-            fltr.append(RecipeModel.household_id.in_(households))
+            fltr.append(LegacyRecipe.household_id.in_(households))
         return fltr
 
-    def get_random(self, limit=1) -> list[Recipe]:
-        stmt = (
-            sa.select(RecipeModel).filter(RecipeModel.household_id.is_not(None)).order_by(sa.func.random()).limit(limit)
-        )  # Postgres and SQLite specific
-        if self.group_id:
-            stmt = stmt.filter(RecipeModel.group_id == self.group_id)
-        if self.household_id:
-            stmt = stmt.filter(RecipeModel.household_id == self.household_id)
+    async def get_random(self, limit: int = 1) -> list[Recipe]:
+        query = (
+            sa.select(LegacyRecipe.id)
+            .filter(LegacyRecipe.household_id.is_not(None))
+            .filter_by(**self._filter_builder())
+        )
+        identifiers = [row["id"] for row in await execute_select(query.order_by(sa.func.random()).limit(limit))]
+        entries = {entry.id: entry for entry in await (await self._query()).filter(id__in=identifiers)}
+        return [await self._serialize(entries[UUID(str(key))]) for key in identifiers]
 
-        return [self.schema.model_validate(x) for x in self.session.execute(stmt).scalars().all()]
+    async def get_by_slug(self, group_id: UUID4, slug: str) -> Recipe | None:
+        entry = await RecipeModel.get_or_none(group_id=group_id, slug=slug)
+        return await self._serialize(entry) if entry else None
 
-    def get_by_slug(self, group_id: UUID4, slug: str) -> Recipe | None:
-        stmt = sa.select(RecipeModel).filter(RecipeModel.group_id == group_id, RecipeModel.slug == slug)
-        dbrecipe = self.session.execute(stmt).scalars().one_or_none()
-        if dbrecipe is None:
-            return None
-        return self.schema.model_validate(dbrecipe)
-
-    def all_ids(self, group_id: UUID4) -> Sequence[UUID4]:
-        stmt = sa.select(RecipeModel.id).filter(RecipeModel.group_id == group_id)
-        return self.session.execute(stmt).scalars().all()
+    async def all_ids(self, group_id: UUID4) -> Sequence[UUID4]:
+        return await RecipeModel.filter(group_id=group_id).values_list("id", flat=True)

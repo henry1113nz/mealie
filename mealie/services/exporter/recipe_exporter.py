@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from mealie.repos.all_repositories import AllRepositories
@@ -26,11 +26,11 @@ class RecipeExporter(ABCExporter):
     def destination_dir(self) -> str:
         return "recipes"
 
-    def items(self) -> Iterator[ExportedItem]:
+    async def items(self) -> AsyncIterator[ExportedItem]:
         for slug in self.recipes:
             yield ExportedItem(
                 name=slug,
-                model=self.db.recipes.multi_query({"slug": slug, "group_id": self.group_id}, limit=1)[0],
+                model=(await self.db.recipes.multi_query({"slug": slug, "group_id": self.group_id}, limit=1))[0],
             )
 
     def _post_export_hook(self, item: Recipe) -> None:

@@ -8,8 +8,8 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.config import get_app_dirs, get_app_settings
+from mealie.db.models._legacy_recipe.recipe import RecipeModel
 from mealie.db.models._legacy_users import LongLiveToken, User, UserToRecipe
-from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.users.users import AuthMethod
 from mealie.schema._mealie import MealieModel
 from mealie.schema.group.ai_providers import AIProviderSettingsOut

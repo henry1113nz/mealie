@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy import orm, select
 
 from alembic import op
-from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
+from mealie.db.models._legacy_recipe.ingredient import IngredientFoodModel, IngredientUnitModel
 
 # revision identifiers, used by Alembic.
 revision = "0341b154f79a"

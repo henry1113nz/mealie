@@ -1,33 +1,35 @@
 import logging
 from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import HTTPException
 from pydantic import UUID4
 from sqlalchemy import orm
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_users import User
-from mealie.db.models.recipe.ingredient import (
-    IngredientFoodModel,
+from mealie.db.models._legacy_recipe.ingredient import (
     IngredientFoodSubstitutionModel,
     RecipeIngredientModel,
     RecipeIngredientSubstitutionModel,
     households_to_ingredient_foods,
 )
-from mealie.db.models.recipe.recipe import RecipeModel
-from mealie.db.models.recipe.settings import RecipeSettings
-from mealie.db.models.recipe.tool import Tool, households_to_tools, recipes_to_tools
-from mealie.schema.recipe.recipe import RecipeSummary
-from mealie.schema.recipe.recipe_ingredient import IngredientFood, IngredientFoodSummary
+from mealie.db.models._legacy_recipe.recipe import RecipeModel
+from mealie.db.models._legacy_recipe.settings import RecipeSettings
+from mealie.db.models._legacy_recipe.tool import Tool, households_to_tools, recipes_to_tools
+from mealie.db.models._legacy_users import User
+from mealie.db.models.recipe.recipe import RecipeModel as NativeRecipe
+from mealie.schema.recipe.recipe import Recipe, RecipeSummary
+from mealie.schema.recipe.recipe_ingredient import IngredientFood, IngredientFoodSummary, RecipeIngredient
 from mealie.schema.recipe.recipe_suggestion import (
     RecipeSuggestionQuery,
     RecipeSuggestionResponseItem,
     RecipeSuggestionSubstitutedFood,
 )
 from mealie.schema.recipe.recipe_tool import RecipeToolOut
-from mealie.schema.response.pagination import RequestQuery
-from mealie.services.query_filter.builder import QueryFilterBuilder
+from mealie.schema.response.pagination import PaginationQuery, RequestQuery
+
+from ._recipe_persistence import recipe_data
+from ._recipe_query import execute_select, query_identifiers
 
 if TYPE_CHECKING:
     from sqlalchemy.orm.session import Session
@@ -61,8 +63,8 @@ class RecipeSuggestionMixin:
 
     @staticmethod
     def _find_substitute_on_hand(
-        ingredient: RecipeIngredientModel, food: IngredientFoodModel, on_hand_food_ids: set[UUID4]
-    ) -> IngredientFoodModel | None:
+        ingredient: RecipeIngredient, food: IngredientFood, on_hand_food_ids: set[UUID4]
+    ) -> IngredientFoodSummary | None:
         """
         The first substitute food the user has on hand, or None.
 
@@ -114,7 +116,7 @@ class RecipeSuggestionMixin:
 
         return sa.or_(food_level, recipe_level)
 
-    def _with_on_hand_ids(
+    async def _with_on_hand_ids(
         self, params: RecipeSuggestionQuery, user_food_ids: list[UUID4], user_tool_ids: list[UUID4]
     ) -> tuple[list[UUID4], list[UUID4]]:
         """The user's ids, plus whatever their household already has on hand."""
@@ -131,7 +133,7 @@ class RecipeSuggestionMixin:
                     User.id == self.user_id,
                 )
             )
-            food_ids.extend(self.session.execute(foods_on_hand_query).scalars().all())
+            food_ids.extend(UUID(str(row["food_id"])) for row in await execute_select(foods_on_hand_query))
 
         if params.include_tools_on_hand and self.user_id:
             tools_on_hand_query = (
@@ -142,7 +144,7 @@ class RecipeSuggestionMixin:
                     User.id == self.user_id,
                 )
             )
-            tool_ids.extend(self.session.execute(tools_on_hand_query).scalars().all())
+            tool_ids.extend(UUID(str(row["tool_id"])) for row in await execute_select(tools_on_hand_query))
 
         return food_ids, tool_ids
 
@@ -160,7 +162,7 @@ class RecipeSuggestionMixin:
         )
 
         return (
-            q.outerjoin(unmatched_tools_query, self.model.id == unmatched_tools_query.c.recipe_id)
+            q.outerjoin(unmatched_tools_query, RecipeModel.id == unmatched_tools_query.c.recipe_id)
             .filter(
                 sa.or_(
                     unmatched_tools_query.c.unmatched_tools_count.is_(None),
@@ -213,9 +215,9 @@ class RecipeSuggestionMixin:
             )
 
         q = (
-            q.join(settings_alias, self.model.settings)
-            .outerjoin(unmatched_foods_query, self.model.id == unmatched_foods_query.c.recipe_id)
-            .outerjoin(total_user_foods_query, self.model.id == total_user_foods_query.c.recipe_id)
+            q.join(settings_alias, RecipeModel.settings)
+            .outerjoin(unmatched_foods_query, RecipeModel.id == unmatched_foods_query.c.recipe_id)
+            .outerjoin(total_user_foods_query, RecipeModel.id == total_user_foods_query.c.recipe_id)
             .filter(
                 sa.or_(
                     unmatched_foods_query.c.unmatched_foods_count.is_(None),
@@ -233,37 +235,15 @@ class RecipeSuggestionMixin:
         at_least_one_match = [total_user_foods_query.c.total_user_foods_count > 0]
         if substituted_user_foods_query is not None:
             q = q.outerjoin(
-                substituted_user_foods_query, self.model.id == substituted_user_foods_query.c.recipe_id
+                substituted_user_foods_query, RecipeModel.id == substituted_user_foods_query.c.recipe_id
             ).order_by(substituted_user_foods_query.c.substituted_user_foods_count.desc().nulls_last())
             at_least_one_match.append(substituted_user_foods_query.c.substituted_user_foods_count > 0)
 
         # only include recipes that have at least one food in the user's list
         return q.filter(sa.or_(*at_least_one_match))
 
-    @staticmethod
-    def _suggestion_loader_options(params: RecipeSuggestionQuery, user_food_ids: list[UUID4]) -> list[LoaderOption]:
-        options = list(RecipeSummary.loader_options())
-        if not (user_food_ids and params.include_substitutions):
-            return options
-
-        # the suggestion builder walks each ingredient's substitutions and its food's; without
-        # these the substitute lookup costs a lazy load per ingredient per recipe
-        options.extend(
-            [
-                orm.selectinload(RecipeModel.recipe_ingredient)
-                .selectinload(RecipeIngredientModel.substitutions)
-                .joinedload(RecipeIngredientSubstitutionModel.substitute_food),
-                orm.selectinload(RecipeModel.recipe_ingredient)
-                .joinedload(RecipeIngredientModel.food)
-                .selectinload(IngredientFoodModel.substitutions)
-                .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            ]
-        )
-
-        return options
-
     def _missing_and_substituted_foods(
-        self, recipe: RecipeModel, params: RecipeSuggestionQuery, on_hand_food_ids: set[UUID4]
+        self, recipe: Recipe, params: RecipeSuggestionQuery, on_hand_food_ids: set[UUID4]
     ) -> tuple[list[IngredientFood], list[RecipeSuggestionSubstitutedFood]]:
         """
         Splits the recipe's foods the user lacks into the ones a substitute covers and the
@@ -301,7 +281,7 @@ class RecipeSuggestionMixin:
         return missing_foods, substituted_foods
 
     @staticmethod
-    def _missing_tools(recipe: RecipeModel, on_hand_tool_ids: set[UUID4]) -> list[RecipeToolOut]:
+    def _missing_tools(recipe: Recipe, on_hand_tool_ids: set[UUID4]) -> list[RecipeToolOut]:
         missing_tools: list[RecipeToolOut] = []
 
         seen_tool_ids: set[UUID4] = set(on_hand_tool_ids)
@@ -314,7 +294,7 @@ class RecipeSuggestionMixin:
 
         return missing_tools
 
-    def find_suggested_recipes(
+    async def find_suggested_recipes(
         self,
         params: RecipeSuggestionQuery,
         food_ids: list[UUID4] | None = None,
@@ -332,14 +312,16 @@ class RecipeSuggestionMixin:
 
         user_food_ids = list(set(food_ids or []))
         user_tool_ids = list(set(tool_ids or []))
-        food_ids_with_on_hand, tool_ids_with_on_hand = self._with_on_hand_ids(params, user_food_ids, user_tool_ids)
+        food_ids_with_on_hand, tool_ids_with_on_hand = await self._with_on_hand_ids(
+            params, user_food_ids, user_tool_ids
+        )
 
         ## Build suggestion query
         settings_alias = orm.aliased(RecipeSettings)
         ingredients_alias = orm.aliased(RecipeIngredientModel)
         tools_alias = orm.aliased(Tool)
 
-        q = sa.select(self.model).filter(self.model.household_id.is_not(None))
+        q = sa.select(RecipeModel.id).filter(RecipeModel.household_id.is_not(None))
         fltr = self._filter_builder()
         q = q.filter_by(**fltr)
 
@@ -354,35 +336,23 @@ class RecipeSuggestionMixin:
 
         ## Add filters and loader options
         if self.group_id:
-            q = q.filter(self.model.group_id == self.group_id)
+            q = q.filter(RecipeModel.group_id == self.group_id)
         if self.household_id:
-            q = q.filter(self.model.household_id == self.household_id)
-        if params.query_filter:
-            try:
-                query_filter_builder = QueryFilterBuilder(params.query_filter)
-                q = query_filter_builder.filter_query(q, model=self.model)
-
-            except ValueError as e:
-                self.logger.error(e)
-                raise HTTPException(status_code=400, detail=str(e)) from e
-
-        q = self.add_order_by_to_query(q, params)
-        q = q.limit(params.limit).options(*self._suggestion_loader_options(params, user_food_ids))
-
-        ## Execute query
+            q = q.filter(RecipeModel.household_id == self.household_id)
         try:
-            data = self.session.execute(q).scalars().unique().all()
-        except Exception as e:
-            self._log_exception(e)
-            self.session.rollback()
-            raise e
+            identifiers = await query_identifiers(RecipeModel, cast(PaginationQuery, params), query=q)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        identifiers = identifiers[: params.limit]
+        entries = {entry.id: entry for entry in await NativeRecipe.filter(id__in=identifiers)}
+        data = [Recipe.model_validate(await recipe_data(entries[UUID(str(key))])) for key in identifiers]
 
         on_hand_food_ids = set(food_ids_with_on_hand)
         on_hand_tool_ids = set(tool_ids_with_on_hand)
 
         suggestions: list[RecipeSuggestionResponseItem] = []
         for result in data:
-            recipe = cast(RecipeModel, result)
+            recipe = result
 
             # only check for missing foods and tools if the user has provided a list of them
             missing_foods, substituted_foods = (

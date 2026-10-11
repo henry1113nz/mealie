@@ -1,4 +1,3 @@
-import asyncio
 import json
 from contextlib import asynccontextmanager
 from typing import cast
@@ -22,6 +21,7 @@ from mealie.schema.recipe.recipe_ingredient import (
 )
 from mealie.services.openai import OpenAIService
 from mealie.services.parser_services import RegisteredParser, get_parser
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -59,9 +59,10 @@ def test_openai_parser(
 
     with session_context() as session:
         parser = get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
+        run_async(parser.data_matcher.load_data())
 
         inputs = [random_string() for _ in range(ingredient_count)]
-        parsed = asyncio.run(parser.parse(inputs))
+        parsed = run_async(parser.parse(inputs))
 
         # since OpenAI is mocked, we don't need to validate the data, we just need to make sure parsing works
         # and that it preserves order
@@ -104,9 +105,10 @@ def test_openai_parser_rejects_extra(
 
     with session_context() as session:
         parser = get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
+        run_async(parser.data_matcher.load_data())
 
         with pytest.raises(ValueError, match="Expected 1, got 2"):
-            asyncio.run(parser.parse(["1 tablespoon fresh lemon juice, plus 2 teaspoons zest"]))
+            run_async(parser.parse(["1 tablespoon fresh lemon juice, plus 2 teaspoons zest"]))
 
 
 def test_openai_parser_sanitize_output(
@@ -171,8 +173,9 @@ def test_openai_parser_sanitize_output(
 
     with session_context() as session:
         parser = get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
+        run_async(parser.data_matcher.load_data())
 
-        parsed = asyncio.run(parser.parse([""]))
+        parsed = run_async(parser.parse([""]))
 
         assert len(parsed) == 1
         parsed_ing = cast(ParsedIngredient, parsed[0])
@@ -212,6 +215,7 @@ def test_openai_parser_substitutes(
         parser = cast(
             OpenAIParser, get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
         )
+        run_async(parser.data_matcher.load_data())
 
         substitutions = parser._convert_substitutes(
             ["onion", "thisismyalias", "   ", unknown, "potatoes"],
@@ -376,6 +380,7 @@ def test_openai_parser_confidence(
         parser = cast(
             OpenAIParser, get_parser(RegisteredParser.openai, unique_local_group_id, session, get_locale_provider())
         )
+        run_async(parser.data_matcher.load_data())
 
         # Create test ingredient
         ingredient = RecipeIngredient(

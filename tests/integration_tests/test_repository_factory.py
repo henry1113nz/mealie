@@ -14,6 +14,7 @@ from mealie.repos.repository_generic import GroupRepositoryGeneric, HouseholdRep
 from mealie.repos.repository_group import RepositoryGroup
 from mealie.repos.repository_household import RepositoryHousehold
 from mealie.repos.repository_household_base import AsyncHouseholdRepository
+from mealie.repos.repository_recipes import RepositoryRecipes
 from mealie.repos.repository_users import AsyncUserRepository
 from mealie.schema._mealie.mealie_model import MealieModel
 from mealie.schema.household.group_shopping_list import ShoppingListCreate
@@ -96,9 +97,9 @@ def test_all_repositories_constructors(session: Session, use_group_id: bool, use
         except TypeError:
             continue
 
-        if issubclass(repo_type, (HouseholdRepositoryGeneric, AsyncHouseholdRepository)) and not issubclass(
-            repo_type, RepositoryHousehold
-        ):
+        if issubclass(
+            repo_type, (HouseholdRepositoryGeneric, AsyncHouseholdRepository, RepositoryRecipes)
+        ) and not issubclass(repo_type, RepositoryHousehold):
             if not (use_group_id and use_household_id):
                 with pytest.raises(ValueError):
                     getattr(repositories, name)

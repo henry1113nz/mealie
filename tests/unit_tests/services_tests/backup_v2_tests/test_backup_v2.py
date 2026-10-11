@@ -12,12 +12,12 @@ from mealie.db.models._legacy_household.household import Household
 from mealie.db.models._legacy_household.household_to_recipe import HouseholdToRecipe
 from mealie.db.models._legacy_household.mealplan import GroupMealPlanRules
 from mealie.db.models._legacy_household.shopping_list import ShoppingList
+from mealie.db.models._legacy_recipe.ingredient import IngredientFoodModel, IngredientUnitModel
+from mealie.db.models._legacy_recipe.labels import MultiPurposeLabel
+from mealie.db.models._legacy_recipe.recipe import RecipeModel
+from mealie.db.models._legacy_recipe.tool import Tool
 from mealie.db.models._legacy_users import User, UserToRecipe
 from mealie.db.models._model_utils.guid import GUID
-from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
-from mealie.db.models.recipe.labels import MultiPurposeLabel
-from mealie.db.models.recipe.recipe import RecipeModel
-from mealie.db.models.recipe.tool import Tool
 from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
 from mealie.services.backups_v2.backup_file import BackupFile
 from mealie.services.backups_v2.backup_v2 import BackupV2

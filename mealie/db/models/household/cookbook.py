@@ -9,6 +9,9 @@ from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UU
 
 if TYPE_CHECKING:
     from ..group.group import Group
+    from ..recipe.category import Category
+    from ..recipe.tag import Tag
+    from ..recipe.tool import Tool
     from .household import Household
 
 
@@ -41,6 +44,31 @@ class CookBook(TortoiseBase):
     require_all_categories: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
     require_all_tags: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
     require_all_tools: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
+
+    categories: fields.ManyToManyRelation[Category] = fields.ManyToManyField(
+        "models.Category",
+        related_name="cookbooks",
+        through="cookbooks_to_categories",
+        backward_key="cookbook_id",
+        forward_key="category_id",
+        on_delete=fields.RESTRICT,
+    )
+    tags: fields.ManyToManyRelation[Tag] = fields.ManyToManyField(
+        "models.Tag",
+        related_name="cookbooks",
+        through="cookbooks_to_tags",
+        backward_key="cookbook_id",
+        forward_key="tag_id",
+        on_delete=fields.RESTRICT,
+    )
+    tools: fields.ManyToManyRelation[Tool] = fields.ManyToManyField(
+        "models.Tool",
+        related_name="cookbooks",
+        through="cookbooks_to_tools",
+        backward_key="cookbook_id",
+        forward_key="tool_id",
+        on_delete=fields.RESTRICT,
+    )
 
     class Meta:
         table = "cookbooks"

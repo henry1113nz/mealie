@@ -1,36 +1,32 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from mealie.db.models._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
+from mealie.db.models._tortoise_base import UUIDField
 
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from ._base import RecipeBase
 
 if TYPE_CHECKING:
-    from .._legacy_groups.group import Group
-    from .._legacy_household.shopping_list import ShoppingListItem, ShoppingListMultiPurposeLabel
-    from . import IngredientFoodModel
+    from mealie.db.models.group.group import Group
+    from mealie.db.models.recipe.ingredient import IngredientFoodModel
 
 
-class MultiPurposeLabel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "multi_purpose_labels"
-    __table_args__ = (UniqueConstraint("name", "group_id", name="multi_purpose_labels_name_group_id_key"),)
-
-    id: FilterableColumn[GUID] = mapped_column(GUID, default=GUID.generate, primary_key=True)
-    name: FilterableColumn[str] = mapped_column(String(255), nullable=False)
-    color: FilterableColumn[str] = mapped_column(String(10), nullable=False, default="")
-
-    group_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="labels")
-
-    shopping_list_items: Mapped[list[ShoppingListItem]] = orm.relationship("ShoppingListItem", back_populates="label")
-    foods: Mapped[list[IngredientFoodModel]] = orm.relationship("IngredientFoodModel", back_populates="label")
-    shopping_lists_label_settings: Mapped[list[ShoppingListMultiPurposeLabel]] = orm.relationship(
-        "ShoppingListMultiPurposeLabel", back_populates="label", cascade="all, delete, delete-orphan"
+class MultiPurposeLabel(RecipeBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    name: fields.CharField[str] = fields.CharField(max_length=255)
+    color: fields.CharField[str] = fields.CharField(max_length=10, default="")
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="labels",
+        source_field="group_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    foods: fields.ReverseRelation[IngredientFoodModel]
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "multi_purpose_labels"
+        unique_together = (("name", "group"),)

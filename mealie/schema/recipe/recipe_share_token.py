@@ -6,7 +6,7 @@ from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.schema._mealie import MealieModel
 
-from ...db.models.recipe import (
+from ...db.models._legacy_recipe import (
     IngredientFoodModel,
     IngredientFoodSubstitutionModel,
     RecipeIngredientModel,

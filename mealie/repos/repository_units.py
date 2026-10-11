@@ -1,17 +1,18 @@
 from collections.abc import Iterable
+from datetime import UTC, datetime
 
 from pydantic import UUID4, BaseModel
-from sqlalchemy import select, update
+from tortoise.transactions import in_transaction
 
-from mealie.db.models._legacy_household.shopping_list import ShoppingListItem
-from mealie.db.models.recipe.ingredient import IngredientUnitModel
+from mealie.db.models.household.shopping_list import ShoppingListItem
+from mealie.db.models.recipe.ingredient import IngredientUnitModel, RecipeIngredientModel
 from mealie.lang.providers import get_locale_context
 from mealie.schema.recipe.recipe_ingredient import IngredientUnit, StandardizedUnitType
 
-from .repository_generic import GroupRepositoryGeneric
+from .repository_recipe_base import AsyncRecipeRepository
 
 
-class RepositoryUnit(GroupRepositoryGeneric[IngredientUnit, IngredientUnitModel]):
+class RepositoryUnit(AsyncRecipeRepository[IngredientUnit, IngredientUnitModel]):
     _standardized_unit_map: dict[str, str] | None = None
 
     @property
@@ -37,9 +38,8 @@ class RepositoryUnit(GroupRepositoryGeneric[IngredientUnit, IngredientUnitModel]
 
         return self._standardized_unit_map
 
-    def _get_unit(self, id: UUID4) -> IngredientUnitModel:
-        stmt = select(self.model).filter_by(**self._filter_builder(**{"id": id}))
-        return self.session.execute(stmt).scalars().one()
+    async def _get_unit(self, id: UUID4) -> IngredientUnitModel:
+        return await self._query_one(id)
 
     def _add_standardized_unit(self, data: BaseModel | dict) -> dict:
         if not isinstance(data, dict):
@@ -107,32 +107,22 @@ class RepositoryUnit(GroupRepositoryGeneric[IngredientUnit, IngredientUnitModel]
 
         return data
 
-    def create(self, data: IngredientUnit | dict) -> IngredientUnit:
+    async def create(self, data: IngredientUnit | dict) -> IngredientUnit:
         data = self._add_standardized_unit(data)
-        return super().create(data)
+        return await super().create(data)
 
-    def create_many(self, data: Iterable[IngredientUnit | dict]) -> list[IngredientUnit]:
+    async def create_many(self, data: Iterable[IngredientUnit | dict]) -> list[IngredientUnit]:
         data = [self._add_standardized_unit(i) for i in data]
-        return super().create_many(data)
+        return await super().create_many(data)
 
-    def merge(self, from_unit: UUID4, to_unit: UUID4) -> IngredientUnit | None:
-        from_model = self._get_unit(from_unit)
-        to_model = self._get_unit(to_unit)
-
-        to_model.ingredients += from_model.ingredients
-
-        # Shopping list items reference the unit directly rather than through the ingredients
-        # relationship, so they have to be repointed explicitly. Without this the delete below
-        # either violates a foreign key constraint or leaves the item pointing at a missing unit.
-        self.session.execute(
-            update(ShoppingListItem).where(ShoppingListItem.unit_id == from_unit).values(unit_id=to_unit)
-        )
-
-        try:
-            self.session.delete(from_model)
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-
-        return self.get_one(to_unit)
+    async def merge(self, from_unit: UUID4, to_unit: UUID4) -> IngredientUnit | None:
+        async with in_transaction("default"):
+            from_model = await self._get_unit(from_unit)
+            await self._get_unit(to_unit)
+            if from_unit == to_unit:
+                return await self.get_one(to_unit)
+            await RecipeIngredientModel.filter(unit_id=from_unit).update(unit_id=to_unit, update_at=datetime.now(UTC))
+            await ShoppingListItem.filter(unit_id=from_unit).update(unit_id=to_unit, update_at=datetime.now(UTC))
+            await from_model.delete()
+            await self._after_write(from_model)
+            return await self.get_one(to_unit)

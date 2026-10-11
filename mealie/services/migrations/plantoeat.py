@@ -159,7 +159,7 @@ class PlanToEatMigrator(BaseMigrator):
 
             preprocess_recipe = self._process_recipe_row(recipe)
 
-            recipe_model = self.clean_recipe_dictionary(preprocess_recipe)
+            recipe_model = await self.clean_recipe_dictionary(preprocess_recipe)
 
             recipes.append(recipe_model)
 

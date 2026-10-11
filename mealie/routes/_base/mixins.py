@@ -167,16 +167,18 @@ class AsyncHttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
         repo: Any,
         logger: Logger,
         exception_msgs: Callable[[type[Exception]], str] | None = None,
+        default_message: str = "An unexpected error occurred.",
     ) -> None:
         self.repo = repo
         self.logger = logger
         self.exception_msgs = exception_msgs
+        self.default_message = default_message
 
     def handle_exception(self, ex: Exception) -> Never:
         self.logger.exception(ex)
         # Unconverted relationships can still open a legacy read transaction.
         self.repo.session.rollback()
-        message = self.exception_msgs(type(ex)) if self.exception_msgs else "An unexpected error occurred."
+        message = self.exception_msgs(type(ex)) if self.exception_msgs else self.default_message
         if isinstance(ex, (DoesNotExist, sqlalchemy.exc.NoResultFound)):
             status_code = status.HTTP_404_NOT_FOUND
         elif isinstance(ex, (IntegrityError, sqlalchemy.exc.IntegrityError)):

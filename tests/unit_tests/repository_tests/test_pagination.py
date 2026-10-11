@@ -13,7 +13,7 @@ from freezegun import freeze_time
 from humps import camelize
 from pydantic import UUID4
 
-from mealie.db.models.recipe.ingredient import IngredientUnitModel
+from mealie.db.models._legacy_recipe.ingredient import IngredientUnitModel
 from mealie.repos.repository_factory import AllRepositories
 from mealie.repos.repository_units import RepositoryUnit
 from mealie.schema.household.group_shopping_list import (

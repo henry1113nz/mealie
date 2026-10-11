@@ -1,8 +1,8 @@
 import contextlib
 from collections.abc import Generator
 
-import sqlalchemy
 from pytest import fixture
+from tortoise.exceptions import DoesNotExist
 
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_category import CategoryOut, CategorySave
@@ -50,7 +50,7 @@ def recipe_ingredient_only(unique_user: TestUser):
 
     yield model
 
-    with contextlib.suppress(sqlalchemy.exc.NoResultFound):
+    with contextlib.suppress(DoesNotExist):
         database.recipes.delete(model.slug)
 
 
@@ -80,7 +80,7 @@ def recipes_ingredient_only(unique_user: TestUser):
 
     yield recipes
 
-    with contextlib.suppress(sqlalchemy.exc.NoResultFound):
+    with contextlib.suppress(DoesNotExist):
         for recipe in recipes:
             database.recipes.delete(recipe.slug)
 
@@ -100,7 +100,7 @@ def recipe_categories(unique_user: TestUser) -> Generator[list[CategoryOut]]:
     yield models
 
     for m in models:
-        with contextlib.suppress(sqlalchemy.exc.NoResultFound):
+        with contextlib.suppress(DoesNotExist):
             database.categories.delete(m.id)
 
 
@@ -127,5 +127,5 @@ def random_recipe(unique_user: TestUser) -> Generator[Recipe]:
 
     yield model
 
-    with contextlib.suppress(sqlalchemy.exc.NoResultFound):
+    with contextlib.suppress(DoesNotExist):
         database.recipes.delete(model.slug)

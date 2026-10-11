@@ -230,7 +230,7 @@ async def test_spa_service_shared_recipe_with_meta(
         RecipeShareTokenSave(recipe_id=recipe.id, group_id=unique_user.group_id)
     )
 
-    response = await spa.serve_shared_recipe_with_meta(group.slug, token.id, session=unique_user.repos.session)
+    response = run_async(spa.serve_shared_recipe_with_meta(group.slug, token.id, session=unique_user.repos.session))
     assert response.status_code == 200
     assert "https://schema.org" in response.body.decode()
 
@@ -240,7 +240,9 @@ async def test_spa_service_shared_recipe_with_meta_invalid_data(unique_user: Tes
     group = unique_user.repos.groups.get_by_slug_or_id(unique_user.group_id)
     assert group
 
-    response = await spa.serve_shared_recipe_with_meta(group.slug, random_string(), session=unique_user.repos.session)
+    response = run_async(
+        spa.serve_shared_recipe_with_meta(group.slug, random_string(), session=unique_user.repos.session)
+    )
     assert response.status_code == 404
 
 

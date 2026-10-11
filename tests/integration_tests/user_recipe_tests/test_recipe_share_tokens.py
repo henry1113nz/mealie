@@ -2,8 +2,8 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import sqlalchemy
 from fastapi.testclient import TestClient
+from tortoise.exceptions import DoesNotExist
 
 from mealie.schema.recipe.recipe_share_token import RecipeShareToken, RecipeShareTokenSave
 from tests.utils import api_routes
@@ -24,7 +24,7 @@ def slug(api_client: TestClient, unique_user: TestUser) -> Generator[str]:
 
     try:
         database.recipes.delete(response_data)
-    except sqlalchemy.exc.NoResultFound:
+    except DoesNotExist:
         pass
 
 

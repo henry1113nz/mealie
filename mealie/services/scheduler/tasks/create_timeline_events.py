@@ -62,7 +62,7 @@ async def _create_mealplan_timeline_events_for_household(
         )
 
         # if this event already exists, don't create it again
-        events = repos.recipe_timeline_events.page_all(pagination=query)
+        events = await repos.recipe_timeline_events.page_all(pagination=query)
         if events.items:
             continue
 
@@ -89,7 +89,7 @@ async def _create_mealplan_timeline_events_for_household(
 
     # TODO: use bulk operations
     for event in timeline_events_to_create:
-        new_event = repos.recipe_timeline_events.create(event)
+        new_event = await repos.recipe_timeline_events.create(event)
         await event_bus_service.dispatch(
             integration_id=DEFAULT_INTEGRATION_ID,
             group_id=group_id,
@@ -104,7 +104,7 @@ async def _create_mealplan_timeline_events_for_household(
 
     for recipe in recipes_to_update.values():
         await household_service.set_household_recipe(recipe.slug, HouseholdRecipeUpdate(last_made=event_time))
-        repos.recipes.patch(recipe.slug, {"last_made": event_time})
+        (await repos.recipes.patch(recipe.slug, {"last_made": event_time}))
         await event_bus_service.dispatch(
             integration_id=DEFAULT_INTEGRATION_ID,
             group_id=group_id,

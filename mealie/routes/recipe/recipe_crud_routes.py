@@ -8,8 +8,6 @@ from urllib.parse import unquote, urlparse
 from uuid import UUID, uuid4
 
 import orjson
-import sqlalchemy
-import sqlalchemy.exc
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -25,6 +23,7 @@ from fastapi.datastructures import UploadFile
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import UUID4
 from slugify import slugify
+from tortoise.exceptions import IntegrityError
 
 from mealie.core import exceptions
 from mealie.core.dependencies import (
@@ -121,7 +120,7 @@ class RecipeController(BaseRecipeController):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=ErrorResponse.respond(message="No Entry Found")
             )
-        elif thrownType == sqlalchemy.exc.IntegrityError:
+        elif isinstance(ex, IntegrityError):
             self.logger.error("SQL Integrity Error on recipe controller action")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=ErrorResponse.respond(message="Recipe already exists")
@@ -351,11 +350,11 @@ class RecipeController(BaseRecipeController):
     ) -> str:
         if req.include_tags:
             ctx = ScraperContext(self.repos)
-            recipe.tags = extras.use_tags(ctx)  # type: ignore
+            recipe.tags = await extras.use_tags(ctx)  # type: ignore
 
         if req.include_categories:
             ctx = ScraperContext(self.repos)
-            recipe.recipe_category = extras.use_categories(ctx)  # type: ignore
+            recipe.recipe_category = await extras.use_categories(ctx)  # type: ignore
 
         new_recipe = await (await self.get_service()).create_one(recipe)
         await self._publish_recipe_created(new_recipe)
@@ -542,7 +541,7 @@ class RecipeController(BaseRecipeController):
         # We use "group_recipes" here so we can return all recipes regardless of household. The query filter can
         # include a household_id to filter by household.
         # We use "by_user" so we can sort favorites and other user-specific data correctly.
-        pagination_response = self.group_recipes.by_user(self.user.id).page_all(
+        pagination_response = await self.group_recipes.by_user(self.user.id).page_all(
             pagination=q,
             cookbook=cookbook_data,
             categories=categories,
@@ -570,7 +569,7 @@ class RecipeController(BaseRecipeController):
         return JSONBytes(content=json_compatible_response)
 
     @router.get("/suggestions", response_model=RecipeSuggestionResponse)
-    def suggest_recipes(
+    async def suggest_recipes(
         self,
         q: RecipeSuggestionQuery = Depends(make_dependable(RecipeSuggestionQuery)),
         foods: list[UUID4] | None = Query(None),
@@ -580,7 +579,7 @@ class RecipeController(BaseRecipeController):
             self.session, group_id=self.group_id, household_id=None
         ).recipes.by_user(self.user.id)
 
-        recipes = group_recipes_by_user.find_suggested_recipes(q, foods, tools)
+        recipes = await group_recipes_by_user.find_suggested_recipes(q, foods, tools)
         response = RecipeSuggestionResponse(items=recipes)
         json_compatible_response = orjson.dumps(response.model_dump(by_alias=True))
 
@@ -591,7 +590,7 @@ class RecipeController(BaseRecipeController):
     async def get_one(self, slug: str = Path(..., description="A recipe's slug or id")):
         """Takes in a recipe's slug or id and returns all data for a recipe"""
         try:
-            recipe = (await self.get_service()).get_one(slug)
+            recipe = await (await self.get_service()).get_one(slug)
         except Exception as e:
             self.handle_exceptions(e)
             return None
@@ -626,7 +625,7 @@ class RecipeController(BaseRecipeController):
     async def duplicate_one(self, slug: str, req: RecipeDuplicate) -> Recipe:
         """Duplicates a recipe with a new custom name if given"""
         try:
-            new_recipe = (await self.get_service()).duplicate_one(slug, req)
+            new_recipe = await (await self.get_service()).duplicate_one(slug, req)
         except Exception as e:
             self.handle_exceptions(e)
 
@@ -648,7 +647,7 @@ class RecipeController(BaseRecipeController):
     async def update_one(self, slug: str, data: RecipeIn):
         """Updates a recipe by existing slug and data."""
         try:
-            recipe = (await self.get_service()).update_one(slug, data)
+            recipe = await (await self.get_service()).update_one(slug, data)
         except Exception as e:
             self.handle_exceptions(e)
 
@@ -673,7 +672,7 @@ class RecipeController(BaseRecipeController):
             lambda: defaultdict(list)
         )
         for recipe in data:
-            r = (await self.get_service()).update_one(recipe.id, recipe)  # type: ignore
+            r = await (await self.get_service()).update_one(recipe.id, recipe)  # type: ignore
             updated_by_group_and_household[r.group_id][r.household_id].append(r)
 
         all_updated: list[Recipe] = []
@@ -696,7 +695,7 @@ class RecipeController(BaseRecipeController):
     async def patch_one(self, slug: str, data: RecipeIn):
         """Updates a recipe by existing slug and data."""
         try:
-            recipe = (await self.get_service()).patch_one(slug, data)
+            recipe = await (await self.get_service()).patch_one(slug, data)
         except Exception as e:
             self.handle_exceptions(e)
 
@@ -721,7 +720,7 @@ class RecipeController(BaseRecipeController):
             lambda: defaultdict(list)
         )
         for recipe in data:
-            r = (await self.get_service()).patch_one(recipe.id, recipe)  # type: ignore
+            r = await (await self.get_service()).patch_one(recipe.id, recipe)  # type: ignore
             updated_by_group_and_household[r.group_id][r.household_id].append(r)
 
         all_updated: list[Recipe] = []
@@ -768,7 +767,7 @@ class RecipeController(BaseRecipeController):
     async def delete_one(self, slug: str):
         """Deletes a recipe by slug"""
         try:
-            recipe = (await self.get_service()).delete_one(slug)
+            recipe = await (await self.get_service()).delete_one(slug)
         except Exception as e:
             self.handle_exceptions(e)
 
@@ -788,7 +787,7 @@ class RecipeController(BaseRecipeController):
 
     @router.post("/{slug}/image", response_model=UpdateImageResponse, tags=["Recipe: Images and Assets"])
     async def scrape_image_url(self, slug: str, url: ScrapeRecipe):
-        recipe = self.mixins.get_one(slug)
+        recipe = await self.mixins.get_one(slug)
         data_service = RecipeDataService(recipe.id)
 
         try:
@@ -813,13 +812,13 @@ class RecipeController(BaseRecipeController):
             )
 
         recipe.image = cache.cache_key.new_key()
-        (await self.get_service()).update_one(recipe.slug, recipe)
+        (await (await self.get_service()).update_one(recipe.slug, recipe))
         return UpdateImageResponse(image=recipe.image)
 
     @router.put("/{slug}/image", response_model=UpdateImageResponse, tags=["Recipe: Images and Assets"])
     async def update_recipe_image(self, slug: str, image: bytes = File(...), extension: str = Form(...)):
         try:
-            new_version = (await self.get_service()).update_recipe_image(slug, image, extension)
+            new_version = await (await self.get_service()).update_recipe_image(slug, image, extension)
             return UpdateImageResponse(image=new_version)
         except Exception as e:
             self.handle_exceptions(e)
@@ -828,7 +827,7 @@ class RecipeController(BaseRecipeController):
     @router.delete("/{slug}/image", tags=["Recipe: Images and Assets"])
     async def delete_recipe_image(self, slug: str):
         try:
-            (await self.get_service()).delete_recipe_image(slug)
+            (await (await self.get_service()).delete_recipe_image(slug))
             return SuccessResponse.respond(message=self.t("recipe.recipe-image-deleted"))
         except Exception as e:
             self.handle_exceptions(e)
@@ -856,7 +855,7 @@ class RecipeController(BaseRecipeController):
 
         file_name = f"{file_slug}.{extension}"
 
-        recipe = (await self.get_service()).get_one(slug)
+        recipe = await (await self.get_service()).get_one(slug)
 
         dest = recipe.asset_dir / file_name
 
@@ -884,7 +883,7 @@ class RecipeController(BaseRecipeController):
         if recipe.assets is not None:
             recipe.assets.append(asset_in)
 
-        (await self.get_service()).update_one(slug, recipe)
+        (await (await self.get_service()).update_one(slug, recipe))
 
         return asset_in
 
@@ -903,7 +902,7 @@ class RecipeController(BaseRecipeController):
     @router.post("/{slug}/assets/url", response_model=RecipeAsset, tags=["Recipe: Images and Assets"])
     async def create_recipe_asset_from_url(self, slug: str, url: ScrapeRecipe):
         """Download an image from a URL and store it as a recipe asset."""
-        recipe = (await self.get_service()).get_one(slug)
+        recipe = await (await self.get_service()).get_one(slug)
         data_service = RecipeDataService(recipe.id)
 
         try:

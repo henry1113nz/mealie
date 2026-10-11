@@ -20,7 +20,7 @@ from mealie.schema._mealie import MealieModel, SearchType
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema.response.pagination import PaginationBase
 
-from ...db.models.recipe import (
+from ...db.models._legacy_recipe import (
     IngredientFoodModel,
     IngredientFoodSubstitutionModel,
     RecipeComment,

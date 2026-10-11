@@ -1,19 +1,29 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import mapped_column
+from typing import TYPE_CHECKING
+from uuid import UUID
 
-from mealie.db.models._model_base import FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from tortoise import fields
+
+from mealie.db.models._tortoise_base import UnboundedCharField
+
+from ._base import RecipeBase
+
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class RecipeAsset(SqlAlchemyBase):
-    __tablename__ = "recipe_assets"
-    id: FilterableColumn[int] = mapped_column(sa.Integer, primary_key=True)
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
-    name: FilterableColumn[str | None] = mapped_column(sa.String)
-    icon: FilterableColumn[str | None] = mapped_column(sa.String)
-    file_name: FilterableColumn[str | None] = mapped_column(sa.String)
+class RecipeAsset(RecipeBase):
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="assets",
+        source_field="recipe_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    icon: fields.TextField[str | None] = UnboundedCharField(null=True)
+    file_name: fields.TextField[str | None] = UnboundedCharField(null=True)
 
-    def __init__(self, name=None, icon=None, file_name=None) -> None:
-        self.name = name
-        self.file_name = file_name
-        self.icon = icon
+    class Meta:
+        table = "recipe_assets"

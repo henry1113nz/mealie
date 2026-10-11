@@ -110,7 +110,7 @@ class MyRecipeBoxMigrator(BaseMigrator):
                 except Exception:
                     pass
 
-            recipe_model = self.clean_recipe_dictionary(recipe_dict)
+            recipe_model = await self.clean_recipe_dictionary(recipe_dict)
             recipes.append(recipe_model)
 
         results = await self.import_recipes_to_database(recipes)

@@ -170,10 +170,12 @@ class OpenAIParser(ABCIngredientParser):
         return OpenAIIngredients(ingredients=response.ingredients)
 
     async def parse_one(self, ingredient_string: str) -> ParsedIngredient:
+        await self.data_matcher.load_data()
         items = await self.parse([ingredient_string])
         return items[0]
 
     async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
+        await self.data_matcher.load_data()
         response = await self._parse(ingredients)
         if len(response.ingredients) != len(ingredients):
             raise ValueError(

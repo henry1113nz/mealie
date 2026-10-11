@@ -2,7 +2,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 
-from mealie.db.models.recipe.ingredient import IngredientFoodSubstitutionModel
+from mealie.db.models._legacy_recipe.ingredient import IngredientFoodSubstitutionModel
 from mealie.schema.household.group_shopping_list import ShoppingListItemCreate, ShoppingListSave
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import (

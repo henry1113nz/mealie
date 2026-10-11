@@ -9,6 +9,8 @@ from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UU
 
 if TYPE_CHECKING:
     from ..group.group import Group
+    from ..recipe.ingredient import IngredientFoodModel
+    from ..recipe.tool import Tool
     from ..users.users import User
     from .mealplan import GroupMealPlanRules
     from .preferences import HouseholdPreferencesModel
@@ -31,6 +33,9 @@ class Household(TortoiseBase):
     users: fields.ReverseRelation[User]
     preferences: fields.ReverseRelation[HouseholdPreferencesModel]
     matching_meal_plan_rules: fields.ManyToManyRelation[GroupMealPlanRules]
+
+    ingredient_foods_on_hand: fields.ManyToManyRelation[IngredientFoodModel]
+    tools_on_hand: fields.ManyToManyRelation[Tool]
 
     class Meta:
         table = "households"

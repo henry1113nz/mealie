@@ -28,7 +28,7 @@ class Exporter(BaseService):
         # Open Zip File
         with zipfile.ZipFile(self.temp_path, "w") as zip:
             for exporter in self.exporters:
-                exporter.export(zip)
+                await exporter.export(zip)
 
         export_id = uuid4()
 

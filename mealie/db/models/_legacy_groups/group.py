@@ -5,16 +5,16 @@ import sqlalchemy.orm as orm
 from pydantic import ConfigDict
 from sqlalchemy.orm import Mapped, mapped_column
 
-from mealie.db.models.recipe.labels import MultiPurposeLabel
+from mealie.db.models._legacy_recipe.labels import MultiPurposeLabel
 
 from .._legacy_household.cookbook import CookBook
 from .._legacy_household.invite_tokens import GroupInviteToken
 from .._legacy_household.mealplan import GroupMealPlan
 from .._legacy_household.webhooks import GroupWebhooksModel
+from .._legacy_recipe.category import Category, group_to_categories
 from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
 from .._model_utils.auto_init import auto_init
 from .._model_utils.guid import GUID
-from ..recipe.category import Category, group_to_categories
 from .ai_providers import AIProviderSettings
 from .preferences import GroupPreferencesModel
 
@@ -23,8 +23,8 @@ if TYPE_CHECKING:
     from .._legacy_household.events import GroupEventNotifierModel
     from .._legacy_household.recipe_action import GroupRecipeAction
     from .._legacy_household.shopping_list import ShoppingList
+    from .._legacy_recipe import IngredientFoodModel, IngredientUnitModel, RecipeModel, Tag, Tool
     from .._legacy_users import User
-    from ..recipe import IngredientFoodModel, IngredientUnitModel, RecipeModel, Tag, Tool
     from .exports import GroupDataExportsModel
     from .report import ReportModel
 

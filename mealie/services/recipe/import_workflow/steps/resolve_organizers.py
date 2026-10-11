@@ -25,8 +25,8 @@ class ResolveOrganizersStep(WorkflowStep):
     progress_key = "recipe.create-progress.organizing-recipe"
     required = False
 
-    def _build_injections(self, resolver: OrganizerResolver) -> list[OpenAIDataInjection]:
-        existing = resolver.existing_names()
+    async def _build_injections(self, resolver: OrganizerResolver) -> list[OpenAIDataInjection]:
+        existing = await resolver.existing_names()
         injections: list[OpenAIDataInjection] = []
 
         if tags := existing["tags"][:MAX_INJECTED_TAGS]:
@@ -96,13 +96,13 @@ class ResolveOrganizersStep(WorkflowStep):
         resolver = OrganizerResolver(ctx.repos)
         create_missing = ctx.options.create_new_organizers
 
-        existing = resolver.existing_names()
+        existing = await resolver.existing_names()
         if ctx.options.attach_organizers and not (create_missing or any(existing.values())):
             # nothing to match against and nothing may be created, so there's no work to do
             return
 
         response = await ctx.ai.get_response(
-            ctx.ai.get_prompt(RESOLVE_ORGANIZERS_PROMPT, data_injections=self._build_injections(resolver)),
+            ctx.ai.get_prompt(RESOLVE_ORGANIZERS_PROMPT, data_injections=await self._build_injections(resolver)),
             self._build_message(ctx),
             response_schema=OpenAIOrganizers,
         )
@@ -115,6 +115,6 @@ class ResolveOrganizersStep(WorkflowStep):
             # the caller applies these itself
             return
 
-        recipe.tags = resolver.resolve_tags(response.tags, create_missing)
-        recipe.recipe_category = resolver.resolve_categories(response.categories, create_missing)
-        recipe.tools = resolver.resolve_tools(response.tools, create_missing)
+        recipe.tags = await resolver.resolve_tags(response.tags, create_missing)
+        recipe.recipe_category = await resolver.resolve_categories(response.categories, create_missing)
+        recipe.tools = await resolver.resolve_tools(response.tools, create_missing)

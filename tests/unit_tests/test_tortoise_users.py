@@ -14,10 +14,10 @@ from tortoise.transactions import in_transaction
 from mealie.core.settings import AppSettings
 from mealie.db.models._legacy_household.mealplan import GroupMealPlan
 from mealie.db.models._legacy_household.shopping_list import ShoppingList, ShoppingListItem
-from mealie.db.models.recipe.api_extras import ShoppingListExtras, ShoppingListItemExtras
-from mealie.db.models.recipe.comment import RecipeComment
-from mealie.db.models.recipe.recipe import RecipeModel
-from mealie.db.models.recipe.recipe_timeline import RecipeTimelineEvent
+from mealie.db.models._legacy_recipe.api_extras import ShoppingListExtras, ShoppingListItemExtras
+from mealie.db.models._legacy_recipe.comment import RecipeComment
+from mealie.db.models._legacy_recipe.recipe import RecipeModel
+from mealie.db.models._legacy_recipe.recipe_timeline import RecipeTimelineEvent
 from mealie.db.models.server.task import ServerTaskModel
 from mealie.db.models.users.password_reset import PasswordResetModel
 from mealie.db.models.users.user_to_recipe import UserToRecipe

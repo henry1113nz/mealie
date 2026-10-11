@@ -10,6 +10,7 @@ from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UT
 if TYPE_CHECKING:
     from ..group.group import Group
     from ..household.household import Household
+    from ..recipe.recipe import RecipeModel
     from .password_reset import PasswordResetModel
     from .user_to_recipe import UserToRecipe
 
@@ -62,8 +63,15 @@ class User(TortoiseBase):
         db_index=True,
         on_delete=fields.RESTRICT,
     )
-    # Recipe remains legacy until C6; the database enforces this reference.
-    owned_recipes_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
+    owned_recipes_id: UUID | None
+    owned_recipes: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="owner_links",
+        source_field="owned_recipes_id",
+        null=True,
+        db_index=False,
+        on_delete=fields.RESTRICT,
+    )
 
     cache_key: fields.TextField[str | None] = UnboundedCharField(default="1234", null=True)
     external_avatar_hash: fields.TextField[str | None] = UnboundedCharField(null=True)

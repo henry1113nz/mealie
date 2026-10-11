@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from ._legacy_household import Household
     from ._legacy_household.mealplan import GroupMealPlan
     from ._legacy_household.shopping_list import ShoppingList
-    from .recipe import RecipeComment, RecipeModel, RecipeTimelineEvent
+    from ._legacy_recipe import RecipeComment, RecipeModel, RecipeTimelineEvent
 
 
 class UserToRecipe(SqlAlchemyBase, BaseMixins):
@@ -51,7 +51,7 @@ class UserToRecipe(SqlAlchemyBase, BaseMixins):
 
 
 def update_recipe_rating(session: Session, target: UserToRecipe):
-    from mealie.db.models.recipe.recipe import RecipeModel
+    from mealie.db.models._legacy_recipe.recipe import RecipeModel
 
     recipe = session.query(RecipeModel).filter(RecipeModel.id == target.recipe_id).first()
     if not recipe:

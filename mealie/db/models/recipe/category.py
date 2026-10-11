@@ -1,77 +1,45 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-import sqlalchemy as sa
-import sqlalchemy.orm as orm
-from slugify import slugify
-from sqlalchemy import literal
-from sqlalchemy.orm import Mapped, mapped_column, query_expression, validates
+from tortoise import fields
 
-from mealie.core import root_logger
+from mealie.db.models._tortoise_base import UnboundedCharField, UUIDField
 
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.guid import GUID
+from ._base import RecipeBase
 
 if TYPE_CHECKING:
-    from .._legacy_groups import Group
-    from . import RecipeModel
-logger = root_logger.get_logger()
+    from mealie.db.models.group.group import Group
+    from mealie.db.models.household.cookbook import CookBook
+    from mealie.db.models.household.mealplan import GroupMealPlanRules
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-group_to_categories = sa.Table(
-    "group_to_categories",
-    SqlAlchemyBase.metadata,
-    sa.Column("group_id", GUID, sa.ForeignKey("groups.id"), index=True),
-    sa.Column("category_id", GUID, sa.ForeignKey("categories.id"), index=True),
-    sa.UniqueConstraint("group_id", "category_id", name="group_id_category_id_key"),
-)
-
-plan_rules_to_categories = sa.Table(
-    "plan_rules_to_categories",
-    SqlAlchemyBase.metadata,
-    sa.Column("group_plan_rule_id", GUID, sa.ForeignKey("group_meal_plan_rules.id"), index=True),
-    sa.Column("category_id", GUID, sa.ForeignKey("categories.id"), index=True),
-    sa.UniqueConstraint("group_plan_rule_id", "category_id", name="group_plan_rule_id_category_id_key"),
-)
-
-recipes_to_categories = sa.Table(
-    "recipes_to_categories",
-    SqlAlchemyBase.metadata,
-    sa.Column("recipe_id", GUID, sa.ForeignKey("recipes.id"), index=True),
-    sa.Column("category_id", GUID, sa.ForeignKey("categories.id"), index=True),
-    sa.UniqueConstraint("recipe_id", "category_id", name="recipe_id_category_id_key"),
-)
-
-cookbooks_to_categories = sa.Table(
-    "cookbooks_to_categories",
-    SqlAlchemyBase.metadata,
-    sa.Column("cookbook_id", GUID, sa.ForeignKey("cookbooks.id"), index=True),
-    sa.Column("category_id", GUID, sa.ForeignKey("categories.id"), index=True),
-    sa.UniqueConstraint("cookbook_id", "category_id", name="cookbook_id_category_id_key"),
-)
-
-
-class Category(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "categories"
-    __table_args__ = (sa.UniqueConstraint("slug", "group_id", name="category_slug_group_id_key"),)
-
-    # ID Relationships
-    group_id: FilterableColumn[GUID] = mapped_column(GUID, sa.ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="categories", foreign_keys=[group_id])
-
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    name: FilterableColumn[str] = mapped_column(sa.String, index=True, nullable=False)
-    slug: FilterableColumn[str] = mapped_column(sa.String, index=True, nullable=False)
-    recipe_count: Mapped[int] = query_expression(default_expr=literal(0))
-    recipes: Mapped[list[RecipeModel]] = orm.relationship(
-        "RecipeModel", secondary=recipes_to_categories, back_populates="recipe_category"
+class Category(RecipeBase):
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="owned_categories",
+        source_field="group_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    name: fields.TextField[str] = UnboundedCharField(db_index=True)
+    slug: fields.TextField[str] = UnboundedCharField(db_index=True)
+    recipes: fields.ManyToManyRelation[RecipeModel]
+    groups: fields.ManyToManyRelation[Group] = fields.ManyToManyField(
+        "models.Group",
+        related_name="categories",
+        through="group_to_categories",
+        backward_key="category_id",
+        forward_key="group_id",
+        on_delete=fields.RESTRICT,
     )
 
-    @validates("name")
-    def validate_name(self, key, name):
-        assert name != ""
-        return name
+    cookbooks: fields.ManyToManyRelation[CookBook]
+    meal_plan_rules: fields.ManyToManyRelation[GroupMealPlanRules]
 
-    def __init__(self, name, group_id, **_) -> None:
-        self.group_id = group_id
-        self.name = name.strip()
-        self.slug = slugify(name)
+    class Meta:
+        table = "categories"
+        unique_together = (("slug", "group"),)

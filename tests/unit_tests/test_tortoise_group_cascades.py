@@ -18,9 +18,8 @@ from mealie.db.models._legacy_household.shopping_list import (
     ShoppingListMultiPurposeLabel,
     ShoppingListRecipeReference,
 )
-from mealie.db.models.group import Group
-from mealie.db.models.recipe.category import Category, cookbooks_to_categories, recipes_to_categories
-from mealie.db.models.recipe.ingredient import (
+from mealie.db.models._legacy_recipe.category import Category, cookbooks_to_categories, recipes_to_categories
+from mealie.db.models._legacy_recipe.ingredient import (
     IngredientFoodModel,
     IngredientFoodSubstitutionModel,
     IngredientUnitModel,
@@ -28,10 +27,11 @@ from mealie.db.models.recipe.ingredient import (
     RecipeIngredientSubstitutionModel,
     households_to_ingredient_foods,
 )
-from mealie.db.models.recipe.labels import MultiPurposeLabel
-from mealie.db.models.recipe.recipe import RecipeModel
-from mealie.db.models.recipe.tag import Tag, cookbooks_to_tags, recipes_to_tags
-from mealie.db.models.recipe.tool import Tool, cookbooks_to_tools, households_to_tools, recipes_to_tools
+from mealie.db.models._legacy_recipe.labels import MultiPurposeLabel
+from mealie.db.models._legacy_recipe.recipe import RecipeModel
+from mealie.db.models._legacy_recipe.tag import Tag, cookbooks_to_tags, recipes_to_tags
+from mealie.db.models._legacy_recipe.tool import Tool, cookbooks_to_tools, households_to_tools, recipes_to_tools
+from mealie.db.models.group import Group
 from mealie.db.models.users.users import User
 from mealie.repos import _users_coexistence as bridge
 from mealie.repos.all_repositories import AllRepositories

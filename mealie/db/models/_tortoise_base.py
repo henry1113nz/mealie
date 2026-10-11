@@ -19,12 +19,14 @@ class UUIDField(fields.UUIDField):
 
     SQL_TYPE = "CHAR(32)"
 
-    def to_db_value(self, value: Any, instance: type[Model] | Model) -> str | None:
+    def to_db_value(self, value: Any, instance: type[Model] | Model | None) -> str | None:
         if value is None:
             return None
 
         identifier = value if isinstance(value, UUID) else UUID(str(value))
-        if instance._meta.db.capabilities.dialect == "sqlite":
+        # QuerySet.update passes no instance; the bound field still owns its model.
+        model = instance if instance is not None else self.model
+        if model._meta.db.capabilities.dialect == "sqlite":
             return identifier.hex
         return str(identifier)
 

@@ -1,4 +1,5 @@
 import contextlib
+import inspect
 from pathlib import Path
 
 from PIL import UnidentifiedImageError
@@ -171,7 +172,7 @@ class BaseMigrator(BaseService):
             validated_recipes (list[Recipe]):
         """
         if self.add_migration_tag:
-            migration_tag = self.helpers.get_or_set_tags([self.name])[0]
+            migration_tag = (await self.helpers.get_or_set_tags([self.name]))[0]
 
         return_vars: list[tuple[str, UUID4, bool]] = []
 
@@ -193,12 +194,12 @@ class BaseMigrator(BaseService):
             recipe.group_id = self.group.id
 
             if recipe.tags:
-                recipe.tags = self.helpers.get_or_set_tags(x.name for x in recipe.tags)
+                recipe.tags = await self.helpers.get_or_set_tags(x.name for x in recipe.tags)
             else:
                 recipe.tags = []
 
             if recipe.recipe_category:
-                recipe.recipe_category = self.helpers.get_or_set_category(x.name for x in recipe.recipe_category)
+                recipe.recipe_category = await self.helpers.get_or_set_category(x.name for x in recipe.recipe_category)
 
             if self.add_migration_tag:
                 recipe.tags.append(migration_tag)
@@ -237,7 +238,7 @@ class BaseMigrator(BaseService):
 
         return return_vars
 
-    def rewrite_alias(self, recipe_dict: dict) -> dict:
+    async def rewrite_alias(self, recipe_dict: dict) -> dict:
         """A helper function to reassign attributes by an alias using a list
         of MigrationAlias objects to rewrite the alias attribute found in the recipe_dict
         to a
@@ -261,6 +262,8 @@ class BaseMigrator(BaseService):
             if alias.func:
                 try:
                     prop_value = alias.func(prop_value)
+                    if inspect.isawaitable(prop_value):
+                        prop_value = await prop_value
                 except Exception as e:
                     self.logger.exception(e)
                     continue
@@ -269,12 +272,12 @@ class BaseMigrator(BaseService):
 
         return recipe_dict
 
-    def clean_recipe_dictionary(self, recipe_dict: dict) -> Recipe:
+    async def clean_recipe_dictionary(self, recipe_dict: dict) -> Recipe:
         """
         Calls the rewrite_alias function and the Cleaner.clean function on a
         dictionary and returns the result unpacked into a Recipe object
         """
-        recipe_dict = self.rewrite_alias(recipe_dict)
+        recipe_dict = await self.rewrite_alias(recipe_dict)
 
         with contextlib.suppress(KeyError):
             del recipe_dict["id"]
@@ -282,20 +285,20 @@ class BaseMigrator(BaseService):
         recipe = cleaner.clean(recipe_dict, self.translator, url=recipe_dict.get("org_url", None))
         return recipe
 
-    def _record_image(self, slug: str) -> None:
+    async def _record_image(self, slug: str) -> None:
         """Stamps the recipe's image cache key, marking it as having a picture."""
         try:
-            self.db.recipes.update_image(slug)
+            (await self.db.recipes.update_image(slug))
         except Exception as e:
             self.logger.error(f"Failed to record image for {slug}: {e}")
 
-    def import_image(self, slug: str, src: str | Path, recipe_id: UUID4, extraction_root: Path | None = None):
+    async def import_image(self, slug: str, src: str | Path, recipe_id: UUID4, extraction_root: Path | None = None):
         try:
             if import_image(src, recipe_id, extraction_root=extraction_root) is not None:
-                self._record_image(slug)
+                (await self._record_image(slug))
         except UnidentifiedImageError as e:
             self.logger.error(f"Failed to import image for {slug}: {e}")
 
     async def scrape_image(self, slug: str, image_url: str, recipe_id: UUID4) -> None:
         if await scrape_image(image_url, recipe_id) is not None:
-            self._record_image(slug)
+            (await self._record_image(slug))

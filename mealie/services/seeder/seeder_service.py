@@ -13,6 +13,6 @@ class SeederService(BaseService):
         seeder = IngredientFoodsSeeder(self.repos, self.logger)
         await seeder.seed(locale)
 
-    def seed_units(self, locale: str) -> None:
+    async def seed_units(self, locale: str) -> None:
         seeder = IngredientUnitsSeeder(self.repos, self.logger)
-        seeder.seed(locale)
+        await seeder.seed(locale)

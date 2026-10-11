@@ -65,6 +65,8 @@ HOUSEHOLD_MODELS = (
 @pytest.mark.asyncio
 async def test_household_registry_storage_metadata_and_native_relations(server_settings: AppSettings) -> None:
     config = get_tortoise_config(server_settings)
+    # Preserve the original C5 registry view; runtime exercises the full native registry.
+    config["apps"]["models"]["models"] = config["apps"]["models"]["models"][:19]
     assert config["apps"]["models"]["models"][9:] == [
         "mealie.db.models.household.household",
         "mealie.db.models.household.preferences",

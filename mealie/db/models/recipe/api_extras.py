@@ -1,64 +1,46 @@
-import sqlalchemy as sa
-from sqlalchemy.orm import mapped_column
+from typing import TYPE_CHECKING
+from uuid import UUID
 
-from mealie.db.models._model_base import FilterableColumn, SqlAlchemyBase
-from mealie.db.models._model_utils.guid import GUID
+from tortoise import fields
 
+from mealie.db.models._tortoise_base import UnboundedCharField
 
-def api_extras(func):
-    """Decorator function to unpack the extras into a dict; requires an "extras" column"""
+from ._base import RecipeBase
 
-    def wrapper(*args, **kwargs):
-        extras = kwargs.pop("extras", None)
-
-        if extras is None:
-            extras = []
-        else:
-            extras = [{"key": key, "value": value} for key, value in extras.items()]
-
-        return func(*args, extras=extras, **kwargs)
-
-    return wrapper
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.ingredient import IngredientFoodModel
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class ExtrasGeneric:
-    """
-    Template for API extensions
-
-    This class is not an actual table, so it does not inherit from SqlAlchemyBase
-    """
-
-    id: FilterableColumn[int] = mapped_column(sa.Integer, primary_key=True)
-    key_name: FilterableColumn[str | None] = mapped_column(sa.String)
-    value: FilterableColumn[str | None] = mapped_column(sa.String)
-
-    def __init__(self, key, value) -> None:
-        self.key_name = key
-        self.value = value
-
-
-# used specifically for recipe extras
-class ApiExtras(ExtrasGeneric, SqlAlchemyBase):
-    __tablename__ = "api_extras"
-    recipee_id: FilterableColumn[GUID | None] = mapped_column(GUID, sa.ForeignKey("recipes.id"), index=True)
-
-
-class IngredientFoodExtras(ExtrasGeneric, SqlAlchemyBase):
-    __tablename__ = "ingredient_food_extras"
-    ingredient_food_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("ingredient_foods.id"), index=True
+class ApiExtras(RecipeBase):
+    recipee_id: UUID | None
+    recipee: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="extras",
+        source_field="recipee_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    key_name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    value: fields.TextField[str | None] = UnboundedCharField(null=True)
+
+    class Meta:
+        table = "api_extras"
 
 
-class ShoppingListExtras(ExtrasGeneric, SqlAlchemyBase):
-    __tablename__ = "shopping_list_extras"
-    shopping_list_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("shopping_lists.id"), index=True
+class IngredientFoodExtras(RecipeBase):
+    ingredient_food_id: UUID | None
+    ingredient_food: fields.ForeignKeyNullableRelation[IngredientFoodModel] = fields.ForeignKeyField(
+        "models.IngredientFoodModel",
+        related_name="extras",
+        source_field="ingredient_food_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    key_name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    value: fields.TextField[str | None] = UnboundedCharField(null=True)
 
-
-class ShoppingListItemExtras(ExtrasGeneric, SqlAlchemyBase):
-    __tablename__ = "shopping_list_item_extras"
-    shopping_list_item_id: FilterableColumn[GUID | None] = mapped_column(
-        GUID, sa.ForeignKey("shopping_list_items.id"), index=True
-    )
+    class Meta:
+        table = "ingredient_food_extras"

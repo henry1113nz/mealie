@@ -60,5 +60,5 @@ class GroupSelfServiceController(BaseUserController):
         return await self.repos.group_preferences.update(self.group_id, new_pref)
 
     @router.get("/storage", response_model=GroupStorage)
-    def get_storage(self):
-        return self.service.calculate_group_storage()
+    async def get_storage(self):
+        return await self.service.calculate_group_storage()

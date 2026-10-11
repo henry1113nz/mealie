@@ -10,6 +10,9 @@ from mealie.db.models._tortoise_base import CalendarDateField, TortoiseBase, Unb
 
 if TYPE_CHECKING:
     from ..group.group import Group
+    from ..recipe.category import Category
+    from ..recipe.recipe import RecipeModel
+    from ..recipe.tag import Tag
     from ..users.users import User
     from .household import Household
 
@@ -43,6 +46,23 @@ class GroupMealPlanRules(TortoiseBase):
         through="plan_rules_to_households",
         backward_key="group_plan_rule_id",
         forward_key="household_id",
+        on_delete=fields.RESTRICT,
+    )
+
+    categories: fields.ManyToManyRelation[Category] = fields.ManyToManyField(
+        "models.Category",
+        related_name="meal_plan_rules",
+        through="plan_rules_to_categories",
+        backward_key="group_plan_rule_id",
+        forward_key="category_id",
+        on_delete=fields.RESTRICT,
+    )
+    tags: fields.ManyToManyRelation[Tag] = fields.ManyToManyField(
+        "models.Tag",
+        related_name="meal_plan_rules",
+        through="plan_rules_to_tags",
+        backward_key="plan_rule_id",
+        forward_key="tag_id",
         on_delete=fields.RESTRICT,
     )
 
@@ -84,7 +104,15 @@ class GroupMealPlan(TortoiseBase):
         db_index=True,
         on_delete=fields.RESTRICT,
     )
-    recipe_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="meal_entries",
+        source_field="recipe_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
 
     class Meta:
         table = "group_meal_plans"

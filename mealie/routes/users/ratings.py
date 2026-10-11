@@ -20,7 +20,7 @@ class UserRatingsController(BaseUserController):
     def group_recipes(self):
         return get_repositories(self.session, group_id=self.group_id, household_id=None).recipes
 
-    def get_recipe_or_404(self, slug_or_id: str | UUID):
+    async def get_recipe_or_404(self, slug_or_id: str | UUID):
         """Fetches a recipe by slug or id, or raises a 404 error if not found."""
         if isinstance(slug_or_id, str):
             try:
@@ -29,9 +29,9 @@ class UserRatingsController(BaseUserController):
                 pass
 
         if isinstance(slug_or_id, UUID):
-            recipe = self.group_recipes.get_one(slug_or_id, key="id")
+            recipe = await self.group_recipes.get_one(slug_or_id, key="id")
         else:
-            recipe = self.group_recipes.get_one(slug_or_id, key="slug")
+            recipe = await self.group_recipes.get_one(slug_or_id, key="slug")
 
         if not recipe:
             raise HTTPException(
@@ -58,7 +58,7 @@ class UserRatingsController(BaseUserController):
         """Sets the user's rating for a recipe"""
         assert_user_change_allowed(id, self.user, self.user)
 
-        recipe = self.get_recipe_or_404(slug)
+        recipe = await self.get_recipe_or_404(slug)
         user_rating = await self.repos.user_ratings.get_by_user_and_recipe(id, recipe.id)
         if not user_rating:
             await self.repos.user_ratings.create(

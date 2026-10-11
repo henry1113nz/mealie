@@ -28,6 +28,7 @@ from mealie.services.recipe.organizer_resolver import OrganizerResolver
 from mealie.services.recipe.recipe_data_service import RecipeDataService
 from mealie.services.scraper.cleaner import NO_IMAGE
 from tests.utils import api_routes
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 from tests.utils.helpers import parse_sse_events
@@ -471,7 +472,7 @@ def test_organizers_are_skipped_when_there_is_nothing_to_do(
 ):
     """With no existing organizers and creation switched off, the step can't do anything."""
 
-    assert not any(OrganizerResolver(unique_user.repos).existing_names().values()), (
+    assert not any(run_async(OrganizerResolver(unique_user.repos).existing_names()).values()), (
         "this test needs a group that has no organizers yet"
     )
 

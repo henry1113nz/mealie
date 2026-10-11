@@ -1,9 +1,9 @@
 import pytest
 import sqlalchemy as sa
 
+from mealie.db.models._legacy_recipe.ingredient import IngredientFoodModel
+from mealie.db.models._legacy_recipe.recipe import RecipeModel
 from mealie.db.models._legacy_users import LongLiveToken, User
-from mealie.db.models.recipe.ingredient import IngredientFoodModel
-from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.services.query_filter.builder import (
     LogicalOperator,
     NonFilterableValueError,

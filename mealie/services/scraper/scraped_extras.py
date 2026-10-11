@@ -32,7 +32,7 @@ class ScrapedExtras:
     def set_tools(self, tools: list[str]) -> None:
         self._tools = tools
 
-    def use_tags(self, ctx: ScraperContext) -> list[TagOut]:
+    async def use_tags(self, ctx: ScraperContext) -> list[TagOut]:
         if not self._tags:
             return []
 
@@ -48,18 +48,18 @@ class ScrapedExtras:
             seen_tag_slugs.add(slugify_tag)
 
             # Check if tag exists
-            if db_tag := repo.get_one(slugify_tag, "slug"):
+            if db_tag := (await repo.get_one(slugify_tag, "slug")):
                 tags.append(db_tag)
                 continue
 
             save_data = TagSave(name=tag, group_id=ctx.repos.group_id)
-            db_tag = repo.create(save_data)
+            db_tag = await repo.create(save_data)
 
             tags.append(db_tag)
 
         return tags
 
-    def use_categories(self, ctx: ScraperContext) -> list[TagOut]:
+    async def use_categories(self, ctx: ScraperContext) -> list[TagOut]:
         if not self._categories:
             return []
 
@@ -75,18 +75,18 @@ class ScrapedExtras:
             seen_category_slugs.add(slugify_category)
 
             # Check if category exists
-            if db_category := repo.get_one(slugify_category, "slug"):
+            if db_category := (await repo.get_one(slugify_category, "slug")):
                 categories.append(db_category)
                 continue
 
             save_data = CategorySave(name=category, group_id=ctx.repos.group_id)
-            db_category = repo.create(save_data)
+            db_category = await repo.create(save_data)
 
             categories.append(db_category)
 
         return categories
 
-    def use_tools(self, ctx: ScraperContext) -> list[RecipeToolOut]:
+    async def use_tools(self, ctx: ScraperContext) -> list[RecipeToolOut]:
         if not self._tools:
             return []
 
@@ -102,12 +102,12 @@ class ScrapedExtras:
             seen_tool_slugs.add(slugify_tool)
 
             # Check if tool exists
-            if db_tool := repo.get_one(slugify_tool, "slug"):
+            if db_tool := (await repo.get_one(slugify_tool, "slug")):
                 tools.append(db_tool)
                 continue
 
             save_data = RecipeToolSave(name=tool, group_id=ctx.repos.group_id)
-            db_tool = repo.create(save_data)
+            db_tool = await repo.create(save_data)
 
             tools.append(db_tool)
 

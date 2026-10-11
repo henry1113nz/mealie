@@ -5,17 +5,17 @@ import sqlalchemy.orm as orm
 from pydantic import ConfigDict
 from sqlalchemy.orm import Mapped, mapped_column
 
+from .._legacy_recipe.ingredient import households_to_ingredient_foods
+from .._legacy_recipe.tool import households_to_tools
 from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
 from .._model_utils.auto_init import auto_init
 from .._model_utils.guid import GUID
-from ..recipe.ingredient import households_to_ingredient_foods
-from ..recipe.tool import households_to_tools
 from .household_to_recipe import HouseholdToRecipe
 
 if TYPE_CHECKING:
     from .._legacy_groups import Group
+    from .._legacy_recipe import IngredientFoodModel, RecipeModel, Tool
     from .._legacy_users import User
-    from ..recipe import IngredientFoodModel, RecipeModel, Tool
     from . import (
         CookBook,
         GroupEventNotifierModel,

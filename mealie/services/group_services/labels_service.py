@@ -35,12 +35,12 @@ class MultiPurposeLabelService:
         await shopping_list_multi_purpose_labels_repo.create_many(new_shopping_list_labels)
 
     async def create_one(self, data: MultiPurposeLabelCreate) -> MultiPurposeLabelOut:
-        label = self.labels.create(data.cast(MultiPurposeLabelSave, group_id=self.repos.group_id))
+        label = await self.labels.create(data.cast(MultiPurposeLabelSave, group_id=self.repos.group_id))
         await self._update_shopping_list_label_references([label])
         return label
 
     async def create_many(self, data: list[MultiPurposeLabelCreate]) -> list[MultiPurposeLabelOut]:
-        labels = self.labels.create_many(
+        labels = await self.labels.create_many(
             [label.cast(MultiPurposeLabelSave, group_id=self.repos.group_id) for label in data]
         )
         await self._update_shopping_list_label_references(labels)

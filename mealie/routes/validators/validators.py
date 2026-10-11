@@ -44,9 +44,9 @@ async def validate_household(name: str, session: Session = Depends(generate_sess
 
 
 @router.get("/recipe", response_model=ValidationResponse)
-def validate_recipe(group_id: UUID, name: str, session: Session = Depends(generate_session)):
+async def validate_recipe(group_id: UUID, name: str, session: Session = Depends(generate_session)):
     """Checks if a recipe with the given slug exists"""
     db = get_repositories(session, group_id=None, household_id=None)
     slug = slugify(name)
-    existing_element = db.recipes.get_by_slug(group_id, slug)
+    existing_element = await db.recipes.get_by_slug(group_id, slug)
     return ValidationResponse(valid=existing_element is None)

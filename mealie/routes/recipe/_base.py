@@ -7,7 +7,7 @@ from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_cookbooks import RepositoryCookbooks
 from mealie.repos.repository_recipes import RepositoryRecipes
 from mealie.routes._base import BaseCrudController
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.schema.recipe import Recipe
 from mealie.schema.recipe.recipe import (
     CreateRecipe,
@@ -50,4 +50,4 @@ class BaseRecipeController(BaseCrudController):
 
     @cached_property
     def mixins(self):
-        return HttpRepo[CreateRecipe, Recipe, Recipe](self.recipes, self.logger)
+        return AsyncHttpRepo[CreateRecipe, Recipe, Recipe](self.recipes, self.logger)

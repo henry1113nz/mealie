@@ -78,7 +78,7 @@ class NextcloudMigrator(BaseMigrator):
             all_recipes = []
             for _, nc_dir in nextcloud_dirs.items():
                 try:
-                    recipe = self.clean_recipe_dictionary(nc_dir.recipe)
+                    recipe = await self.clean_recipe_dictionary(nc_dir.recipe)
                     all_recipes.append(recipe)
                 except Exception as e:
                     self.logger.exception(e)
@@ -97,4 +97,4 @@ class NextcloudMigrator(BaseMigrator):
                 if status:
                     nc_dir = nextcloud_dirs[slug]
                     if nc_dir.image:
-                        self.import_image(slug, nc_dir.image, recipe_id, extraction_root=base_dir)
+                        await self.import_image(slug, nc_dir.image, recipe_id, extraction_root=base_dir)

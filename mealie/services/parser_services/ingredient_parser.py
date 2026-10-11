@@ -39,6 +39,7 @@ class BruteForceParser(ABCIngredientParser):
     """
 
     async def parse_one(self, ingredient_string: str) -> ParsedIngredient:
+        await self.data_matcher.load_data()
         bfi = brute.parse(ingredient_string, self)
 
         parsed_ingredient = ParsedIngredient(
@@ -76,6 +77,7 @@ class BruteForceParser(ABCIngredientParser):
         return matched_ingredient
 
     async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
+        await self.data_matcher.load_data()
         return [await self.parse_one(ingredient) for ingredient in ingredients]
 
 
@@ -281,6 +283,7 @@ class NLPParser(ABCIngredientParser):
         return self.find_ingredient_match(parsed_ingredient)
 
     async def parse_one(self, ingredient_string: str) -> ParsedIngredient:
+        await self.data_matcher.load_data()
         from ingredient_parser import parse_ingredient
 
         database_units = {}
@@ -297,6 +300,7 @@ class NLPParser(ABCIngredientParser):
         return self._convert_ingredient(parsed_ingredient)
 
     async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
+        await self.data_matcher.load_data()
         return [await self.parse_one(ingredient) for ingredient in ingredients]
 
 

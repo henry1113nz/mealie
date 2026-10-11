@@ -98,7 +98,7 @@ class RecipeKeeperMigrator(BaseMigrator):
                 for recipe_div in soup.body.find_all("div", "recipe-details"):
                     recipes_as_dicts.append(parse_recipe_div(recipe_div, source_dir))
 
-            recipes = [self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
+            recipes = [await self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
             results = await self.import_recipes_to_database(recipes)
             for (slug, recipe_id, status), recipe in zip(results, recipes, strict=False):
                 if status:
@@ -109,4 +109,4 @@ class RecipeKeeperMigrator(BaseMigrator):
                     except StopIteration:
                         continue
 
-                    self.import_image(slug, recipe.image, recipe_id, extraction_root=source_dir)
+                    await self.import_image(slug, recipe.image, recipe_id, extraction_root=source_dir)

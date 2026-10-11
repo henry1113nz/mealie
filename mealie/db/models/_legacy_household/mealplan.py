@@ -5,17 +5,17 @@ from sqlalchemy import Column, Date, ForeignKey, String, Table, UniqueConstraint
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, mapped_column
 
-from mealie.db.models.recipe.tag import Tag, plan_rules_to_tags
+from mealie.db.models._legacy_recipe.tag import Tag, plan_rules_to_tags
 
+from .._legacy_recipe.category import Category, plan_rules_to_categories
 from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
 from .._model_utils.auto_init import auto_init
 from .._model_utils.guid import GUID
-from ..recipe.category import Category, plan_rules_to_categories
 
 if TYPE_CHECKING:
     from .._legacy_groups import Group
+    from .._legacy_recipe import RecipeModel
     from .._legacy_users import User
-    from ..recipe import RecipeModel
     from .household import Household
 
 plan_rules_to_households = Table(

@@ -14,7 +14,7 @@ from .._model_utils.auto_init import auto_init
 from .._model_utils.guid import GUID
 
 if TYPE_CHECKING:
-    from ..recipe import RecipeModel
+    from .._legacy_recipe import RecipeModel
     from .household import Household
 
 
@@ -40,7 +40,7 @@ def update_recipe_last_made(session: Session, target: HouseholdToRecipe):
     if not target.last_made:
         return
 
-    from mealie.db.models.recipe.recipe import RecipeModel
+    from mealie.db.models._legacy_recipe.recipe import RecipeModel
 
     recipe = session.query(RecipeModel).filter(RecipeModel.id == target.recipe_id).first()
     if not recipe:

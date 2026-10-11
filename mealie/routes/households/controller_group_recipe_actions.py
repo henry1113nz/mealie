@@ -91,7 +91,7 @@ class GroupRecipeActionController(BaseUserController):
 
         recipe_service = RecipeService(self.repos, self.user, await self.get_household(), translator=self.translator)
         try:
-            recipe = recipe_service.get_one(recipe_slug)
+            recipe = await recipe_service.get_one(recipe_slug)
         except NoEntryFound as e:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,

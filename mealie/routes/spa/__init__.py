@@ -228,7 +228,7 @@ async def serve_recipe_with_meta_public(
             return response_404()
 
         group_repos = AllRepositories(session, group_id=group.id, household_id=None)
-        recipe = group_repos.recipes.get_one(recipe_slug)
+        recipe = await group_repos.recipes.get_one(recipe_slug)
 
         if not (recipe and recipe.settings) or not recipe.settings.public:
             return response_404()
@@ -251,7 +251,7 @@ async def serve_recipe_with_meta(
     try:
         group_repos = AllRepositories(session, group_id=user.group_id, household_id=None)
 
-        recipe = group_repos.recipes.get_one(recipe_slug, "slug")
+        recipe = await group_repos.recipes.get_one(recipe_slug, "slug")
         if recipe is None:
             return response_404()
 
@@ -264,7 +264,7 @@ async def serve_recipe_with_meta(
 async def serve_shared_recipe_with_meta(group_slug: str, token_id: str, session: Session = Depends(generate_session)):
     try:
         public_repos = AllRepositories(session, group_id=None)
-        token_summary = public_repos.recipe_share_tokens.get_one(token_id)
+        token_summary = await public_repos.recipe_share_tokens.get_one(token_id)
         if token_summary is None:
             raise Exception("Token Not Found")
 

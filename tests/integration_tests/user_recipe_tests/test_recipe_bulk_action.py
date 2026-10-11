@@ -2,8 +2,8 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
-import sqlalchemy
 from fastapi.testclient import TestClient
+from tortoise.exceptions import DoesNotExist
 
 from mealie.core.dependencies.dependencies import validate_file_token
 from mealie.schema.recipe.recipe_bulk_actions import ExportTypes
@@ -32,7 +32,7 @@ def ten_slugs(api_client: TestClient, unique_user: TestUser) -> Generator[list[s
     for slug in slugs:
         try:
             database.recipes.delete(slug)
-        except sqlalchemy.exc.NoResultFound:
+        except DoesNotExist:
             pass
 
 

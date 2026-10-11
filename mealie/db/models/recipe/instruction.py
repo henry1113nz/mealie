@@ -1,57 +1,67 @@
-from pydantic import ConfigDict
-from sqlalchemy import ForeignKey, Integer, String, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from typing import TYPE_CHECKING
+from uuid import UUID
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from tortoise import fields
 
+from mealie.db.models._tortoise_base import UnboundedCharField, UUIDField
 
-class RecipeIngredientRefLink(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "recipe_ingredient_ref_link"
-    instruction_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("recipe_instructions.id"), index=True)
-    reference_id: Mapped[GUID | None] = mapped_column(GUID, index=True)
+from ._base import RecipeBase
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+if TYPE_CHECKING:
+    from mealie.db.models.recipe.recipe import RecipeModel
 
 
-class RecipeNoteRefLink(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "recipe_note_ref_link"
-    instruction_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("recipe_instructions.id"), index=True)
-    reference_id: Mapped[GUID | None] = mapped_column(GUID, index=True)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-
-class RecipeInstruction(SqlAlchemyBase):
-    __tablename__ = "recipe_instructions"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    recipe_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("recipes.id"), index=True)
-    position: Mapped[int | None] = mapped_column(Integer, index=True)
-    type: Mapped[str | None] = mapped_column(String, default="")
-    title: Mapped[str | None] = mapped_column(String)  # This is the section title
-    text: Mapped[str | None] = mapped_column(String)
-    summary: Mapped[str | None] = mapped_column(String)
-
-    ingredient_references: Mapped[list[RecipeIngredientRefLink]] = orm.relationship(
-        RecipeIngredientRefLink, cascade="all, delete-orphan"
+class RecipeIngredientRefLink(RecipeBase):
+    instruction_id: UUID | None
+    instruction: fields.ForeignKeyNullableRelation[RecipeInstruction] = fields.ForeignKeyField(
+        "models.RecipeInstruction",
+        related_name="ingredient_references",
+        source_field="instruction_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
-    note_references: Mapped[list[RecipeNoteRefLink]] = orm.relationship(RecipeNoteRefLink, cascade="all, delete-orphan")
-    model_config = ConfigDict(
-        exclude={
-            "id",
-            "ingredient_references",
-            "note_references",
-        }
-    )
+    reference_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
 
-    @auto_init()
-    def __init__(self, session, ingredient_references=None, note_references=None, **_) -> None:
-        self.ingredient_references = [
-            RecipeIngredientRefLink(**ref, session=session) for ref in (ingredient_references or [])
-        ]
-        self.note_references = [RecipeNoteRefLink(**ref, session=session) for ref in (note_references or [])]
+    class Meta:
+        table = "recipe_ingredient_ref_link"
+
+
+class RecipeInstruction(RecipeBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    recipe_id: UUID | None
+    recipe: fields.ForeignKeyNullableRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="recipe_instructions",
+        source_field="recipe_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    position: fields.IntField[int | None] = fields.IntField(null=True, db_index=True)
+    type: fields.TextField[str | None] = UnboundedCharField(null=True, default="")
+    title: fields.TextField[str | None] = UnboundedCharField(null=True)
+    text: fields.TextField[str | None] = UnboundedCharField(null=True)
+    summary: fields.TextField[str | None] = UnboundedCharField(null=True)
+    ingredient_references: fields.ReverseRelation[RecipeIngredientRefLink]
+    note_references: fields.ReverseRelation[RecipeNoteRefLink]
+
+    class Meta:
+        table = "recipe_instructions"
+        ordering = ("position",)
+
+
+class RecipeNoteRefLink(RecipeBase):
+    instruction_id: UUID | None
+    instruction: fields.ForeignKeyNullableRelation[RecipeInstruction] = fields.ForeignKeyField(
+        "models.RecipeInstruction",
+        related_name="note_references",
+        source_field="instruction_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    reference_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+
+    class Meta:
+        table = "recipe_note_ref_link"

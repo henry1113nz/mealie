@@ -49,6 +49,12 @@ class SynchronousRepository:
     def __init__(self, repository: Any) -> None:
         self.repository = repository
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "repository":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.repository, name, value)
+
     def __getattr__(self, name: str) -> Any:
         value = getattr(self.repository, name)
         if not callable(value):
@@ -74,6 +80,16 @@ class SynchronousRepositories(AllRepositories):
     def __getattribute__(self, name: str) -> Any:
         value = super().__getattribute__(name)
         if name in {
+            "recipes",
+            "ingredient_foods",
+            "ingredient_units",
+            "tools",
+            "comments",
+            "categories",
+            "tags",
+            "recipe_share_tokens",
+            "recipe_timeline_events",
+            "group_multi_purpose_labels",
             "households",
             "household_preferences",
             "household_recipes",

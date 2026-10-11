@@ -55,7 +55,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
         self.primary_key = primary_key
         self.model = sql_model
         self.schema = schema
-        self.group_id = group_id if isinstance(group_id, UUID) else None
+        self.group_id = UUID(str(group_id)) if group_id else None
         self.household_id: UUID | None = None
 
     async def _query(self) -> QuerySet[DBModel]:
@@ -64,8 +64,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
             if self.model is User:
                 query = query.filter(group_id=self.group_id)
             elif self.model is UserToRecipe:
-                recipes = await bridge.execute("SELECT id FROM recipes WHERE group_id = ?", [self.group_id])
-                query = query.filter(recipe_id__in=[row["id"] for row in recipes])
+                query = query.filter(recipe__group_id=self.group_id)
             else:
                 query = query.filter(user__group_id=self.group_id)
         return query

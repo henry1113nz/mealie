@@ -32,6 +32,6 @@ class RecipeExportController(BaseRecipeController):
 
         """
         with get_temporary_path(auto_unlink=False) as temp_path:
-            recipe = self.mixins.get_one(slug)
+            recipe = await self.mixins.get_one(slug)
             file = (await self.get_service()).render_template(recipe, temp_path, template_name)
             return FileResponse(file, background=BackgroundTask(rmtree, temp_path))

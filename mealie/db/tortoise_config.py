@@ -6,7 +6,7 @@ from mealie.core.config import get_app_settings
 from mealie.core.settings import AppSettings
 from mealie.core.settings.db_providers import PostgresProvider, SQLiteProvider
 
-# Register only converted domains; the remaining models still use SQLAlchemy.
+# Register every runtime model explicitly; legacy metadata remains only for C7.
 TORTOISE_MODEL_MODULES: tuple[str, ...] = (
     "mealie.db.models.server.task",
     "mealie.db.models.users.users",
@@ -27,6 +27,21 @@ TORTOISE_MODEL_MODULES: tuple[str, ...] = (
     "mealie.db.models.household.recipe_action",
     "mealie.db.models.household.shopping_list",
     "mealie.db.models.household.webhooks",
+    "mealie.db.models.recipe.api_extras",
+    "mealie.db.models.recipe.assets",
+    "mealie.db.models.recipe.category",
+    "mealie.db.models.recipe.comment",
+    "mealie.db.models.recipe.ingredient",
+    "mealie.db.models.recipe.instruction",
+    "mealie.db.models.recipe.labels",
+    "mealie.db.models.recipe.note",
+    "mealie.db.models.recipe.nutrition",
+    "mealie.db.models.recipe.recipe",
+    "mealie.db.models.recipe.recipe_timeline",
+    "mealie.db.models.recipe.settings",
+    "mealie.db.models.recipe.shared",
+    "mealie.db.models.recipe.tag",
+    "mealie.db.models.recipe.tool",
 )
 DEFAULT_CONNECTION = "default"
 

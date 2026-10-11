@@ -2,7 +2,7 @@ from pydantic import UUID4, ConfigDict, field_validator
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.recipe import RecipeModel, Tool
+from mealie.db.models._legacy_recipe import RecipeModel, Tool
 from mealie.schema._mealie import MealieModel
 
 

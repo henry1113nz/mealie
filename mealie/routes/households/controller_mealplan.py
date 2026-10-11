@@ -67,7 +67,7 @@ class GroupMealplanController(BaseCrudController):
         ).recipes.by_user(self.user.id)
 
         qf_string = QueryFilterBuilder.combine_filters(*[rule.query_filter_string for rule in rules])
-        recipes_data = cross_household_recipes.page_all(
+        recipes_data = await cross_household_recipes.page_all(
             pagination=PaginationQuery(
                 page=1,
                 per_page=limit,

@@ -66,11 +66,7 @@ class AsyncGroupRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposit
                     "id", "group_id", "household_id", "username", "full_name"
                 )
             if "categories" in target.model_fields:
-                data["categories"] = await bridge.execute(
-                    "SELECT categories.* FROM categories JOIN group_to_categories "
-                    "ON categories.id = group_to_categories.category_id WHERE group_to_categories.group_id = ?",
-                    [entry.id],
-                )
+                data["categories"] = await entry.categories.all().values()
             if "webhooks" in target.model_fields:
                 data["webhooks"] = await GroupWebhooksModel.filter(group_id=entry.id).values()
         elif isinstance(entry, AIProviderSettings):
@@ -150,18 +146,16 @@ class RepositoryGroup(AsyncGroupRepository[GroupInDB, Group]):
             return await super().update(match_value, values)
 
     async def _replace_categories(self, group_id: UUID, categories: list[dict[str, Any]]) -> None:
-        # Categories remain in C6. Execute their join-table mutation through the
-        # owning Tortoise transaction and reject cross-group reassignment.
-        for category in categories:
-            existing = await bridge.related_record("categories", "id", category["id"], group_id=group_id)
-            if not existing:
-                raise ValueError("Category does not belong to this group")
-        await bridge.execute("DELETE FROM group_to_categories WHERE group_id = ?", [group_id])
-        for category in categories:
-            await bridge.execute(
-                "INSERT INTO group_to_categories (group_id, category_id) VALUES (?, ?)",
-                [group_id, category["id"]],
-            )
+        from mealie.db.models.recipe.category import Category
+
+        identifiers = {UUID(str(category["id"])) for category in categories}
+        entries = await Category.filter(id__in=list(identifiers), group_id=group_id)
+        if {entry.id for entry in entries} != identifiers:
+            raise ValueError("Category does not belong to this group")
+        group = await Group.get(id=group_id)
+        await group.categories.clear()
+        if entries:
+            await group.categories.add(*entries)
 
     async def get_by_name(self, name: str) -> GroupInDB | None:
         return await self.get_one(name, key="name")

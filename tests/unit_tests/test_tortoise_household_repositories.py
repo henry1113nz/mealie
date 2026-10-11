@@ -93,10 +93,10 @@ async def test_household_statistics_follow_recipe_users_and_group_owned_taxonomy
     insert_native_recipe(server_engine, first_user)
     insert_native_recipe(server_engine, await repos.users.get_one(second_user.id))
     insert_native_recipe(server_engine, foreign_user)
-    repos.categories.create({"name": "Owned category", "group_id": repos.group_id})
-    repos.tags.create({"name": "Owned tag", "group_id": repos.group_id})
-    repos.tools.create({"name": "Owned tool", "group_id": repos.group_id})
-    other.categories.create({"name": "Other category", "group_id": other.group_id})
+    await repos.categories.create({"name": "Owned category", "group_id": repos.group_id})
+    await repos.tags.create({"name": "Owned tag", "group_id": repos.group_id})
+    await repos.tools.create({"name": "Owned tool", "group_id": repos.group_id})
+    await other.categories.create({"name": "Other category", "group_id": other.group_id})
     statistics = await repos.households.statistics(first_user.group_id, first_user.household_id)
     assert statistics.total_recipes == 2
     assert statistics.total_users == 1

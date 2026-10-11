@@ -18,7 +18,7 @@ from recipe_scrapers.plugins import SchemaOrgFillPlugin
 from slugify import slugify
 
 import mealie.services.scraper.recipe_scraper as recipe_scraper_module
-from mealie.db.models.recipe import RecipeModel
+from mealie.db.models._legacy_recipe import RecipeModel
 from mealie.pkgs.safehttp.fetch import FetchResult
 from mealie.pkgs.safehttp.transport import AsyncSafeTransport
 from mealie.schema.cookbook.cookbook import SaveCookBook

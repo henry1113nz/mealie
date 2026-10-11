@@ -36,24 +36,25 @@ class DataMatcher:
         self._foods_by_alias: dict[str, IngredientFood] | None = None
         self._units_by_alias: dict[str, IngredientUnit] | None = None
 
+    async def load_data(self) -> None:
+        query = PaginationQuery(page=1, per_page=-1)
+        if self._foods_by_id is None:
+            all_foods = (await self.repos.ingredient_foods.page_all(query)).items
+            self._foods_by_id = {food.id: food for food in all_foods}
+        if self._units_by_id is None:
+            all_units = (await self.repos.ingredient_units.page_all(query)).items
+            self._units_by_id = {unit.id: unit for unit in all_units}
+
     @property
     def foods_by_id(self) -> dict[UUID4, IngredientFood]:
         if self._foods_by_id is None:
-            foods_repo = self.repos.ingredient_foods
-            query = PaginationQuery(page=1, per_page=-1)
-            all_foods = foods_repo.page_all(query).items
-            self._foods_by_id = {food.id: food for food in all_foods}
-
+            raise RuntimeError("Load matcher data before matching ingredients")
         return self._foods_by_id
 
     @property
     def units_by_id(self) -> dict[UUID4, IngredientUnit]:
         if self._units_by_id is None:
-            units_repo = self.repos.ingredient_units
-            query = PaginationQuery(page=1, per_page=-1)
-            all_units = units_repo.page_all(query).items
-            self._units_by_id = {unit.id: unit for unit in all_units}
-
+            raise RuntimeError("Load matcher data before matching ingredients")
         return self._units_by_id
 
     @property

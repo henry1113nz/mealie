@@ -5,12 +5,10 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import copytree, rmtree
-from textwrap import dedent
 from typing import Any
 from uuid import UUID, uuid4
 from zipfile import ZipFile
 
-import sqlalchemy as sa
 from fastapi import UploadFile
 
 from mealie.core import exceptions
@@ -18,7 +16,7 @@ from mealie.lang.providers import Translator
 from mealie.pkgs import cache
 from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
-from mealie.repos.repository_generic import RepositoryGeneric
+from mealie.repos.repository_users import AsyncUserRepository
 from mealie.schema import mapper
 from mealie.schema.household.household import HouseholdInDB, HouseholdRecipeUpdate
 from mealie.schema.recipe.recipe import CreateRecipe, Recipe, create_recipe_slug
@@ -66,77 +64,42 @@ class RecipeServiceBase(BaseService):
 
 
 class RecipeService(RecipeServiceBase):
-    def _get_recipe(self, data: str | UUID, key: str | None = None) -> Recipe:
-        recipe = self.group_recipes.get_one(data, key)
+    async def _get_recipe(self, data: str | UUID, key: str | None = None) -> Recipe:
+        recipe = await self.group_recipes.get_one(data, key)
         if recipe is None:
             raise exceptions.NoEntryFound("Recipe not found.")
         return recipe
 
-    def can_delete(self, recipe_slugs: list[str]) -> bool:
+    async def can_delete(self, recipe_slugs: list[str]) -> bool:
         if self.user.admin:
             return True
 
-        # Deletion requires ownership; collaborative editing rules (can_update) do not apply
-        model = self.group_recipes.model
-        owned_count = self.group_recipes.session.scalar(
-            sa.select(sa.func.count())
-            .select_from(model)
-            .where(
-                model.slug.in_(recipe_slugs),
-                model.group_id == self.user.group_id,
-                model.user_id == self.user.id,
-            )
-        )
-        return owned_count == len(recipe_slugs)
+        recipes = await self.group_recipes.multi_query({"slug__in": recipe_slugs}, limit=len(recipe_slugs))
+        return len(recipes) == len(recipe_slugs) and all(recipe.user_id == self.user.id for recipe in recipes)
 
-    def can_update(self, recipe_slugs: list[str]) -> bool:
+    async def can_update(self, recipe_slugs: list[str]) -> bool:
         if self.user.admin:
             return True
 
-        sql = dedent(
-            """
-            SELECT
-                CASE
-                    WHEN COUNT(*) = SUM(
-                        CASE
-                            -- User owns the recipe
-                            WHEN r.user_id = :user_id THEN 1
-
-                            -- Not owner: check if recipe is locked
-                            WHEN COALESCE(rs.locked, TRUE) = TRUE THEN 0
-
-                            -- Different household: check household policy
-                            WHEN
-                                u.household_id != :household_id
-                                AND COALESCE(hp.lock_recipe_edits_from_other_households, TRUE) = TRUE
-                            THEN 0
-
-                            -- All other cases: can update
-                            ELSE 1
-                        END
-                    ) THEN 1
-                    ELSE 0
-                END AS all_can_update
-            FROM recipes r
-            LEFT JOIN recipe_settings rs ON rs.recipe_id = r.id
-            LEFT JOIN users u ON u.id = r.user_id
-            LEFT JOIN households h ON h.id = u.household_id
-            LEFT JOIN household_preferences hp ON hp.household_id = h.id
-            WHERE r.slug IN :recipe_slugs AND r.group_id = :group_id;
-            """
-        )
-
-        result = self.repos.session.execute(
-            sa.text(sql).bindparams(sa.bindparam("recipe_slugs", expanding=True)),
-            params={
-                "user_id": self.repos.uuid_to_str(self.user.id),
-                "household_id": self.repos.uuid_to_str(self.household.id),
-                "group_id": self.repos.uuid_to_str(self.user.group_id),
-                "recipe_slugs": recipe_slugs,
-            },
-        ).scalar()
-
-        return bool(result)
+        recipes = await self.group_recipes.multi_query({"slug__in": recipe_slugs}, limit=len(recipe_slugs))
+        if not recipes:
+            return False
+        for recipe in recipes:
+            if recipe.user_id == self.user.id:
+                continue
+            if recipe.settings is None or recipe.settings.locked:
+                return False
+            if recipe.household_id != self.household.id:
+                household = await get_repositories(
+                    self.repos.session, group_id=self.user.group_id, household_id=None
+                ).households.get_one(recipe.household_id)
+                if (
+                    household is None
+                    or household.preferences is None
+                    or household.preferences.lock_recipe_edits_from_other_households
+                ):
+                    return False
+        return True
 
     def can_lock_unlock(self, recipe: Recipe) -> bool:
         return recipe.user_id == self.user.id
@@ -194,7 +157,7 @@ class RecipeService(RecipeServiceBase):
 
         return Recipe(**additional_attrs)
 
-    def get_one(self, slug_or_id: str | UUID) -> Recipe:
+    async def get_one(self, slug_or_id: str | UUID) -> Recipe:
         if isinstance(slug_or_id, str):
             try:
                 slug_or_id = UUID(slug_or_id)
@@ -202,10 +165,10 @@ class RecipeService(RecipeServiceBase):
                 pass
 
         if isinstance(slug_or_id, UUID):
-            return self._get_recipe(slug_or_id, "id")
+            return await self._get_recipe(slug_or_id, "id")
 
         else:
-            return self._get_recipe(slug_or_id, "slug")
+            return await self._get_recipe(slug_or_id, "slug")
 
     async def create_one(self, create_data: Recipe | CreateRecipe) -> Recipe:
         if create_data.name is None:
@@ -227,7 +190,7 @@ class RecipeService(RecipeServiceBase):
 
         rating_input = data.rating
         data.last_made = None
-        new_recipe = self.repos.recipes.create(data)
+        new_recipe = await self.repos.recipes.create(data)
 
         # convert rating into user rating
         if rating_input:
@@ -249,7 +212,7 @@ class RecipeService(RecipeServiceBase):
             timestamp=new_recipe.created_at or datetime.now(UTC),
         )
 
-        self.repos.recipe_timeline_events.create(timeline_event_data)
+        (await self.repos.recipe_timeline_events.create(timeline_event_data))
         return new_recipe
 
     async def _transform_user_id(self, user_id: str) -> str:
@@ -260,18 +223,18 @@ class RecipeService(RecipeServiceBase):
             # default to the current user
             return str(self.user.id)
 
-    def _transform_category_or_tag(self, data: dict, repo: RepositoryGeneric) -> dict:
+    async def _transform_category_or_tag(self, data: dict, repo: AsyncUserRepository) -> dict:
         slug = data.get("slug")
         if not slug:
             return data
 
         # if the item exists, return the actual data
-        query = repo.get_one(slug, "slug")
+        query = await repo.get_one(slug, "slug")
         if query:
             return query.model_dump()
 
         # otherwise, create the item
-        new_item = repo.create(data)
+        new_item = await repo.create(data)
         return new_item.model_dump()
 
     def _get_data_matcher(self) -> DataMatcher:
@@ -294,7 +257,7 @@ class RecipeService(RecipeServiceBase):
             return value
         return None
 
-    def _transform_food(self, data: dict[str, Any] | Any) -> dict[str, Any] | None:
+    async def _transform_food(self, data: dict[str, Any] | Any) -> dict[str, Any] | None:
         # Ensures the food from the source instance exists in this group, creating it if necessary.
         if not isinstance(data, dict):
             return None
@@ -303,10 +266,12 @@ class RecipeService(RecipeServiceBase):
         if not name:
             return None
 
-        if data.get("id") and self.repos.ingredient_foods.get_one(data["id"]):
+        if data.get("id") and (await self.repos.ingredient_foods.get_one(data["id"])):
             return data
 
-        existing_food = self._get_data_matcher().find_food_match(name)
+        matcher = self._get_data_matcher()
+        await matcher.load_data()
+        existing_food = matcher.find_food_match(name)
         if existing_food:
             data["id"] = existing_food.id
             return data
@@ -319,12 +284,12 @@ class RecipeService(RecipeServiceBase):
             label_id=None,
         )
         save_data = mapper.cast(create_data, SaveIngredientFood, group_id=self.user.group_id)
-        new_food = self.repos.ingredient_foods.create(save_data)
+        new_food = await self.repos.ingredient_foods.create(save_data)
         data["id"] = new_food.id
         self._reset_data_matcher()
         return data
 
-    def _transform_unit(self, data: dict[str, Any] | Any) -> dict[str, Any] | None:
+    async def _transform_unit(self, data: dict[str, Any] | Any) -> dict[str, Any] | None:
         # Ensures the unit from the source instance exists in this group, creating it if necessary.
         if not isinstance(data, dict):
             return None
@@ -335,10 +300,11 @@ class RecipeService(RecipeServiceBase):
         if not match_value:
             return None
 
-        if data.get("id") and self.repos.ingredient_units.get_one(data["id"]):
+        if data.get("id") and (await self.repos.ingredient_units.get_one(data["id"])):
             return data
 
         matcher = self._get_data_matcher()
+        await matcher.load_data()
         existing_unit = matcher.find_unit_match(match_value)
         if existing_unit is None and abbreviation and abbreviation != match_value:
             existing_unit = matcher.find_unit_match(abbreviation)
@@ -359,7 +325,7 @@ class RecipeService(RecipeServiceBase):
             standard_unit=data.get("standard_unit"),
         )
         save_data = mapper.cast(create_data, SaveIngredientUnit, group_id=self.user.group_id)
-        new_unit = self.repos.ingredient_units.create(save_data)
+        new_unit = await self.repos.ingredient_units.create(save_data)
         data["id"] = new_unit.id
         self._reset_data_matcher()
         return data
@@ -389,20 +355,20 @@ class RecipeService(RecipeServiceBase):
 
         # make sure categories and tags and food/unit are valid
         if key == "recipe_category":
-            return self._transform_category_or_tag(data, self.repos.categories)
+            return await self._transform_category_or_tag(data, self.repos.categories)
         elif key == "tags":
-            return self._transform_category_or_tag(data, self.repos.tags)
+            return await self._transform_category_or_tag(data, self.repos.tags)
         elif key == "food":
-            return self._transform_food(data)
+            return await self._transform_food(data)
         elif key == "unit":
-            return self._transform_unit(data)
+            return await self._transform_unit(data)
         # recursively process other objects
         for k, v in data.items():
             data[k] = await self._process_recipe_data(k, v)
 
         return data
 
-    def _replace_taken_id(self, recipe: dict[str, Any]) -> dict[str, Any]:
+    async def _replace_taken_id(self, recipe: dict[str, Any]) -> dict[str, Any]:
         """Drop the exported id when this instance already has a recipe using it.
 
         An export carries the id of the recipe it came from, which collides as soon as the file is
@@ -420,13 +386,13 @@ class RecipeService(RecipeServiceBase):
             return recipe
 
         all_recipes = get_repositories(self.repos.session, group_id=None, household_id=None).recipes
-        if all_recipes.get_one(recipe_id, key="id"):
+        if await all_recipes.get_one(recipe_id, key="id"):
             recipe["id"] = str(uuid4())
 
         return recipe
 
     async def clean_recipe_dict(self, recipe: dict[str, Any]) -> dict[str, Any]:
-        return await self._process_recipe_data("recipe", self._replace_taken_id(recipe))
+        return await self._process_recipe_data("recipe", (await self._replace_taken_id(recipe)))
 
     async def create_from_zip(self, archive: UploadFile, temp_path: Path) -> Recipe:
         """
@@ -461,10 +427,10 @@ class RecipeService(RecipeServiceBase):
 
         return recipe
 
-    def duplicate_one(self, old_slug_or_id: str | UUID, dup_data: RecipeDuplicate) -> Recipe:
+    async def duplicate_one(self, old_slug_or_id: str | UUID, dup_data: RecipeDuplicate) -> Recipe:
         """Duplicates a recipe and returns the new recipe."""
 
-        old_recipe = self.get_one(old_slug_or_id)
+        old_recipe = await self.get_one(old_slug_or_id)
         new_recipe_data = old_recipe.model_dump(exclude={"id", "name", "slug", "image", "comments"}, round_trip=True)
         new_recipe = Recipe.model_validate(new_recipe_data)
 
@@ -500,7 +466,7 @@ class RecipeService(RecipeServiceBase):
 
         new_recipe = self._recipe_creation_factory(new_name, additional_attrs=new_recipe.model_dump())
 
-        new_recipe = self.repos.recipes.create(new_recipe)
+        new_recipe = await self.repos.recipes.create(new_recipe)
 
         # Copy all assets (including images) to the new recipe directory
         # This assures that replaced links in recipe steps continue to work when the old recipe is deleted
@@ -517,7 +483,7 @@ class RecipeService(RecipeServiceBase):
 
         return new_recipe
 
-    def has_recursive_recipe_link(self, recipe: Recipe, path: set[str] | None = None):
+    async def has_recursive_recipe_link(self, recipe: Recipe, path: set[str] | None = None):
         """Recursively checks if a recipe links to itself through its ingredients."""
         if path is None:
             path = set()
@@ -535,12 +501,12 @@ class RecipeService(RecipeServiceBase):
             ingredients = getattr(recipe, "recipe_ingredient", [])
             for ing in ingredients:
                 try:
-                    sub_recipe = self.get_one(ing.referenced_recipe.id)
+                    sub_recipe = await self.get_one(ing.referenced_recipe.id)
                 except AttributeError, exceptions.NoEntryFound:
                     continue
 
                 # Recursively check - path is modified in place and cleaned up via backtracking
-                if self.has_recursive_recipe_link(sub_recipe, path):
+                if await self.has_recursive_recipe_link(sub_recipe, path):
                     return True
         finally:
             # Backtrack: remove this recipe from the path when done exploring this branch
@@ -548,7 +514,7 @@ class RecipeService(RecipeServiceBase):
 
         return False
 
-    def _pre_update_check(self, slug_or_id: str | UUID, new_data: Recipe) -> Recipe:
+    async def _pre_update_check(self, slug_or_id: str | UUID, new_data: Recipe) -> Recipe:
         """
         gets the recipe from the database and performs a check to see if the user can update the recipe.
         If the user can't update the recipe, an exception is raised.
@@ -566,19 +532,19 @@ class RecipeService(RecipeServiceBase):
             exceptions.PermissionDenied (403)
         """
 
-        recipe = self.get_one(slug_or_id)
+        recipe = await self.get_one(slug_or_id)
 
         if recipe is None or recipe.settings is None:
             raise exceptions.NoEntryFound("Recipe not found.")
 
-        if not self.can_update([recipe.slug]):
+        if not await self.can_update([recipe.slug]):
             raise exceptions.PermissionDenied("You do not have permission to edit this recipe.")
 
         setting_lock = new_data.settings is not None and recipe.settings.locked != new_data.settings.locked
         if setting_lock and not self.can_lock_unlock(recipe):
             raise exceptions.PermissionDenied("You do not have permission to lock/unlock this recipe.")
 
-        if self.has_recursive_recipe_link(new_data):
+        if await self.has_recursive_recipe_link(new_data):
             raise exceptions.RecursiveRecipe("Recursive recipe link detected. Update aborted.")
 
         return recipe
@@ -629,7 +595,7 @@ class RecipeService(RecipeServiceBase):
 
         return update_data
 
-    def _resolve_ingredient_sub_recipes(self, update_data: Recipe) -> Recipe:
+    async def _resolve_ingredient_sub_recipes(self, update_data: Recipe) -> Recipe:
         """Resolve all referenced_recipe slugs to IDs within the current group."""
         if not update_data.recipe_ingredient:
             return update_data
@@ -639,20 +605,20 @@ class RecipeService(RecipeServiceBase):
                 ref = ingredient.referenced_recipe
                 # If no id, resolve by slug
                 if not ref.id and ref.slug:
-                    recipe = self.group_recipes.get_by_slug(self.user.group_id, ref.slug)
+                    recipe = await self.group_recipes.get_by_slug(self.user.group_id, ref.slug)
                     if not recipe:
                         raise exceptions.NoEntryFound(f"Referenced recipe '{ref.slug}' not found in this group")
                     ref.id = recipe.id
                 # If id is provided, verify it belongs to this group
                 elif ref.id:
-                    recipe = self.group_recipes.get_one(ref.id, key="id")
+                    recipe = await self.group_recipes.get_one(ref.id, key="id")
                     if not recipe:
                         raise exceptions.NoEntryFound(f"Referenced recipe with id '{ref.id}' not found in this group")
 
         return update_data
 
-    def update_one(self, slug_or_id: str | UUID, update_data: Recipe) -> Recipe:
-        recipe = self._pre_update_check(slug_or_id, update_data)
+    async def update_one(self, slug_or_id: str | UUID, update_data: Recipe) -> Recipe:
+        recipe = await self._pre_update_check(slug_or_id, update_data)
 
         # A PUT replaces the whole recipe, so a body that omits the name would blank it out.
         # Nothing downstream can cope with that, so reject it before the update rather than
@@ -664,37 +630,37 @@ class RecipeService(RecipeServiceBase):
         update_data = self._preserve_omitted_image(recipe, update_data)
         update_data = self._remove_non_existent_ingredient_references(update_data)
         update_data = self._remove_non_existent_note_references(update_data)
-        update_data = self._resolve_ingredient_sub_recipes(update_data)
+        update_data = await self._resolve_ingredient_sub_recipes(update_data)
 
-        new_data = self.group_recipes.update(recipe.slug, update_data)
+        new_data = await self.group_recipes.update(recipe.slug, update_data)
         self.check_assets(new_data, recipe.slug)
         return new_data
 
-    def update_recipe_image(self, slug: str, image: bytes, extension: str):
-        recipe = self.get_one(slug)
-        if not self.can_update([recipe.slug]):
+    async def update_recipe_image(self, slug: str, image: bytes, extension: str):
+        recipe = await self.get_one(slug)
+        if not await self.can_update([recipe.slug]):
             raise exceptions.PermissionDenied("You do not have permission to edit this recipe.")
 
         data_service = RecipeDataService(recipe.id)
         data_service.write_image(image, extension)
 
-        return self.group_recipes.update_image(slug, extension)
+        return await self.group_recipes.update_image(slug, extension)
 
-    def delete_recipe_image(self, slug: str) -> None:
-        recipe = self.get_one(slug)
-        if not self.can_update([recipe.slug]):
+    async def delete_recipe_image(self, slug: str) -> None:
+        recipe = await self.get_one(slug)
+        if not await self.can_update([recipe.slug]):
             raise exceptions.PermissionDenied("You do not have permission to edit this recipe.")
 
         data_service = RecipeDataService(recipe.id)
         data_service.delete_image()
 
-        self.group_recipes.delete_image(slug)
+        (await self.group_recipes.delete_image(slug))
         return None
 
-    def patch_one(self, slug_or_id: str | UUID, patch_data: Recipe) -> Recipe:
-        recipe: Recipe = self._pre_update_check(slug_or_id, patch_data)
+    async def patch_one(self, slug_or_id: str | UUID, patch_data: Recipe) -> Recipe:
+        recipe: Recipe = await self._pre_update_check(slug_or_id, patch_data)
 
-        new_data = self.group_recipes.patch(recipe.slug, patch_data.model_dump(exclude_unset=True))
+        new_data = await self.group_recipes.patch(recipe.slug, patch_data.model_dump(exclude_unset=True))
 
         self.check_assets(new_data, recipe.slug)
         return new_data
@@ -706,22 +672,22 @@ class RecipeService(RecipeServiceBase):
         household_service = HouseholdService(self.user.group_id, self.user.household_id, self.repos)
         await household_service.set_household_recipe(slug_or_id, HouseholdRecipeUpdate(last_made=timestamp))
 
-        return self.get_one(slug_or_id)
+        return await self.get_one(slug_or_id)
 
-    def delete_one(self, slug_or_id: str | UUID) -> Recipe:
-        recipe = self.get_one(slug_or_id)
-        resp = self.delete_many([recipe.slug])
+    async def delete_one(self, slug_or_id: str | UUID) -> Recipe:
+        recipe = await self.get_one(slug_or_id)
+        resp = await self.delete_many([recipe.slug])
         return resp[0]
 
-    def delete_many(self, recipe_slugs: list[str]) -> list[Recipe]:
-        if not self.can_delete(recipe_slugs):
+    async def delete_many(self, recipe_slugs: list[str]) -> list[Recipe]:
+        if not await self.can_delete(recipe_slugs):
             if len(recipe_slugs) == 1:
                 msg = "You do not have permission to delete this recipe."
             else:
                 msg = "You do not have permission to delete all of these recipes."
             raise exceptions.PermissionDenied(msg)
 
-        data = self.group_recipes.delete_many(recipe_slugs)
+        data = await self.group_recipes.delete_many(recipe_slugs)
         for r in data:
             try:
                 self.delete_assets(r)

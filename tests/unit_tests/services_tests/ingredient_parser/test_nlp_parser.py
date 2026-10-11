@@ -1,4 +1,3 @@
-import asyncio
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -19,6 +18,7 @@ from mealie.schema.recipe.recipe_ingredient import (
 )
 from mealie.services.parser_services import RegisteredParser, get_parser
 from mealie.services.parser_services.ingredient_parser import NLPParser
+from tests.utils.async_database import run_async
 
 
 @dataclass
@@ -60,7 +60,8 @@ def normalize(val: str) -> str:
 def test_nlp_parser(unique_local_group_id: UUID4, test_ingredient: TestIngredient):
     with session_context() as session:
         parser = get_parser(RegisteredParser.nlp, unique_local_group_id, session, get_locale_provider())
-        parsed = asyncio.run(parser.parse_one(test_ingredient.input))
+        run_async(parser.data_matcher.load_data())
+        parsed = run_async(parser.parse_one(test_ingredient.input))
         ing = parsed.ingredient
 
         assert ing.original_text == test_ingredient.input
@@ -112,6 +113,7 @@ def test_nlp_parser(unique_local_group_id: UUID4, test_ingredient: TestIngredien
 async def test_nlp_parser_keeps_all_text(unique_local_group_id: UUID4, source_str: str, expected_str: str):
     with session_context() as session:
         parser = get_parser(RegisteredParser.nlp, unique_local_group_id, session, get_locale_provider())
+        run_async(parser.data_matcher.load_data())
         parsed = await parser.parse_one(source_str)
 
     ing = parsed.ingredient
@@ -141,6 +143,7 @@ def test_nlp_parser_converts_extra_ingredients(
         parser = cast(
             NLPParser, get_parser(RegisteredParser.nlp, unique_local_group_id, session, get_locale_provider())
         )
+        run_async(parser.data_matcher.load_data())
 
         substitutions = parser._convert_extra_ingredients(
             [

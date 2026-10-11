@@ -45,7 +45,7 @@ class ChowdownMigrator(BaseMigrator):
 
             recipes_as_dicts = [y for x in recipe_dir.glob("*.md") if (y := MigrationReaders.yaml(x)) is not None]
 
-            recipes = [self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
+            recipes = [await self.clean_recipe_dictionary(x) for x in recipes_as_dicts]
 
             results = await self.import_recipes_to_database(recipes)
 
@@ -66,4 +66,4 @@ class ChowdownMigrator(BaseMigrator):
                     except StopIteration:
                         continue
                     if cd_image:
-                        self.import_image(slug, cd_image, recipe_id, extraction_root=image_dir)
+                        await self.import_image(slug, cd_image, recipe_id, extraction_root=image_dir)

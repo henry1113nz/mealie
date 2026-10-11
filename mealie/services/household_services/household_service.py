@@ -20,7 +20,7 @@ class HouseholdService(BaseService):
         self.repos = repos
         super().__init__()
 
-    def _get_recipe(self, recipe_slug: str | UUID) -> Recipe | None:
+    async def _get_recipe(self, recipe_slug: str | UUID) -> Recipe | None:
         key = "id"
         if not isinstance(recipe_slug, UUID):
             try:
@@ -31,7 +31,7 @@ class HouseholdService(BaseService):
         cross_household_recipes = get_repositories(
             self.repos.session, group_id=self.group_id, household_id=None
         ).recipes
-        return cross_household_recipes.get_one(recipe_slug, key)
+        return await cross_household_recipes.get_one(recipe_slug, key)
 
     @staticmethod
     async def create_household(
@@ -69,7 +69,7 @@ class HouseholdService(BaseService):
 
     async def get_household_recipe(self, recipe_slug: str) -> HouseholdRecipeSummary | None:
         """Returns recipe data for the current household"""
-        recipe = self._get_recipe(recipe_slug)
+        recipe = await self._get_recipe(recipe_slug)
         if not recipe or recipe.id is None:
             return None
 
@@ -83,7 +83,7 @@ class HouseholdService(BaseService):
         self, recipe_slug: str | UUID, data: HouseholdRecipeUpdate
     ) -> HouseholdRecipeSummary:
         """Sets the household's recipe data"""
-        recipe = self._get_recipe(recipe_slug)
+        recipe = await self._get_recipe(recipe_slug)
         if not recipe or recipe.id is None:
             raise exceptions.NoEntryFound("Recipe not found.")
 

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import UUID4
 
 from mealie.routes._base import BaseCrudController, controller
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.schema import mapper
 from mealie.schema.recipe import RecipeTagResponse, TagIn
 from mealie.schema.recipe.recipe import RecipeTag, RecipeTagPagination
@@ -24,12 +24,12 @@ class TagController(BaseCrudController):
 
     @cached_property
     def mixins(self):
-        return HttpRepo(self.repo, self.logger)
+        return AsyncHttpRepo(self.repo, self.logger)
 
     @router.get("", response_model=RecipeTagPagination)
     async def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
         """Returns a list of available tags in the database"""
-        response = self.repo.page_all(
+        response = await self.repo.page_all(
             pagination=q,
             override=RecipeTag,
             search=search,
@@ -39,36 +39,36 @@ class TagController(BaseCrudController):
         return response
 
     @router.get("/empty")
-    def get_empty_tags(self):
+    async def get_empty_tags(self):
         """Returns a list of tags that do not contain any recipes"""
-        return self.repo.get_empty()
+        return await self.repo.get_empty()
 
     @router.post("/merge", response_model=TagOut)
-    def merge_tags(self, body: TagMerge):
+    async def merge_tags(self, body: TagMerge):
         """Merges the from_id tag into the to_id tag, then deletes from_id."""
         self.checks.can_organize()
 
         if body.from_id == body.to_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "from_id and to_id must be different")
 
-        if not self.repo.get_one(body.from_id):
+        if not (await self.repo.get_one(body.from_id)):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "from_id tag not found")
-        if not self.repo.get_one(body.to_id):
+        if not (await self.repo.get_one(body.to_id)):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "to_id tag not found")
 
-        return self.repo.merge(body.from_id, body.to_id)
+        return await self.repo.merge(body.from_id, body.to_id)
 
     @router.get("/{item_id}", response_model=RecipeTagResponse)
-    def get_one(self, item_id: UUID4):
+    async def get_one(self, item_id: UUID4):
         """Returns a list of recipes associated with the provided tag."""
-        return self.mixins.get_one(item_id)
+        return await self.mixins.get_one(item_id)
 
     @router.post("", status_code=201)
     async def create_one(self, tag: TagIn):
         """Creates a Tag in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(tag, TagSave, group_id=self.group_id)
-        new_tag = self.mixins.create_one(save_data)
+        new_tag = await self.mixins.create_one(save_data)
 
         if new_tag:
             await self.publish_event(
@@ -90,7 +90,7 @@ class TagController(BaseCrudController):
         """Updates an existing Tag in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(new_tag, TagSave, group_id=self.group_id)
-        tag = self.repo.update(item_id, save_data)
+        tag = await self.repo.update(item_id, save_data)
 
         if tag:
             await self.publish_event(
@@ -117,7 +117,7 @@ class TagController(BaseCrudController):
         self.checks.can_organize()
 
         try:
-            tag = self.repo.delete(item_id)
+            tag = await self.repo.delete(item_id)
         except Exception as e:
             raise HTTPException(status.HTTP_400_BAD_REQUEST) from e
 
@@ -132,4 +132,4 @@ class TagController(BaseCrudController):
 
     @router.get("/slug/{tag_slug}", response_model=RecipeTagResponse)
     async def get_one_by_slug(self, tag_slug: str):
-        return self.repo.get_one(tag_slug, "slug", override_schema=RecipeTagResponse)
+        return await self.repo.get_one(tag_slug, "slug", override_schema=RecipeTagResponse)

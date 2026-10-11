@@ -7,6 +7,7 @@ from tortoise import fields
 from mealie.db.models._tortoise_base import TortoiseBase, UTCDateTimeField, UUIDField
 
 if TYPE_CHECKING:
+    from ..recipe.recipe import RecipeModel
     from .household import Household
 
 
@@ -21,8 +22,15 @@ class HouseholdToRecipe(TortoiseBase):
         db_index=True,
         on_delete=fields.RESTRICT,
     )
-    # The recipe domain remains on the existing schema until C6.
-    recipe_id: fields.UUIDField[UUID] = UUIDField(db_index=True)
+    recipe_id: UUID
+    recipe: fields.ForeignKeyRelation[RecipeModel] = fields.ForeignKeyField(
+        "models.RecipeModel",
+        related_name="made_by_links",
+        source_field="recipe_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
     last_made: fields.DatetimeField[datetime | None] = UTCDateTimeField(null=True)
 
     class Meta:
