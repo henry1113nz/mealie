@@ -32,24 +32,24 @@ async def init_db(session: orm.Session) -> None:
     settings = get_app_settings()
 
     instance_repos = get_repositories(session)
-    default_group = default_group_init(instance_repos, settings.DEFAULT_GROUP)
+    default_group = await default_group_init(instance_repos, settings.DEFAULT_GROUP)
 
     group_repos = get_repositories(session, group_id=default_group.id, household_id=None)
     default_household = group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
     if default_household is None:
-        default_household = default_household_init(group_repos, settings.DEFAULT_HOUSEHOLD)
+        default_household = await default_household_init(group_repos, settings.DEFAULT_HOUSEHOLD)
     household_repos = get_repositories(session, group_id=default_group.id, household_id=default_household.id)
     await default_user_init(household_repos)
 
 
-def default_group_init(repos: AllRepositories, name: str) -> GroupInDB:
+async def default_group_init(repos: AllRepositories, name: str) -> GroupInDB:
     logger.info("Generating Default Group and Household")
-    return GroupService.create_group(repos, GroupBase(name=name))
+    return await GroupService.create_group(repos, GroupBase(name=name))
 
 
-def default_household_init(repos: AllRepositories, name: str) -> HouseholdInDB:
+async def default_household_init(repos: AllRepositories, name: str) -> HouseholdInDB:
     logger.info("Generating Default Household")
-    return HouseholdService.create_household(repos, HouseholdCreate(name=name))
+    return await HouseholdService.create_household(repos, HouseholdCreate(name=name))
 
 
 # Adapted from https://alembic.sqlalchemy.org/en/latest/cookbook.html#test-current-database-revision-is-at-head-s

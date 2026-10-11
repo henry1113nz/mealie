@@ -8,6 +8,7 @@ from mealie.schema.recipe.recipe import Recipe, RecipeSettings
 from mealie.schema.recipe.recipe_notes import RecipeNote
 from mealie.schema.recipe.recipe_share_token import RecipeShareTokenSave
 from tests import data as test_data
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -157,8 +158,10 @@ async def test_spa_serve_recipe_with_meta(unique_user: TestUser, use_public_user
     user = unique_user.repos.users.get_by_username(unique_user.username)
     assert user
 
-    response = await spa.serve_recipe_with_meta(
-        user.group_slug, recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+    response = run_async(
+        spa.serve_recipe_with_meta(
+            user.group_slug, recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+        )
     )
     assert response.status_code == 200
     assert "https://schema.org" in response.body.decode()
@@ -171,19 +174,25 @@ async def test_spa_serve_recipe_with_meta_invalid_data(unique_user: TestUser, us
     user = unique_user.repos.users.get_by_username(unique_user.username)
     assert user
 
-    response = await spa.serve_recipe_with_meta(
-        random_string(), recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+    response = run_async(
+        spa.serve_recipe_with_meta(
+            random_string(), recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+        )
     )
     assert response.status_code == 404
 
-    response = await spa.serve_recipe_with_meta(
-        user.group_slug, random_string(), user=None if use_public_user else user, session=unique_user.repos.session
+    response = run_async(
+        spa.serve_recipe_with_meta(
+            user.group_slug, random_string(), user=None if use_public_user else user, session=unique_user.repos.session
+        )
     )
     assert response.status_code == 404
 
     set_recipe_is_public(unique_user, recipe, is_public=False)
-    response = await spa.serve_recipe_with_meta(
-        user.group_slug, recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+    response = run_async(
+        spa.serve_recipe_with_meta(
+            user.group_slug, recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+        )
     )
     if use_public_user:
         assert response.status_code == 404
@@ -192,8 +201,10 @@ async def test_spa_serve_recipe_with_meta_invalid_data(unique_user: TestUser, us
 
     set_group_is_private(unique_user, is_private=True)
     set_recipe_is_public(unique_user, recipe, is_public=True)
-    response = await spa.serve_recipe_with_meta(
-        user.group_slug, recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+    response = run_async(
+        spa.serve_recipe_with_meta(
+            user.group_slug, recipe.slug, user=None if use_public_user else user, session=unique_user.repos.session
+        )
     )
     if use_public_user:
         assert response.status_code == 404

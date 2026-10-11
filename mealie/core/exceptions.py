@@ -1,4 +1,5 @@
 from sqlalchemy.exc import IntegrityError
+from tortoise.exceptions import IntegrityError as TortoiseIntegrityError
 
 from mealie.lang.providers import Translator
 
@@ -88,6 +89,7 @@ def mealie_registered_exceptions(t: Translator) -> dict:
         PermissionDenied: t.t("exceptions.permission-denied"),
         NoEntryFound: t.t("exceptions.no-entry-found"),
         IntegrityError: t.t("exceptions.integrity-error"),
+        TortoiseIntegrityError: t.t("exceptions.integrity-error"),
         RecursiveRecipe: t.t("exceptions.recursive-recipe-link"),
     }
 

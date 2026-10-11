@@ -12,7 +12,7 @@ router = APIRouter(prefix="/about")
 
 
 @router.get("", response_model=AppInfo)
-def get_app_info(session: Session = Depends(generate_session)):
+async def get_app_info(session: Session = Depends(generate_session)):
     """Get general application information"""
     settings = get_app_settings()
 
@@ -21,7 +21,7 @@ def get_app_info(session: Session = Depends(generate_session)):
     default_group_slug: str | None = None
     default_household_slug: str | None = None
 
-    default_group = public_repos.groups.get_by_name(settings.DEFAULT_GROUP)
+    default_group = await public_repos.groups.get_by_name(settings.DEFAULT_GROUP)
     if default_group and default_group.preferences and not default_group.preferences.private_group:
         default_group_slug = default_group.slug
 

@@ -4,7 +4,7 @@ from pydantic import UUID4, ConfigDict, Field, ValidationInfo, computed_field, f
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.group.ai_providers import AIProvider, AIProviderSettings
+from mealie.db.models._legacy_groups.ai_providers import AIProvider, AIProviderSettings
 from mealie.schema._mealie import MealieModel
 
 

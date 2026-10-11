@@ -23,9 +23,9 @@ class GroupSelfServiceController(BaseUserController):
         return GroupService(self.group_id, self.repos)
 
     @router.get("/self", response_model=GroupSummary)
-    def get_logged_in_user_group(self):
+    async def get_logged_in_user_group(self):
         """Returns the Group Data for the Current User"""
-        return self.group.cast(GroupSummary)
+        return (await self.get_group()).cast(GroupSummary)
 
     @router.get("/members", response_model=PaginationBase[UserSummary])
     async def get_group_members(self, q: PaginationQuery = Depends()):
@@ -51,13 +51,13 @@ class GroupSelfServiceController(BaseUserController):
         return private_user.cast(UserSummary)
 
     @router.get("/preferences", response_model=ReadGroupPreferences)
-    def get_group_preferences(self):
-        return self.group.preferences
+    async def get_group_preferences(self):
+        return (await self.get_group()).preferences
 
     @router.put("/preferences", response_model=ReadGroupPreferences)
-    def update_group_preferences(self, new_pref: UpdateGroupPreferences):
+    async def update_group_preferences(self, new_pref: UpdateGroupPreferences):
         self.checks.can_manage()
-        return self.repos.group_preferences.update(self.group_id, new_pref)
+        return await self.repos.group_preferences.update(self.group_id, new_pref)
 
     @router.get("/storage", response_model=GroupStorage)
     def get_storage(self):

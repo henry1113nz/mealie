@@ -8,6 +8,7 @@ from tortoise import Model, fields
 from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UTCDateTimeField, UUIDField
 
 if TYPE_CHECKING:
+    from ..group.group import Group
     from .password_reset import PasswordResetModel
     from .user_to_recipe import UserToRecipe
 
@@ -47,9 +48,12 @@ class User(TortoiseBase):
     admin: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
     advanced: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
 
-    # Group, Household and Recipe remain legacy models until C4-C6. Their
-    # existing database foreign keys continue to enforce these references.
-    group_id: fields.UUIDField[UUID] = UUIDField(db_index=True)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group", related_name="users", source_field="group_id", db_index=True, on_delete=fields.RESTRICT
+    )
+    # Household and Recipe remain legacy models until C5-C6. Their existing
+    # database foreign keys continue to enforce these scalar references.
     household_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
     owned_recipes_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
 

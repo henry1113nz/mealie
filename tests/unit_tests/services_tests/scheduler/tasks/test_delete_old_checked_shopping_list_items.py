@@ -5,6 +5,7 @@ from mealie.services.scheduler.tasks.delete_old_checked_shopping_list_items impo
     MAX_CHECKED_ITEMS,
     delete_old_checked_list_items,
 )
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -49,7 +50,7 @@ def test_cleanup(unique_user: TestUser):
     expected_deleted_items = checked_items[MAX_CHECKED_ITEMS:]
 
     # make sure we only see the expected items
-    delete_old_checked_list_items()
+    run_async(delete_old_checked_list_items())
     database.session.commit()
     shopping_list = list_repo.get_one(shopping_list.id)  # type: ignore
     assert shopping_list
@@ -96,7 +97,7 @@ def test_no_cleanup(unique_user: TestUser):
         assert item in shopping_list.list_items
 
     # make sure we still see all items
-    delete_old_checked_list_items()
+    run_async(delete_old_checked_list_items())
     database.session.commit()
     shopping_list = list_repo.get_one(shopping_list.id)  # type: ignore
     assert shopping_list

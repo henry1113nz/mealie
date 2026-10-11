@@ -12,19 +12,21 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import ConnectionPoolEntry
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
+from tortoise.transactions import in_transaction
 
 from mealie.core.config import get_app_settings
 from mealie.core.settings import AppSettings
 from mealie.core.settings.db_providers import SQLiteProvider
 from mealie.db.init_db import ALEMBIC_DIR
+from mealie.db.models._legacy_groups import Group as LegacyGroup
 from mealie.db.models.group.group import Group
 from mealie.db.models.server.task import ServerTaskModel
-from mealie.db.tortoise_config import get_tortoise_config
+from mealie.db.tortoise_config import TORTOISE_MODEL_MODULES, get_tortoise_config
 from mealie.db.tortoise_setup import database_context
 from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
 
@@ -72,7 +74,7 @@ async def server_connection(server_settings: AppSettings) -> AsyncGenerator[Base
 
 def create_group(engine: Engine) -> UUID:
     with Session(engine) as session:
-        group = Group(name=f"server-{uuid4()}", session=session)
+        group = LegacyGroup(name=f"server-{uuid4()}", session=session)
         session.add(group)
         session.commit()
         return UUID(str(group.id))
@@ -82,13 +84,14 @@ def create_group(engine: Engine) -> UUID:
 async def test_server_model_is_registered_with_the_default_connection(
     server_settings: AppSettings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Retain the original C2 registry setup; C3 covers the expanded registry.
+    # Preserve the original configuration assertions, then register relation targets.
     monkeypatch.setattr("mealie.db.tortoise_config.TORTOISE_MODEL_MODULES", ("mealie.db.models.server.task",))
     config = get_tortoise_config(server_settings)
     assert config["apps"] == {"models": {"models": ["mealie.db.models.server.task"], "default_connection": "default"}}
     config["apps"]["models"]["models"].append("unused.module")
     fresh_config = get_tortoise_config(server_settings)
     assert fresh_config["apps"]["models"]["models"] == ["mealie.db.models.server.task"]
+    fresh_config["apps"]["models"]["models"] = list(TORTOISE_MODEL_MODULES)
     async with database_context(fresh_config) as context:
         assert context.get_model("models", "ServerTaskModel") is ServerTaskModel
         assert ServerTaskModel._meta.db is context.db()
@@ -167,20 +170,18 @@ async def test_group_deletion_cleans_tasks_in_the_same_transaction(
     other_task = await ServerTaskModel.create(name="other", status="pending", group_id=other_group_id)
 
     with pytest.raises(RuntimeError, match="abort group deletion") if rollback else nullcontext():
-        with Session(server_engine) as session, session.begin():
-            group = session.get(Group, group_id)
+        async with in_transaction("default"):
+            group = await Group.get_or_none(id=group_id)
             assert group is not None
-            session.delete(group)
-            session.flush()
-            assert session.execute(text("SELECT id FROM server_tasks")).scalars().all() == [other_task.id]
+            await group.delete()
+            assert await ServerTaskModel.all().values_list("id", flat=True) == [other_task.id]
             if rollback:
                 raise RuntimeError("abort group deletion")
 
     assert await ServerTaskModel.filter(id=task.id).exists() is rollback
     assert await ServerTaskModel.filter(id=other_task.id, group_id=other_group_id).exists()
-    with Session(server_engine) as session:
-        assert (session.get(Group, group_id) is not None) is rollback
-        assert session.get(Group, other_group_id) is not None
+    assert (await Group.get_or_none(id=group_id) is not None) is rollback
+    assert await Group.get_or_none(id=other_group_id) is not None
 
 
 @pytest.mark.asyncio

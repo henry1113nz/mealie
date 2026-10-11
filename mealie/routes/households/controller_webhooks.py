@@ -41,12 +41,12 @@ class ReadWebhookController(BaseUserController):
         return self.mixins.create_one(save)
 
     @router.post("/rerun")
-    def rerun_webhooks(self):
+    async def rerun_webhooks(self):
         """Manually re-fires all previously scheduled webhooks for today"""
 
         start_time = datetime.min.time()
         start_dt = datetime.combine(datetime.now(UTC).date(), start_time)
-        post_group_webhooks(start_dt=start_dt, group_id=self.group.id, household_id=self.household.id)
+        await post_group_webhooks(start_dt=start_dt, group_id=self.group_id, household_id=self.household.id)
 
     @router.get("/{item_id}", response_model=ReadWebhook)
     def get_one(self, item_id: UUID4):

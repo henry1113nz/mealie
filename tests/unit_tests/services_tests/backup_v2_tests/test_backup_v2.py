@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 import tests.data as test_data
 from mealie.core.config import get_app_settings
 from mealie.db.db_setup import session_context
+from mealie.db.models._legacy_groups import Group
 from mealie.db.models._legacy_users import User, UserToRecipe
 from mealie.db.models._model_utils.guid import GUID
-from mealie.db.models.group import Group
 from mealie.db.models.household.cookbook import CookBook
 from mealie.db.models.household.household import Household
 from mealie.db.models.household.household_to_recipe import HouseholdToRecipe

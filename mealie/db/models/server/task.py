@@ -1,9 +1,13 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from tortoise import fields
 
-from mealie.db.models._tortoise_base import TortoiseBase, UTCDateTimeField, UUIDField
+from mealie.db.models._tortoise_base import TortoiseBase, UTCDateTimeField
+
+if TYPE_CHECKING:
+    from ..group.group import Group
 
 
 class ServerTaskModel(TortoiseBase):
@@ -14,9 +18,10 @@ class ServerTaskModel(TortoiseBase):
     status = fields.TextField()
     log: fields.TextField[str | None] = fields.TextField(null=True)
 
-    # The existing database FK still references groups.id. Keep its scalar UUID
-    # until Group is converted in C4, when this becomes a Tortoise relation.
-    group_id: fields.UUIDField[UUID] = UUIDField(db_index=True)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group", related_name="server_tasks", source_field="group_id", db_index=True, on_delete=fields.RESTRICT
+    )
 
     class Meta:
         table = "server_tasks"

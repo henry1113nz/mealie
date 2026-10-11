@@ -24,7 +24,7 @@ from ._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
 from .users.users import AuthMethod
 
 if TYPE_CHECKING:
-    from .group import Group
+    from ._legacy_groups import Group
     from .household import Household
     from .household.mealplan import GroupMealPlan
     from .household.shopping_list import ShoppingList
@@ -186,7 +186,7 @@ class User(SqlAlchemyBase, BaseMixins):
             group = group or settings.DEFAULT_GROUP
             household = household or settings.DEFAULT_HOUSEHOLD
 
-        from mealie.db.models.group import Group
+        from mealie.db.models._legacy_groups import Group
         from mealie.db.models.household import Household
 
         self.group = session.execute(select(Group).filter(Group.name == group)).scalars().one_or_none()
@@ -224,7 +224,7 @@ class User(SqlAlchemyBase, BaseMixins):
         self.full_name = full_name
         self.email = email
 
-        from mealie.db.models.group import Group
+        from mealie.db.models._legacy_groups import Group
         from mealie.db.models.household import Household
 
         self.group = session.execute(select(Group).filter(Group.name == group)).scalars().one_or_none()

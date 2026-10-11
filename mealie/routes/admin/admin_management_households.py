@@ -52,8 +52,8 @@ class AdminHouseholdManagementRoutes(BaseAdminController):
         return response
 
     @router.post("", response_model=HouseholdInDB, status_code=status.HTTP_201_CREATED)
-    def create_one(self, data: HouseholdCreate):
-        return HouseholdService.create_household(self.repos, data)
+    async def create_one(self, data: HouseholdCreate):
+        return await HouseholdService.create_household(self.repos, data)
 
     @router.get("/{item_id}", response_model=HouseholdInDB)
     def get_one(self, item_id: UUID4):

@@ -12,7 +12,7 @@ from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
 from .._model_utils.guid import GUID
 
 if TYPE_CHECKING:
-    from ..group import Group
+    from .._legacy_groups import Group
     from . import RecipeModel
 logger = root_logger.get_logger()
 

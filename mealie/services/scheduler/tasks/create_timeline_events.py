@@ -127,7 +127,7 @@ async def create_mealplan_timeline_events() -> None:
 
     with session_context() as session:
         repos = get_repositories(session)
-        groups_data = repos.groups.page_all(PaginationQuery(page=1, per_page=-1))
+        groups_data = await repos.groups.page_all(PaginationQuery(page=1, per_page=-1))
         group_ids = [group.id for group in groups_data.items]
 
         for group_id in group_ids:

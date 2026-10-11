@@ -19,7 +19,7 @@ from mealie.core import exceptions, root_logger
 from mealie.core.config import get_app_settings
 from mealie.pkgs import img
 from mealie.repos.repository_factory import AllRepositories
-from mealie.schema.group.ai_providers import AIProviderOut, AIProviderTestResult
+from mealie.schema.group.ai_providers import AIProviderOut, AIProviderSettingsOut, AIProviderTestResult
 from mealie.schema.openai._base import OpenAIBase
 from mealie.schema.openai.general import OpenAIText
 
@@ -122,30 +122,43 @@ class OpenAIService(BaseService):
 
     def __init__(self, repos: AllRepositories) -> None:
         self.repos = repos
-        self.provider_settings = repos.group_ai_provider_settings.get_one(repos.group_id)
-
-        # Load providers
-        self.default_provider = (
-            self.repos.group_ai_providers.get_one(self.provider_settings.default_provider_id)
-            if self.provider_settings and self.provider_settings.default_provider_id
-            else None
-        )
-        self.audio_provider = (
-            self.repos.group_ai_providers.get_one(self.provider_settings.audio_provider_id)
-            if self.provider_settings and self.provider_settings.audio_provider_id
-            else None
-        )
-        self.image_provider = (
-            self.repos.group_ai_providers.get_one(self.provider_settings.image_provider_id)
-            if self.provider_settings and self.provider_settings.image_provider_id
-            else None
-        )
+        self.provider_settings: AIProviderSettingsOut | None = None
+        self.default_provider: AIProviderOut | None = None
+        self.audio_provider: AIProviderOut | None = None
+        self.image_provider: AIProviderOut | None = None
+        self._providers_loaded = False
 
         # Build client
         settings = get_app_settings()
         self.custom_prompt_dir = settings.OPENAI_CUSTOM_PROMPT_DIR
 
         super().__init__()
+
+    async def load_providers(self) -> None:
+        """Load group configuration once on the database's owning event loop."""
+        if self._providers_loaded:
+            return
+
+        self.provider_settings = await self.repos.group_ai_provider_settings.get_one(self.repos.group_id)
+
+        # Load providers
+        self.default_provider = (
+            await self.repos.group_ai_providers.get_one(self.provider_settings.default_provider_id)
+            if self.provider_settings and self.provider_settings.default_provider_id
+            else None
+        )
+        self.audio_provider = (
+            await self.repos.group_ai_providers.get_one(self.provider_settings.audio_provider_id)
+            if self.provider_settings and self.provider_settings.audio_provider_id
+            else None
+        )
+        self.image_provider = (
+            await self.repos.group_ai_providers.get_one(self.provider_settings.image_provider_id)
+            if self.provider_settings and self.provider_settings.image_provider_id
+            else None
+        )
+
+        self._providers_loaded = True
 
     def get_client(self, provider: AIProviderOut) -> AsyncOpenAI:
         from openai import AsyncOpenAI
@@ -392,7 +405,9 @@ class OpenAIService(BaseService):
         import openai
 
         try:
-            provider = provider or self._get_provider(attachments)
+            if provider is None:
+                await self.load_providers()
+                provider = self._get_provider(attachments)
             user_messages: list[dict] = [{"type": "text", "text": message}]
             for attachment in attachments or []:
                 user_messages.append(attachment.build_message())
@@ -405,6 +420,8 @@ class OpenAIService(BaseService):
 
     async def transcribe_audio(self, audio_file_path: Path) -> str | None:
         import openai
+
+        await self.load_providers()
 
         if not self.audio_provider:
             raise OpenAINotEnabledException("No audio provider set")

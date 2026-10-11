@@ -81,7 +81,7 @@ class RecipeScraper:
                 include_categories=include_categories,
                 resolved_url=resolved_url,
             )
-            if not scraper.can_scrape():
+            if not await scraper.can_scrape():
                 self.logger.debug(f"Skipping {scraper.__class__.__name__}")
                 continue
 

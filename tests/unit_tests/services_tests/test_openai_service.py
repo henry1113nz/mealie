@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import httpx
@@ -22,8 +22,8 @@ def _make_mock_repos() -> MagicMock:
 
     repos = MagicMock()
     repos.group_id = uuid4()
-    repos.group_ai_provider_settings.get_one.return_value = provider_settings
-    repos.group_ai_providers.get_one.return_value = MagicMock()
+    repos.group_ai_provider_settings.get_one = AsyncMock(return_value=provider_settings)
+    repos.group_ai_providers.get_one = AsyncMock(return_value=MagicMock())
     return repos
 
 

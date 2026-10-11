@@ -12,6 +12,11 @@ TORTOISE_MODEL_MODULES: tuple[str, ...] = (
     "mealie.db.models.users.users",
     "mealie.db.models.users.password_reset",
     "mealie.db.models.users.user_to_recipe",
+    "mealie.db.models.group.group",
+    "mealie.db.models.group.preferences",
+    "mealie.db.models.group.ai_providers",
+    "mealie.db.models.group.exports",
+    "mealie.db.models.group.report",
 )
 DEFAULT_CONNECTION = "default"
 

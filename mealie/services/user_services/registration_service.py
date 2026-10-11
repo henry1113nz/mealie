@@ -46,7 +46,7 @@ class RegistrationService:
         # TODO: problem with repository type, not type here
         return await self.repos.users.create(new_user)  # type: ignore
 
-    def _register_new_group(self) -> GroupInDB:
+    async def _register_new_group(self) -> GroupInDB:
         group_data = GroupBase(name=self.registration.group)
 
         group_preferences = CreateGroupPreferences(
@@ -54,9 +54,9 @@ class RegistrationService:
             private_group=self.registration.private,
         )
 
-        return GroupService.create_group(self.repos, group_data, group_preferences)
+        return await GroupService.create_group(self.repos, group_data, group_preferences)
 
-    def _fetch_or_register_new_household(self, group_id: UUID4) -> HouseholdInDB:
+    async def _fetch_or_register_new_household(self, group_id: UUID4) -> HouseholdInDB:
         settings = get_app_settings()
         new_household_name = self.registration.household or settings.DEFAULT_HOUSEHOLD
 
@@ -75,7 +75,7 @@ class RegistrationService:
             recipe_landscape_view=False,
             recipe_disable_comments=self.registration.advanced,
         )
-        return HouseholdService.create_household(group_repos, household_data, household_preferences)
+        return await HouseholdService.create_household(group_repos, household_data, household_preferences)
 
     async def register_user(self, registration: CreateUserRegistration) -> PrivateUser:
         self.registration = registration
@@ -93,7 +93,7 @@ class RegistrationService:
             if not token_entry:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Invalid group token"})
 
-            maybe_none_group = self.repos.groups.get_one(token_entry.group_id)
+            maybe_none_group = await self.repos.groups.get_one(token_entry.group_id)
             if maybe_none_group is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Invalid group token"})
             group = maybe_none_group
@@ -104,8 +104,8 @@ class RegistrationService:
             household = maybe_none_household
         elif registration.group:
             new_group = True
-            group = self._register_new_group()
-            household = self._fetch_or_register_new_household(group.id)
+            group = await self._register_new_group()
+            household = await self._fetch_or_register_new_household(group.id)
         else:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Missing group"})
 

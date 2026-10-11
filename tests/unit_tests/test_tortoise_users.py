@@ -22,7 +22,7 @@ from mealie.db.models.server.task import ServerTaskModel
 from mealie.db.models.users.password_reset import PasswordResetModel
 from mealie.db.models.users.user_to_recipe import UserToRecipe
 from mealie.db.models.users.users import AuthMethod, LongLiveToken, User
-from mealie.db.tortoise_config import get_tortoise_config
+from mealie.db.tortoise_config import TORTOISE_MODEL_MODULES, get_tortoise_config
 from mealie.db.tortoise_setup import database_context
 from mealie.repos import _users_coexistence as bridge
 from mealie.repos.all_repositories import AllRepositories, get_repositories
@@ -47,19 +47,19 @@ async def native_user_repositories(
     server_settings: AppSettings, server_engine: Engine
 ) -> AsyncGenerator[tuple[AllRepositories, AllRepositories]]:
     with Session(server_engine) as session:
-        unfiltered = get_repositories(session, group_id=None, household_id=None)
-        repositories = []
-        for index in range(2):
-            group = unfiltered.groups.create({"name": f"Native group {index}"})
-            repos = get_repositories(session, group_id=group.id, household_id=None)
-            repos.households.create({"name": f"Native household {index}", "group_id": group.id})
-            repositories.append(repos)
         async with database_context(get_tortoise_config(server_settings)):
+            unfiltered = get_repositories(session, group_id=None, household_id=None)
+            repositories = []
+            for index in range(2):
+                group = await unfiltered.groups.create({"name": f"Native group {index}"})
+                repos = get_repositories(session, group_id=group.id, household_id=None)
+                repos.households.create({"name": f"Native household {index}", "group_id": group.id})
+                repositories.append(repos)
             yield repositories[0], repositories[1]
 
 
 async def create_native_user(repos: AllRepositories, name: str) -> PrivateUser:
-    group = repos.groups.get_one(repos.group_id)
+    group = await repos.groups.get_one(repos.group_id)
     household = repos.households.get_all()[0]
     return await repos.users.create(
         {
@@ -90,7 +90,11 @@ def insert_native_recipe(engine: Engine, user: PrivateUser) -> UUID:
 
 
 @pytest.mark.asyncio
-async def test_user_models_are_registered_with_the_default_connection(server_settings: AppSettings) -> None:
+async def test_user_models_are_registered_with_the_default_connection(
+    server_settings: AppSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Preserve the original C3 registry assertions; C4 tests the expanded registry.
+    monkeypatch.setattr("mealie.db.tortoise_config.TORTOISE_MODEL_MODULES", TORTOISE_MODEL_MODULES[:4])
     config = get_tortoise_config(server_settings)
     assert config["apps"] == {
         "models": {
@@ -106,6 +110,7 @@ async def test_user_models_are_registered_with_the_default_connection(server_set
     config["apps"]["models"]["models"].append("unused.module")
     fresh_config = get_tortoise_config(server_settings)
     assert "unused.module" not in fresh_config["apps"]["models"]["models"]
+    fresh_config["apps"]["models"]["models"] = list(TORTOISE_MODEL_MODULES)
     async with database_context(fresh_config) as context:
         for model in (ServerTaskModel, User, LongLiveToken, PasswordResetModel, UserToRecipe):
             assert context.get_model("models", model.__name__) is model

@@ -51,6 +51,7 @@ def test_openai_parser(
     monkeypatch.setattr(OpenAIService, "get_response", mock_get_response)
 
     def mock_openai_init(self, repos):
+        self._providers_loaded = True
         self.repos = repos
         self.custom_prompt_dir = None
 
@@ -95,6 +96,7 @@ def test_openai_parser_rejects_extra(
     monkeypatch.setattr(OpenAIService, "get_response", mock_get_response)
 
     def mock_openai_init(self, repos):
+        self._providers_loaded = True
         self.repos = repos
         self.custom_prompt_dir = None
 
@@ -158,6 +160,7 @@ def test_openai_parser_sanitize_output(
     def mock_openai_init(self, repos):
         from unittest.mock import MagicMock
 
+        self._providers_loaded = True
         self.repos = repos
         self.custom_prompt_dir = None
         self.default_provider = MagicMock()

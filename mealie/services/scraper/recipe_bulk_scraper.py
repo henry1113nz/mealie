@@ -32,7 +32,7 @@ class RecipeBulkScraperService(BaseService):
 
         super().__init__()
 
-    def get_report_id(self) -> UUID4:
+    async def get_report_id(self) -> UUID4:
         import_report = ReportCreate(
             name="Bulk Import",
             category=ReportCategory.bulk_import,
@@ -40,7 +40,7 @@ class RecipeBulkScraperService(BaseService):
             group_id=self.group.id,
         )
 
-        self.report = self.repos.group_reports.create(import_report)
+        self.report = await self.repos.group_reports.create(import_report)
         return self.report.id
 
     def _add_error_entry(self, message: str, exception: str = "") -> None:
@@ -53,7 +53,7 @@ class RecipeBulkScraperService(BaseService):
             )
         )
 
-    def _save_all_entries(self) -> None:
+    async def _save_all_entries(self) -> None:
         is_success = True
         is_failure = True
 
@@ -65,7 +65,7 @@ class RecipeBulkScraperService(BaseService):
             if is_success and not entry.success:
                 is_success = False
 
-            new_entries.append(self.repos.group_report_entries.create(entry))
+            new_entries.append(await self.repos.group_report_entries.create(entry))
 
         if is_success:
             self.report.status = ReportSummaryStatus.success
@@ -77,7 +77,7 @@ class RecipeBulkScraperService(BaseService):
             self.report.status = ReportSummaryStatus.partial
 
         self.report.entries = new_entries
-        self.repos.group_reports.update(self.report.id, self.report)
+        await self.repos.group_reports.update(self.report.id, self.report)
 
     async def scrape(self, urls: CreateRecipeByUrlBulk) -> None:
         sem = asyncio.Semaphore(3)
@@ -94,7 +94,7 @@ class RecipeBulkScraperService(BaseService):
                     return None
 
         if self.report is None:
-            self.get_report_id()
+            await self.get_report_id()
         tasks = [_do(b.url) for b in urls.imports]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for b, recipe in zip(urls.imports, results, strict=True):
@@ -124,4 +124,4 @@ class RecipeBulkScraperService(BaseService):
                 )
             )
 
-        self._save_all_entries()
+        await self._save_all_entries()

@@ -1,56 +1,47 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from pydantic import ConfigDict
-from sqlalchemy import ForeignKey, orm
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql.sqltypes import Boolean, String
+from tortoise import fields
 
-from mealie.db.models._model_base import BaseMixins, SqlAlchemyBase
-
-from .._model_utils.auto_init import auto_init
-from .._model_utils.datetime import NaiveDateTime, get_utc_now
-from .._model_utils.guid import GUID
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UTCDateTimeField, UUIDField
 
 if TYPE_CHECKING:
     from .group import Group
 
 
-class ReportEntryModel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "report_entries"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    success: Mapped[bool | None] = mapped_column(Boolean, default=False)
-    message: Mapped[str] = mapped_column(String, nullable=True)
-    exception: Mapped[str] = mapped_column(String, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(NaiveDateTime, nullable=False, default=get_utc_now)
-
-    report_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("group_reports.id"), nullable=False, index=True)
-    report: Mapped[ReportModel] = orm.relationship("ReportModel", back_populates="entries")
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+def report_timestamp() -> datetime:
+    return datetime.now(UTC)
 
 
-class ReportModel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "group_reports"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+class ReportEntryModel(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    success: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
+    message: fields.TextField[str | None] = UnboundedCharField(null=True)
+    exception: fields.TextField[str | None] = UnboundedCharField(null=True)
+    timestamp: fields.DatetimeField[datetime] = UTCDateTimeField(default=report_timestamp)
 
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    category: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(NaiveDateTime, nullable=False, default=get_utc_now)
-
-    entries: Mapped[list[ReportEntryModel]] = orm.relationship(
-        ReportEntryModel, back_populates="report", cascade="all, delete-orphan"
+    report_id: UUID
+    report: fields.ForeignKeyRelation[ReportModel] = fields.ForeignKeyField(
+        "models.ReportModel", related_name="entries", source_field="report_id", db_index=True, on_delete=fields.RESTRICT
     )
 
-    # Relationships
-    group_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="group_reports", single_parent=True)
-    model_config = ConfigDict(exclude=["entries"])
+    class Meta:
+        table = "report_entries"
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+
+class ReportModel(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    name = UnboundedCharField()
+    status = UnboundedCharField()
+    category = UnboundedCharField(db_index=True)
+    timestamp: fields.DatetimeField[datetime] = UTCDateTimeField(default=report_timestamp)
+
+    entries: fields.ReverseRelation[ReportEntryModel]
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group", related_name="group_reports", source_field="group_id", db_index=True, on_delete=fields.RESTRICT
+    )
+
+    class Meta:
+        table = "group_reports"

@@ -13,8 +13,8 @@ from .._model_utils.guid import GUID
 from ..recipe.category import Category, plan_rules_to_categories
 
 if TYPE_CHECKING:
+    from .._legacy_groups import Group
     from .._legacy_users import User
-    from ..group import Group
     from ..recipe import RecipeModel
     from .household import Household
 

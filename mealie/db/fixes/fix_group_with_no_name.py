@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mealie.core import root_logger
-from mealie.db.models.group import Group
+from mealie.db.models._legacy_groups import Group
 
 logger = root_logger.get_logger("init_db")
 

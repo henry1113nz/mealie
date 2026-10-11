@@ -2,8 +2,9 @@
 
 All execution uses the current Tortoise connection/transaction. SQLAlchemy is
 only used to compile the existing public query language against the remaining
-relationship metadata; no synchronous session performs user database access.
-Remove these bridges when group, household and recipe are converted.
+relationship metadata; no synchronous session performs converted database access.
+Group repositories reuse this compiler until the public relationship/filter
+metadata moves in the remaining household and recipe conversions.
 """
 
 from datetime import UTC, datetime
@@ -53,10 +54,16 @@ async def query_ids(model_name: str, group_id: UUID | None, pagination: Paginati
         "PasswordResetModel": PasswordResetModel,
         "UserToRecipe": UserToRecipe,
     }[model_name]
+    return await query_model_ids(model, group_id, pagination)
+
+
+async def query_model_ids(model: Any, group_id: UUID | None, pagination: PaginationQuery) -> list[Any]:
     query: Select = select(model.id)
     if group_id:
         # Password reset ownership is derived through its user as well.
-        if model is PasswordResetModel:
+        if model.__name__ == "ReportEntryModel":
+            query = query.where(model.report.has(group_id=group_id))
+        elif model is PasswordResetModel:
             query = query.where(model.user.has(User.group_id == group_id))
         else:
             query = query.filter_by(group_id=group_id)

@@ -10,7 +10,7 @@ from mealie.db.models._model_utils.auto_init import auto_init
 from mealie.db.models._model_utils.guid import GUID
 
 if TYPE_CHECKING:
-    from ..group import Group
+    from .._legacy_groups import Group
     from ..household import Household
     from . import RecipeModel
 

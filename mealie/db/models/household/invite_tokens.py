@@ -8,7 +8,7 @@ from .._model_utils import guid
 from .._model_utils.auto_init import auto_init
 
 if TYPE_CHECKING:
-    from ..group import Group
+    from .._legacy_groups import Group
     from .household import Household
 
 

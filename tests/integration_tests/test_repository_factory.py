@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.repos._utils import NOT_SET, NotSet
 from mealie.repos.repository_generic import GroupRepositoryGeneric, HouseholdRepositoryGeneric, RepositoryGeneric
+from mealie.repos.repository_group import RepositoryGroup
 from mealie.repos.repository_users import AsyncUserRepository
 from mealie.schema._mealie.mealie_model import MealieModel
 from mealie.schema.household.group_shopping_list import ShoppingListCreate
@@ -101,7 +102,9 @@ def test_all_repositories_constructors(session: Session, use_group_id: bool, use
                 repo = getattr(repositories, name)
                 assert repo.group_id == kwargs["group_id"]
                 assert repo.household_id == kwargs["household_id"]
-        elif issubclass(repo_type, (GroupRepositoryGeneric, AsyncUserRepository)):
+        elif issubclass(repo_type, (GroupRepositoryGeneric, AsyncUserRepository)) and not issubclass(
+            repo_type, RepositoryGroup
+        ):
             if not use_group_id:
                 with pytest.raises(ValueError):
                     getattr(repositories, name)

@@ -25,9 +25,8 @@ router = APIRouter(prefix="/bulk-actions")
 
 @controller(router)
 class RecipeBulkActionsController(BaseUserController):
-    @cached_property
-    def service(self) -> RecipeBulkActionsService:
-        return RecipeBulkActionsService(self.repos, self.user, self.group)
+    async def get_service(self) -> RecipeBulkActionsService:
+        return RecipeBulkActionsService(self.repos, self.user, await self.get_group())
 
     @cached_property
     def recipe_service(self) -> RecipeService:
@@ -35,16 +34,16 @@ class RecipeBulkActionsController(BaseUserController):
 
     # TODO Should these actions return some success response?
     @router.post("/tag")
-    def bulk_tag_recipes(self, tag_data: AssignTags):
-        self.service.assign_tags(tag_data.recipes, tag_data.tags)
+    async def bulk_tag_recipes(self, tag_data: AssignTags):
+        (await self.get_service()).assign_tags(tag_data.recipes, tag_data.tags)
 
     @router.post("/settings")
-    def bulk_settings_recipes(self, settings_data: AssignSettings):
-        self.service.set_settings(settings_data.recipes, settings_data.settings)
+    async def bulk_settings_recipes(self, settings_data: AssignSettings):
+        (await self.get_service()).set_settings(settings_data.recipes, settings_data.settings)
 
     @router.post("/categorize")
-    def bulk_categorize_recipes(self, assign_cats: AssignCategories):
-        self.service.assign_categories(assign_cats.recipes, assign_cats.categories)
+    async def bulk_categorize_recipes(self, assign_cats: AssignCategories):
+        (await self.get_service()).assign_categories(assign_cats.recipes, assign_cats.categories)
 
     @router.post("/delete")
     def bulk_delete_recipes(self, delete_recipes: DeleteRecipes):
@@ -58,15 +57,15 @@ class RecipeBulkActionsController(BaseUserController):
             ) from e
 
     @router.post("/export", status_code=202)
-    def bulk_export_recipes(self, export_recipes: ExportRecipes):
+    async def bulk_export_recipes(self, export_recipes: ExportRecipes):
         with get_temporary_zip_path() as temp_path:
-            self.service.export_recipes(temp_path, export_recipes.recipes)
+            await (await self.get_service()).export_recipes(temp_path, export_recipes.recipes)
 
     @router.get("/export/{export_id}/download")
-    def get_exported_data_token(self, export_id: UUID4):
+    async def get_exported_data_token(self, export_id: UUID4):
         """Returns a token to download a file"""
 
-        export = self.service.get_export(export_id)
+        export = await (await self.get_service()).get_export(export_id)
         if not export:
             raise HTTPException(404, "export not found")
 
@@ -74,11 +73,11 @@ class RecipeBulkActionsController(BaseUserController):
         return {"fileToken": create_file_token(path)}
 
     @router.get("/export", response_model=list[GroupDataExport])
-    def get_exported_data(self):
-        return self.service.get_exports()
+    async def get_exported_data(self):
+        return await (await self.get_service()).get_exports()
 
     @router.delete("/export/purge", response_model=SuccessResponse)
-    def purge_export_data(self):
+    async def purge_export_data(self):
         """Remove all exports data, including items on disk without database entry"""
-        amountDelete = self.service.purge_exports()
+        amountDelete = await (await self.get_service()).purge_exports()
         return SuccessResponse.respond(f"{amountDelete} exports deleted")

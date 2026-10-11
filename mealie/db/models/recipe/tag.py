@@ -11,7 +11,7 @@ from mealie.db.models._model_base import BaseMixins, FilterableColumn, SqlAlchem
 from mealie.db.models._model_utils import guid
 
 if TYPE_CHECKING:
-    from ..group import Group
+    from .._legacy_groups import Group
     from . import RecipeModel
 
 

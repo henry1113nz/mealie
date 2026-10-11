@@ -1,125 +1,45 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-import sqlalchemy as sa
-import sqlalchemy.orm as orm
-from pydantic import ConfigDict
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.transactions import in_transaction
 
-from mealie.db.models.recipe.labels import MultiPurposeLabel
-
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
-from ..household.cookbook import CookBook
-from ..household.invite_tokens import GroupInviteToken
-from ..household.mealplan import GroupMealPlan
-from ..household.webhooks import GroupWebhooksModel
-from ..recipe.category import Category, group_to_categories
-from .ai_providers import AIProviderSettings
-from .preferences import GroupPreferencesModel
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
-    from .._legacy_users import User
-    from ..household import Household
-    from ..household.events import GroupEventNotifierModel
-    from ..household.recipe_action import GroupRecipeAction
-    from ..household.shopping_list import ShoppingList
-    from ..recipe import IngredientFoodModel, IngredientUnitModel, RecipeModel, Tag, Tool
+    from ..server.task import ServerTaskModel
+    from ..users.users import User
+    from .ai_providers import AIProviderSettings
     from .exports import GroupDataExportsModel
+    from .preferences import GroupPreferencesModel
     from .report import ReportModel
 
 
-class Group(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "groups"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    name: FilterableColumn[str] = mapped_column(sa.String, index=True, nullable=False, unique=True)
-    slug: FilterableColumn[str | None] = mapped_column(sa.String, index=True, unique=True)
-    households: Mapped[list[Household]] = orm.relationship(
-        "Household", back_populates="group", cascade="all, delete-orphan"
-    )
-    users: Mapped[list[User]] = orm.relationship("User", back_populates="group")
-    categories: Mapped[list[Category]] = orm.relationship(Category, secondary=group_to_categories, single_parent=True)
+class Group(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    name = UnboundedCharField(unique=True, db_index=True)
+    slug: fields.TextField[str | None] = UnboundedCharField(null=True, unique=True, db_index=True)
 
-    invite_tokens: Mapped[list[GroupInviteToken]] = orm.relationship(
-        GroupInviteToken, back_populates="group", cascade="all, delete-orphan"
-    )
+    users: fields.ReverseRelation[User]
+    server_tasks: fields.ReverseRelation[ServerTaskModel]
+    preferences: fields.ReverseRelation[GroupPreferencesModel]
+    ai_provider_settings: fields.BackwardOneToOneRelation[AIProviderSettings]
+    data_exports: fields.ReverseRelation[GroupDataExportsModel]
+    group_reports: fields.ReverseRelation[ReportModel]
 
-    # Config
-    preferences: Mapped[GroupPreferencesModel] = orm.relationship(
-        GroupPreferencesModel,
-        back_populates="group",
-        uselist=False,
-        single_parent=True,
-        cascade="all, delete-orphan",
-    )
-    ai_provider_settings: Mapped[AIProviderSettings] = orm.relationship(
-        AIProviderSettings,
-        back_populates="group",
-        uselist=False,
-        single_parent=True,
-        cascade="all, delete-orphan",
-    )
+    class Meta:
+        table = "groups"
 
-    # Recipes
-    recipes: Mapped[list[RecipeModel]] = orm.relationship(
-        "RecipeModel", back_populates="group", cascade="all, delete-orphan"
-    )
+    async def delete(self, using_db: BaseDBAsyncClient | None = None) -> None:
+        # Existing tables lack database cascades. Keep every dependent deletion
+        # on the same async transaction until the remaining domains migrate.
+        from mealie.repos._groups_coexistence import delete_group_dependents
 
-    # CRUD From Others
-    common_args = {
-        "back_populates": "group",
-        "cascade": "all, delete-orphan",
-        "single_parent": True,
-    }
-
-    labels: Mapped[list[MultiPurposeLabel]] = orm.relationship(MultiPurposeLabel, **common_args)
-
-    mealplans: Mapped[list[GroupMealPlan]] = orm.relationship(
-        GroupMealPlan, order_by="GroupMealPlan.date", **common_args
-    )
-    webhooks: Mapped[list[GroupWebhooksModel]] = orm.relationship(GroupWebhooksModel, **common_args)
-    recipe_actions: Mapped[list[GroupRecipeAction]] = orm.relationship("GroupRecipeAction", **common_args)
-    cookbooks: Mapped[list[CookBook]] = orm.relationship(CookBook, **common_args)
-    data_exports: Mapped[list[GroupDataExportsModel]] = orm.relationship("GroupDataExportsModel", **common_args)
-    shopping_lists: Mapped[list[ShoppingList]] = orm.relationship("ShoppingList", **common_args)
-    group_reports: Mapped[list[ReportModel]] = orm.relationship("ReportModel", **common_args)
-    group_event_notifiers: Mapped[list[GroupEventNotifierModel]] = orm.relationship(
-        "GroupEventNotifierModel", **common_args
-    )
-
-    # Owned Models
-    ingredient_units: Mapped[list[IngredientUnitModel]] = orm.relationship("IngredientUnitModel", **common_args)
-    ingredient_foods: Mapped[list[IngredientFoodModel]] = orm.relationship("IngredientFoodModel", **common_args)
-    tools: Mapped[list[Tool]] = orm.relationship("Tool", **common_args)
-    tags: Mapped[list[Tag]] = orm.relationship("Tag", **common_args)
-    model_config = ConfigDict(
-        exclude={
-            "households",
-            "users",
-            "webhooks",
-            "recipe_actions",
-            "shopping_lists",
-            "cookbooks",
-            "preferences",
-            "ai_provider_settings",
-            "invite_tokens",
-            "mealplans",
-            "data_exports",
-        }
-    )
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-
-@sa.event.listens_for(Group, "before_delete")
-def delete_server_tasks_before_group(_mapper: orm.Mapper[Group], connection: sa.Connection, group: Group) -> None:
-    """Preserve task cleanup in the group's transaction until Group moves in C4.
-
-    Server tasks now use Tortoise, so SQLAlchemy cannot cascade their former ORM
-    relationship. The legacy FK has no database cascade. Use the same connection
-    so a failed group deletion also rolls back the task deletion.
-    """
-    server_tasks = sa.table("server_tasks", sa.column("group_id", GUID()))
-    connection.execute(server_tasks.delete().where(server_tasks.c.group_id == group.id))
+        if using_db is not None:
+            await delete_group_dependents(self.id, using_db)
+            await super().delete(using_db=using_db)
+        else:
+            async with in_transaction("default") as connection:
+                await delete_group_dependents(self.id, connection)
+                await super().delete(using_db=connection)

@@ -21,7 +21,7 @@ from mealie.services.event_bus_service.event_types import (
 last_ran = datetime.now(UTC)
 
 
-def post_group_webhooks(
+async def post_group_webhooks(
     start_dt: datetime | None = None, group_id: UUID4 | None = None, household_id: UUID4 | None = None
 ) -> None:
     """Post webhook events to specified group, or all groups"""
@@ -39,7 +39,7 @@ def post_group_webhooks(
 
         with session_context() as session:
             repos = get_repositories(session)
-            groups_data = repos.groups.page_all(PaginationQuery(page=1, per_page=-1))
+            groups_data = await repos.groups.page_all(PaginationQuery(page=1, per_page=-1))
             group_ids = [group.id for group in groups_data.items]
 
     else:

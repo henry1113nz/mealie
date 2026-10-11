@@ -8,7 +8,7 @@ from mealie.schema.group.group_preferences import CreateGroupPreferences
 from mealie.schema.group.group_statistics import GroupStorage
 from mealie.schema.household.household import HouseholdCreate
 from mealie.schema.household.household_preferences import CreateHouseholdPreferences
-from mealie.schema.user.user import GroupBase
+from mealie.schema.user.user import GroupBase, GroupInDB
 from mealie.services._base_service import BaseService
 from mealie.services.household_services.household_service import HouseholdService
 
@@ -22,12 +22,14 @@ class GroupService(BaseService):
         super().__init__()
 
     @staticmethod
-    def create_group(repos: AllRepositories, g_base: GroupBase, prefs: CreateGroupPreferences | None = None):
+    async def create_group(
+        repos: AllRepositories, g_base: GroupBase, prefs: CreateGroupPreferences | None = None
+    ) -> GroupInDB:
         """
         Creates a new group in the database with the required associated table references to ensure
         the group includes required preferences and default household.
         """
-        new_group = repos.groups.create(g_base)
+        new_group = await repos.groups.create(g_base)
 
         if prefs is None:
             prefs = CreateGroupPreferences(group_id=new_group.id)
@@ -35,11 +37,11 @@ class GroupService(BaseService):
             prefs.group_id = new_group.id
 
         group_repos = get_repositories(repos.session, group_id=new_group.id, household_id=None)
-        group_preferences = group_repos.group_preferences.create(prefs)
-        group_ai_provider_settings = group_repos.group_ai_provider_settings.create({"group_id": new_group.id})
+        group_preferences = await group_repos.group_preferences.create(prefs)
+        group_ai_provider_settings = await group_repos.group_ai_provider_settings.create({"group_id": new_group.id})
 
         settings = get_app_settings()
-        household = HouseholdService.create_household(
+        household = await HouseholdService.create_household(
             group_repos,
             HouseholdCreate(name=settings.DEFAULT_HOUSEHOLD, group_id=new_group.id),
             prefs=CreateHouseholdPreferences(

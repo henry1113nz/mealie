@@ -1,3 +1,3 @@
+from ._legacy_groups import *
 from ._legacy_users import *
-from .group import *
 from .recipe import *

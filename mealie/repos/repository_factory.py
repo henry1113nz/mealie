@@ -76,7 +76,7 @@ from mealie.schema.user.user_passwords import PrivatePasswordResetToken
 
 from ._utils import NOT_SET, NotSet
 from .repository_generic import GroupRepositoryGeneric, HouseholdRepositoryGeneric
-from .repository_group import RepositoryGroup
+from .repository_group import AsyncGroupRepository, RepositoryGroup
 from .repository_meals import RepositoryMeals
 from .repository_recipes import RepositoryRecipes
 from .repository_shopping_list import RepositoryShoppingList
@@ -271,28 +271,26 @@ class AllRepositories:
         return RepositoryGroup(self.session, PK_ID, Group, GroupInDB)
 
     @cached_property
-    def group_preferences(self) -> GroupRepositoryGeneric[ReadGroupPreferences, GroupPreferencesModel]:
-        return GroupRepositoryGeneric(
+    def group_preferences(self) -> AsyncGroupRepository[ReadGroupPreferences, GroupPreferencesModel]:
+        return AsyncGroupRepository(
             self.session, PK_GROUP_ID, GroupPreferencesModel, ReadGroupPreferences, group_id=self.group_id
         )
 
     @cached_property
-    def group_exports(self) -> GroupRepositoryGeneric[GroupDataExport, GroupDataExportsModel]:
-        return GroupRepositoryGeneric(
-            self.session, PK_ID, GroupDataExportsModel, GroupDataExport, group_id=self.group_id
-        )
+    def group_exports(self) -> AsyncGroupRepository[GroupDataExport, GroupDataExportsModel]:
+        return AsyncGroupRepository(self.session, PK_ID, GroupDataExportsModel, GroupDataExport, group_id=self.group_id)
 
     @cached_property
-    def group_reports(self) -> GroupRepositoryGeneric[ReportOut, ReportModel]:
-        return GroupRepositoryGeneric(self.session, PK_ID, ReportModel, ReportOut, group_id=self.group_id)
+    def group_reports(self) -> AsyncGroupRepository[ReportOut, ReportModel]:
+        return AsyncGroupRepository(self.session, PK_ID, ReportModel, ReportOut, group_id=self.group_id)
 
     @cached_property
-    def group_report_entries(self) -> GroupRepositoryGeneric[ReportEntryOut, ReportEntryModel]:
-        return GroupRepositoryGeneric(self.session, PK_ID, ReportEntryModel, ReportEntryOut, group_id=self.group_id)
+    def group_report_entries(self) -> AsyncGroupRepository[ReportEntryOut, ReportEntryModel]:
+        return AsyncGroupRepository(self.session, PK_ID, ReportEntryModel, ReportEntryOut, group_id=self.group_id)
 
     @cached_property
-    def group_ai_provider_settings(self) -> GroupRepositoryGeneric[AIProviderSettingsOut, AIProviderSettings]:
-        return GroupRepositoryGeneric(
+    def group_ai_provider_settings(self) -> AsyncGroupRepository[AIProviderSettingsOut, AIProviderSettings]:
+        return AsyncGroupRepository(
             self.session, PK_GROUP_ID, AIProviderSettings, AIProviderSettingsOut, group_id=self.group_id
         )
 

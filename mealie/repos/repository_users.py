@@ -9,12 +9,13 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-from tortoise import Model
+from tortoise import Model, fields
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
 from mealie.assets import users as users_assets
 from mealie.core.config import get_app_settings
+from mealie.db.models.group.group import Group
 from mealie.db.models.users import User
 from mealie.db.models.users.password_reset import PasswordResetModel
 from mealie.db.models.users.user_to_recipe import UserToRecipe
@@ -71,11 +72,11 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
     async def _serialize(self, entry: Model, schema: type[MealieModel] | None = None) -> Any:
         data = {key: getattr(entry, key) for key in entry._meta.db_fields}
         if isinstance(entry, User):
-            group = await bridge.related_record("groups", "id", entry.group_id)
+            group = await Group.get_or_none(id=entry.group_id)
             household = await bridge.related_record("households", "id", entry.household_id)
             data.update(
-                group=group["name"] if group else None,
-                group_slug=group["slug"] if group else None,
+                group=group.name if group else None,
+                group_slug=group.slug if group else None,
                 household=household["name"] if household else None,
                 household_slug=household["slug"] if household else None,
                 tokens=await LongLiveToken.filter(user_id=entry.id).values("id", "name", "created_at"),
@@ -141,7 +142,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
             raise AttributeError("Not Implemented")
         paging = pagination.model_copy()
         try:
-            identifiers = await bridge.query_ids(self.model.__name__, self.group_id, paging)
+            identifiers = await self._query_identifiers(paging)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if paging.order_by == "random":
@@ -160,11 +161,15 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
         entries = {str(entry.pk): entry for entry in await (await self._query()).filter(pk__in=identifiers)}
         items = [
             await self._serialize(
-                entries[str(UUID(str(key))) if self.model in (User, UserToRecipe) else str(key)], override
+                entries[str(UUID(str(key))) if isinstance(self.model._meta.pk, fields.UUIDField) else str(key)],
+                override,
             )
             for key in identifiers
         ]
         return PaginationBase(page=paging.page, per_page=paging.per_page, total=count, total_pages=pages, items=items)
+
+    async def _query_identifiers(self, pagination: PaginationQuery) -> list[Any]:
+        return await bridge.query_ids(self.model.__name__, self.group_id, pagination)
 
     async def count_all(self, match_key: str | None = None, match_value: Any = None) -> int:
         query = await self._query()
@@ -205,7 +210,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
         by_id = {str(item["id"] if isinstance(item, dict) else item.id): item for item in data}
         async with in_transaction("default"):
             entries = await (await self._query()).filter(pk__in=list(by_id))
-            return [await self.update(entry.pk, by_id[str(entry.pk)]) for entry in entries]
+            return [await self.update(getattr(entry, self.primary_key), by_id[str(entry.pk)]) for entry in entries]
 
     async def patch(self, match_value: Any, new_data: dict[str, Any] | BaseModel) -> Schema:
         entry = await self._query_one(match_value)
@@ -224,7 +229,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
     async def delete_many(self, values: Iterable[Any]) -> list[Schema]:
         entries = await (await self._query()).filter(pk__in=list(values))
         async with in_transaction("default"):
-            return [await self.delete(entry.pk) for entry in entries]
+            return [await self.delete(getattr(entry, self.primary_key)) for entry in entries]
 
     async def delete_all(self) -> None:
         await self.delete_many(await (await self._query()).values_list("id", flat=True))
@@ -254,21 +259,20 @@ class RepositoryUsers(AsyncUserRepository[PrivateUser, User]):
         settings = get_app_settings()
         group_name = settings.DEFAULT_GROUP if data.get("group") is None else data["group"]
         household_name = settings.DEFAULT_HOUSEHOLD if data.get("household") is None else data["household"]
-        group = await bridge.related_record("groups", "name", group_name)
+        group = await Group.get_or_none(name=group_name)
         if not group:
             raise ValueError(f"Group {group_name} does not exist; cannot create user")
-        household = await bridge.related_record("households", "name", household_name, group_id=UUID(str(group["id"])))
+        household = await bridge.related_record("households", "name", household_name, group_id=group.id)
         if not household:
             raise ValueError(
-                f'Household "{household_name}" does not exist on group '
-                f'"{group_name}" ({group["id"]}); cannot create user'
+                f'Household "{household_name}" does not exist on group "{group_name}" ({group.id}); cannot create user'
             )
         values = await super()._prepare(data, creating=creating)
-        values.update(group_id=group["id"], household_id=household["id"])
+        values.update(group_id=group.id, household_id=household["id"])
         if entry is not None:
             # Legacy updates accept explicit foreign-key changes when the named
             # relationship is unchanged (e.g. administrative group reassignment).
-            if UUID(str(group["id"])) == entry.group_id and "group_id" in data:
+            if group.id == entry.group_id and "group_id" in data:
                 values["group_id"] = data["group_id"]
             if UUID(str(household["id"])) == entry.household_id and "household_id" in data:
                 values["household_id"] = data["household_id"]

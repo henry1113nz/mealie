@@ -11,7 +11,7 @@ from slugify import slugify
 from sqlalchemy.orm import Session
 
 from alembic import op
-from mealie.db.models.group.group import Group
+from mealie.db.models._legacy_groups.group import Group
 
 # revision identifiers, used by Alembic.
 revision = "04ac51cbe9a4"

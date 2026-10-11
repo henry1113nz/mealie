@@ -85,6 +85,7 @@ class AIRecipeService(RecipeService):
             raise NoRecipeDataError(self.t("recipe.import-errors.no-source"))
 
         ai_service = OpenAIService(self.repos)
+        await ai_service.load_providers()
         self._validate_providers(ai_service, has_images=bool(workflow_input.images))
 
         ctx = WorkflowContext(

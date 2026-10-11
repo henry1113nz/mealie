@@ -275,10 +275,12 @@ section at the start of every session and update it at the end.
   is explicit in tests only. Existing tests/fixtures remain on SQLAlchemy in C1.
 - Do not overlap separate pytest runs: non-xdist fixture cleanup removes all of
   `tests/.temp`, including databases used by active xdist workers.
-- Until C4 converts Group, server tasks store a scalar `group_id` UUID and rely on
-  the existing database foreign key. The legacy Group deletion hook removes tasks
-  using the same SQLAlchemy connection/transaction. Replace this bridge with a
-  Tortoise relation and equivalent deletion behavior in C4.
+- Server tasks and users now have native Tortoise Group relations. `Group.delete()`
+  removes dependents in the same async transaction and rejects groups with users.
+  `_groups_coexistence.py` retains household/recipe cascades until C5-C6: follow
+  ownership edges for deletion, clear nullable references and remove association
+  rows while preserving referring objects in other groups. The old SQLAlchemy
+  server-task deletion hook is gone.
 - During coexistence, inspect both ORM model registries when checking backup
   datetime coverage. Production table creation remains on the existing Alembic
   history until C7; registering a converted model does not generate its schema.
@@ -286,12 +288,23 @@ section at the start of every session and update it at the end.
   are async. Await them and their service/authentication/import call chains on
   the owning database loop. Script entry points may call `asyncio.run(main())`
   once around an isolated `database_context()`; no per-call async adapters.
-- Until C4-C6 convert the related domains, `_legacy_users.py` provides SQLAlchemy
-  relationship projections for those domains and their schema loader options.
-  Do not use these projections for application user CRUD. `_users_coexistence.py`
-  compiles the existing public filter/order language against legacy relationship
-  metadata, but executes it and cross-domain SQL through the active Tortoise
-  connection/transaction. Remove these bridges as their domains are converted.
+- Until C5-C6 convert the related domains, `_legacy_users.py` and `_legacy_groups/`
+  provide SQLAlchemy relationship projections for those domains, legacy bootstrap
+  and schema loader options. Do not use these projections for application user or
+  group CRUD. `_users_coexistence.py` compiles the existing public filter/order
+  language against legacy relationship metadata, but executes it and cross-domain
+  SQL through the active Tortoise connection/transaction. Remove these bridges as
+  their domains are converted.
+- All seven group repositories (`groups`, `group_preferences`, `group_exports`,
+  `group_reports`, `group_report_entries`, `group_ai_provider_settings`,
+  `group_ai_providers`) are async. Await their routes/services/scheduler callers.
+  OpenAI service construction has no database access; await `load_providers()`
+  before inspecting provider settings or selecting a provider. Migrators resolve
+  their group at the start of async `migrate()`.
+- AI provider settings and providers retain their cyclic foreign keys. C4 still
+  uses the Alembic schema; C7 must handle cyclic DDL explicitly when introducing
+  Aerich. Do not disable these constraints to accommodate Tortoise's topological
+  schema generator. Export expiry remains text and is parsed as UTC for cleanup.
 - Startup runs synchronous `prepare_database()` (legacy Alembic) before opening
   the async context, then awaits `initialize_data()` inside it. Backup restore
   likewise awaits initialization in its existing database context.
@@ -354,6 +367,37 @@ section at the start of every session and update it at the end.
   services, recipe rating/import callers, migrations, scheduler, backup restore
   and scripts. Blocking password checks and LDAP/OIDC network work remain in
   threadpool workers. Scheduler callbacks support both sync and async functions.
+- 2026-10-11 C4: Convert all nine group-domain tables (Group, preferences, exports,
+  reports, report entries, AI settings, providers, headers and parameters) to
+  Tortoise, registering five modules explicitly. Preserve table/column names,
+  UUID/UTC storage, nullability, indexes, unique constraints and unbounded strings.
+  AI header/parameter rows retain their inherited timestamp columns. User and
+  ServerTask group references are native relations; household/recipe references
+  remain for C5-C6.
+- 2026-10-11 C4: Use native async persistence for all seven group repositories,
+  with explicit hydration into unchanged schemas. Keep slug collision retries,
+  preference keys based on group ID, report-entry cleanup and API-key exclusion.
+  Replace provider headers/parameters transactionally, retain omitted API keys,
+  validate provider/settings ownership and clear provider selections on deletion.
+  User hydration/lookup now reads Group through Tortoise.
+- 2026-10-11 C4: Replace the legacy Group server-task deletion hook with native
+  transactional Group deletion. Preserve the populated-group restriction and
+  all dependent group/household/recipe cleanup through the active connection.
+  During coexistence, explicit ownership and reference maps retain foreign-group
+  parents, clear nullable pointers and remove affected association rows, including
+  nullable-group meal plans and cross-group food substitutions. Rollback restores
+  every affected domain.
+- 2026-10-11 C4: Add `_legacy_groups/` only for remaining SQLAlchemy relationships,
+  filter/order metadata and legacy Alembic/bootstrap/backup access. Three schema
+  files change only ORM imports; Pydantic definitions and frontend/generated
+  files are unchanged. Production schema creation remains Alembic until C7;
+  cyclic AI settings/provider foreign keys remain enabled for C7 to handle.
+- 2026-10-11 C4: Propagate async access through group/admin/public/SPA routes,
+  registration and household initialization, reports/imports, exporters, AI
+  provider loading and scheduler scans. Reuse the persistent test portal for
+  synchronous setup and direct async SPA calls; adapt repository mocks to async.
+  Preserve existing C2/C3 registry assertions in isolated configuration setup,
+  and validate the full production registry separately in C4.
 
 ### C1 validation and remaining work (2026-10-11)
 - Reported gate before this follow-up: 3217 passed, 1 failed, 0 errors,
@@ -435,13 +479,43 @@ section at the start of every session and update it at the end.
   C7 still removes SQLAlchemy/query metadata/Alembic and adds Aerich. No other
   domain conversion was started. No push, remote or git-configuration change.
 
+### C4 validation and remaining work (2026-10-11)
+- Final full `uv run pytest -n 4 --dist loadfile`: 3241 passed, 5 failed,
+  0 errors, 18 existing skips. All five failures remain in
+  `tests/unit_tests/pkgs/safehttp/test_transport.py`, where local socket binding
+  raises sandbox `PermissionError: [Errno 1] Operation not permitted`. No new
+  failures remain. Commands used `UV_FROZEN=1` to retain the committed lockfile;
+  no pytest runs overlapped.
+- All 15 new native C4 cases pass on isolated disposable SQLite databases built
+  from the actual Alembic history. They cover registry/native relations, storage,
+  defaults/nullability/constraints, hydration/scoping/filtering, slug collisions,
+  report/provider cleanup, API-key preservation, ownership checks, transactional
+  deletion/rollback, alternate cross-group references and UTC export expiration.
+  The focused SPA/parser/native regression run passed all 45 tests.
+- `task py:mypy`: 0 errors across 478 source files. `task py:lint`, Ruff checks
+  on changed tests, formatting checks and `git diff --check` pass. Native group
+  model columns/nullability match the legacy metadata. Pydantic AST comparison
+  confirms definitions are unchanged in all three schema files with import edits.
+- All 1192 pre-existing test functions, 4043 assertion expressions and 12
+  skip-related constructs are retained. Assertion ASTs are unchanged after
+  removing only async invocation adapters, except for three C2 assertions whose
+  SQLAlchemy database reads now use equivalent native Tortoise reads; their
+  comparisons and expected values are unchanged. C4 adds 11 functions (15 cases)
+  and 115 assertions, totaling 1203 functions and 4158 assertions. No tests,
+  assertions or expected values were removed, skipped, marked xfail or weakened.
+- Live PostgreSQL remains unverified; existing PostgreSQL adapter/storage tests
+  pass. C5-C6 must remove remaining household/recipe projections and cascade maps;
+  C7 still removes SQLAlchemy/query metadata/Alembic and introduces Aerich with
+  explicit handling of cyclic AI foreign keys. No later conversion step was
+  started. No push, remote or git-configuration change.
+
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
 | C1 | Foundation | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3218 passed, 0 failures in external measurement, 18 skipped |
 | C2 | server | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3219 passed, 5 sandbox socket failures, 18 existing skips |
 | C3 | users | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3226 passed, 5 sandbox socket failures, 18 existing skips |
-| C4 | group | not started | | |
+| C4 | group | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3241 passed, 5 sandbox socket failures, 18 existing skips |
 | C5 | household | not started | | |
 | C6 | recipe | not started | | |
 | C7 | Remove SQLAlchemy and Alembic, add Aerich | not started | | |

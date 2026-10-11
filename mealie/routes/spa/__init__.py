@@ -215,14 +215,14 @@ def response_404():
     return Response(__contents, media_type="text/html", status_code=404)
 
 
-def serve_recipe_with_meta_public(
+async def serve_recipe_with_meta_public(
     group_slug: str,
     recipe_slug: str,
     session: Session = Depends(generate_session),
 ):
     try:
         public_repos = AllRepositories(session)
-        group = public_repos.groups.get_by_slug_or_id(group_slug)
+        group = await public_repos.groups.get_by_slug_or_id(group_slug)
 
         if not (group and group.preferences) or group.preferences.private_group:
             return response_404()
@@ -246,7 +246,7 @@ async def serve_recipe_with_meta(
     session: Session = Depends(generate_session),
 ):
     if not user or user.group_slug != group_slug:
-        return serve_recipe_with_meta_public(group_slug, recipe_slug, session)
+        return await serve_recipe_with_meta_public(group_slug, recipe_slug, session)
 
     try:
         group_repos = AllRepositories(session, group_id=user.group_id, household_id=None)

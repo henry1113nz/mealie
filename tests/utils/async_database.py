@@ -73,7 +73,19 @@ class SynchronousRepository:
 class SynchronousRepositories(AllRepositories):
     def __getattribute__(self, name: str) -> Any:
         value = super().__getattribute__(name)
-        if name in {"users", "user_ratings", "api_tokens", "tokens_pw_reset"}:
+        if name in {
+            "users",
+            "user_ratings",
+            "api_tokens",
+            "tokens_pw_reset",
+            "groups",
+            "group_preferences",
+            "group_exports",
+            "group_reports",
+            "group_report_entries",
+            "group_ai_providers",
+            "group_ai_provider_settings",
+        }:
             return SynchronousRepository(value)
         return value
 

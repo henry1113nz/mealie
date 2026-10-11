@@ -117,7 +117,7 @@ class ABCScraperStrategy(ABC):
         return self.resolved_url or self.url
 
     @abstractmethod
-    def can_scrape(self) -> bool: ...
+    async def can_scrape(self) -> bool: ...
 
     @abstractmethod
     async def get_html(self, url: str) -> str: ...
@@ -138,7 +138,7 @@ class ABCScraperStrategy(ABC):
 
 
 class RecipeScraperPackage(ABCScraperStrategy):
-    def can_scrape(self) -> bool:
+    async def can_scrape(self) -> bool:
         return bool(self.url or self.raw_html)
 
     @staticmethod
@@ -353,8 +353,8 @@ class RecipeScraperOpenAI(ABCScraperStrategy):
     page's contents rather than trying to scrape it directly.
     """
 
-    def can_scrape(self) -> bool:
-        settings = self.repos.group_ai_provider_settings.get_one(self.repos.group_id)
+    async def can_scrape(self) -> bool:
+        settings = await self.repos.group_ai_provider_settings.get_one(self.repos.group_id)
         return bool(settings and settings.ai_enabled and (self.url or self.raw_html))
 
     async def get_html(self, url: str) -> str:
@@ -381,6 +381,7 @@ class RecipeScraperOpenAI(ABCScraperStrategy):
 
     async def parse(self, on_progress: Callable[[str], Awaitable[None]] | None = None):
         ctx = self.build_context(on_progress)
+        await ctx.ai.load_providers()
         result = await RecipeImportWorkflow().run(ctx)
 
         extras = ScrapedExtras()
@@ -393,11 +394,11 @@ class RecipeScraperOpenAI(ABCScraperStrategy):
 
 
 class RecipeScraperOpenAITranscription(ABCScraperStrategy):
-    def can_scrape(self) -> bool:
+    async def can_scrape(self) -> bool:
         if not self.url:
             return False
 
-        settings = self.repos.group_ai_provider_settings.get_one(self.repos.group_id)
+        settings = await self.repos.group_ai_provider_settings.get_one(self.repos.group_id)
         if not (settings and settings.audio_provider_enabled):
             return False
 
@@ -481,7 +482,7 @@ class RecipeScraperOpenAITranscription(ABCScraperStrategy):
 
 
 class RecipeScraperOpenGraph(ABCScraperStrategy):
-    def can_scrape(self) -> bool:
+    async def can_scrape(self) -> bool:
         return bool(self.url or self.raw_html)
 
     async def get_html(self, url: str) -> str:

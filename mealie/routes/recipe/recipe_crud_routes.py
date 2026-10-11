@@ -373,7 +373,7 @@ class RecipeController(BaseRecipeController):
             message=self.t(
                 "notifications.generic-created-with-url",
                 name=new_recipe.name,
-                url=urls.recipe_url(self.group.slug, new_recipe.slug, self.settings.BASE_URL),
+                url=urls.recipe_url(self.user.group_slug, new_recipe.slug, self.settings.BASE_URL),
             ),
         )
 
@@ -452,10 +452,10 @@ class RecipeController(BaseRecipeController):
         return self._stream_recipe_creation(create)
 
     @router.post("/create/url/bulk", status_code=202)
-    def parse_recipe_url_bulk(self, bulk: CreateRecipeByUrlBulk, bg_tasks: BackgroundTasks):
+    async def parse_recipe_url_bulk(self, bulk: CreateRecipeByUrlBulk, bg_tasks: BackgroundTasks):
         """Takes in a URL and attempts to scrape data and load it into the database"""
-        bulk_scraper = RecipeBulkScraperService(self.service, self.repos, self.group, self.translator)
-        report_id = bulk_scraper.get_report_id()
+        bulk_scraper = RecipeBulkScraperService(self.service, self.repos, await self.get_group(), self.translator)
+        report_id = await bulk_scraper.get_report_id()
         bg_tasks.add_task(bulk_scraper.scrape, bulk)
 
         self.publish_event(
@@ -612,7 +612,7 @@ class RecipeController(BaseRecipeController):
                 message=self.t(
                     "notifications.generic-created-with-url",
                     name=new_recipe.name,
-                    url=urls.recipe_url(self.group.slug, new_recipe.slug, self.settings.BASE_URL),
+                    url=urls.recipe_url(self.user.group_slug, new_recipe.slug, self.settings.BASE_URL),
                 ),
             )
 
@@ -657,7 +657,7 @@ class RecipeController(BaseRecipeController):
                 message=self.t(
                     "notifications.generic-updated-with-url",
                     name=recipe.name,
-                    url=urls.recipe_url(self.group.slug, recipe.slug, self.settings.BASE_URL),
+                    url=urls.recipe_url(self.user.group_slug, recipe.slug, self.settings.BASE_URL),
                 ),
             )
 
@@ -705,7 +705,7 @@ class RecipeController(BaseRecipeController):
                 message=self.t(
                     "notifications.generic-updated-with-url",
                     name=recipe.name,
-                    url=urls.recipe_url(self.group.slug, recipe.slug, self.settings.BASE_URL),
+                    url=urls.recipe_url(self.user.group_slug, recipe.slug, self.settings.BASE_URL),
                 ),
             )
 
@@ -754,7 +754,7 @@ class RecipeController(BaseRecipeController):
                 message=self.t(
                     "notifications.generic-updated-with-url",
                     name=recipe.name,
-                    url=urls.recipe_url(self.group.slug, recipe.slug, self.settings.BASE_URL),
+                    url=urls.recipe_url(self.user.group_slug, recipe.slug, self.settings.BASE_URL),
                 ),
             )
 

@@ -157,9 +157,8 @@ class BaseUserController(_BaseController):
     def household_id(self) -> UUID4:
         return self.user.household_id
 
-    @property
-    def group(self) -> GroupInDB:
-        return self.repos.groups.get_one(self.group_id)
+    async def get_group(self) -> GroupInDB:
+        return await self.repos.groups.get_one(self.group_id)
 
     @property
     def household(self) -> HouseholdInDB:

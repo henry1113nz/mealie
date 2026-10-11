@@ -28,10 +28,10 @@ async def validate_user_email(email: str, session: Session = Depends(generate_se
 
 
 @router.get("/group", response_model=ValidationResponse)
-def validate_group(name: str, session: Session = Depends(generate_session)):
+async def validate_group(name: str, session: Session = Depends(generate_session)):
     """Checks if a group with the given name exists"""
     db = get_repositories(session, group_id=None, household_id=None)
-    existing_element = db.groups.get_by_name(name)
+    existing_element = await db.groups.get_by_name(name)
     return ValidationResponse(valid=existing_element is None)
 
 

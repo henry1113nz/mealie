@@ -6,7 +6,7 @@ from mealie.core import exceptions
 from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.household import HouseholdCreate, HouseholdRecipeSummary
-from mealie.schema.household.household import HouseholdRecipeCreate, HouseholdRecipeUpdate
+from mealie.schema.household.household import HouseholdInDB, HouseholdRecipeCreate, HouseholdRecipeUpdate
 from mealie.schema.household.household_preferences import CreateHouseholdPreferences, SaveHouseholdPreferences
 from mealie.schema.household.household_statistics import HouseholdStatistics
 from mealie.schema.recipe.recipe import Recipe
@@ -34,12 +34,12 @@ class HouseholdService(BaseService):
         return cross_household_recipes.get_one(recipe_slug, key)
 
     @staticmethod
-    def create_household(
+    async def create_household(
         repos: AllRepositories, h_base: HouseholdCreate, prefs: CreateHouseholdPreferences | None = None
-    ):
+    ) -> HouseholdInDB:
         new_household = repos.households.create(h_base)
         if prefs is None:
-            group = repos.groups.get_one(new_household.group_id)
+            group = await repos.groups.get_one(new_household.group_id)
             if group and group.preferences:
                 prefs = CreateHouseholdPreferences(
                     private_household=group.preferences.private_group,

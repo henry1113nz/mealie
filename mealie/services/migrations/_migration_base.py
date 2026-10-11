@@ -19,7 +19,7 @@ from mealie.schema.reports.reports import (
     ReportSummary,
     ReportSummaryStatus,
 )
-from mealie.schema.user.user import PrivateUser
+from mealie.schema.user.user import GroupInDB, PrivateUser
 from mealie.services.recipe.recipe_service import RecipeService
 from mealie.services.scraper import cleaner
 
@@ -63,13 +63,10 @@ class BaseMigrator(BaseService):
         if not household:
             raise UnexpectedNone(f"Cannot find household {household_id}")
 
-        group = db.groups.get_one(group_id)
-        if not group:
-            raise UnexpectedNone(f"Cannot find group {group_id}")
-
         self.user = user
         self.household = household
-        self.group = group
+        self.group_id = group_id
+        self.group: GroupInDB
 
         self.name = "migration"
 
@@ -107,7 +104,7 @@ class BaseMigrator(BaseService):
     async def _migrate(self) -> None:
         raise NotImplementedError
 
-    def _create_report(self, report_name: str) -> None:
+    async def _create_report(self, report_name: str) -> None:
         report_to_save = ReportCreate(
             name=report_name,
             category=ReportCategory.migration,
@@ -115,10 +112,10 @@ class BaseMigrator(BaseService):
             group_id=self.group.id,
         )
 
-        self.report = self.db.group_reports.create(report_to_save)
+        self.report = await self.db.group_reports.create(report_to_save)
         self.report_id = self.report.id
 
-    def _save_all_entries(self) -> None:
+    async def _save_all_entries(self) -> None:
         is_success = True
         is_failure = True
 
@@ -130,7 +127,7 @@ class BaseMigrator(BaseService):
             if is_success and not entry.success:
                 is_success = False
 
-            new_entries.append(self.db.group_report_entries.create(entry))
+            new_entries.append(await self.db.group_report_entries.create(entry))
 
         if is_success:
             self.report.status = ReportSummaryStatus.success
@@ -142,14 +139,18 @@ class BaseMigrator(BaseService):
             self.report.status = ReportSummaryStatus.partial
 
         self.report.entries = new_entries
-        self.db.group_reports.update(self.report.id, self.report)
+        await self.db.group_reports.update(self.report.id, self.report)
 
     async def migrate(self, report_name: str) -> ReportSummary:
-        self._create_report(report_name)
+        group = await self.db.groups.get_one(self.group_id)
+        if not group:
+            raise UnexpectedNone(f"Cannot find group {self.group_id}")
+        self.group = group
+        await self._create_report(report_name)
         await self._migrate()
-        self._save_all_entries()
+        await self._save_all_entries()
 
-        result = self.db.group_reports.get_one(self.report_id)
+        result = await self.db.group_reports.get_one(self.report_id)
 
         if not result:
             raise ValueError("Report not found")

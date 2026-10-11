@@ -46,7 +46,7 @@ class AdminAboutController(BaseAdminController):
             untagged_recipes=self.repos.recipes.count_untagged(),  # type: ignore
             total_users=await self.repos.users.count_all(),
             total_households=self.repos.households.count_all(),
-            total_groups=self.repos.groups.count_all(),
+            total_groups=await self.repos.groups.count_all(),
         )
 
     @router.get("/check", response_model=CheckAppConfig)

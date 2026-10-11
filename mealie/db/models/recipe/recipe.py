@@ -33,8 +33,8 @@ from .tag import recipes_to_tags
 from .tool import recipes_to_tools
 
 if TYPE_CHECKING:
+    from .._legacy_groups import Group, GroupMealPlan
     from .._legacy_users import User
-    from ..group import Group, GroupMealPlan
     from ..household import Household, ShoppingListItemRecipeReference, ShoppingListRecipeReference
     from . import Category, Tag, Tool
 

@@ -9,7 +9,7 @@ from .._model_utils.auto_init import auto_init
 from .._model_utils.guid import GUID
 
 if TYPE_CHECKING:
-    from ..group.group import Group
+    from .._legacy_groups.group import Group
     from ..household.shopping_list import ShoppingListItem, ShoppingListMultiPurposeLabel
     from . import IngredientFoodModel
 

@@ -1,29 +1,31 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
     from .group import Group
 
 
-class GroupDataExportsModel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "group_data_exports"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+class GroupDataExportsModel(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    group_id: UUID | None
+    group: fields.ForeignKeyNullableRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="data_exports",
+        source_field="group_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
 
-    group: Mapped[Group | None] = orm.relationship("Group", back_populates="data_exports", single_parent=True)
-    group_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("groups.id"), index=True)
+    name = UnboundedCharField()
+    filename = UnboundedCharField()
+    path = UnboundedCharField()
+    size = UnboundedCharField()
+    expires = UnboundedCharField()
 
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    filename: Mapped[str] = mapped_column(String, nullable=False)
-    path: Mapped[str] = mapped_column(String, nullable=False)
-    size: Mapped[str] = mapped_column(String, nullable=False)
-    expires: Mapped[str] = mapped_column(String, nullable=False)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "group_data_exports"

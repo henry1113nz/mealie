@@ -51,10 +51,10 @@ def _trim_list_items(shopping_list_service: ShoppingListService, shopping_list_i
     publish_list_item_events(event_publisher, items_response)
 
 
-def delete_old_checked_list_items():
+async def delete_old_checked_list_items() -> None:
     with session_context() as session:
         repos = get_repositories(session)
-        groups = repos.groups.page_all(PaginationQuery(page=1, per_page=-1)).items
+        groups = (await repos.groups.page_all(PaginationQuery(page=1, per_page=-1))).items
 
         for group in groups:
             group_repos = get_repositories(session, group_id=group.id)

@@ -17,7 +17,7 @@ from mealie.schema.group.group_preferences import ReadGroupPreferences
 from mealie.schema.household.webhook import CreateWebhook, ReadWebhook
 from mealie.schema.response.pagination import PaginationBase
 
-from ...db.models.group import Group
+from ...db.models._legacy_groups import Group
 from ..recipe import CategoryBase
 
 DEFAULT_INTEGRATION_ID = "generic"
