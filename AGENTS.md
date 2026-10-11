@@ -253,15 +253,58 @@ section at the start of every session and update it at the end.
 - Test command: uv run pytest -n 4 --dist loadfile
 
 ### Conventions
-(Add naming, model, query and session conventions here as they are decided.)
+- Tortoise configuration lives in `mealie/db/tortoise_config.py`, derived from
+  `get_app_settings()`. Register converted model modules explicitly in
+  `TORTOISE_MODEL_MODULES` under the `models` app, using the `default` connection.
+- `database_context()` owns async connections on one event loop and closes them
+  on normal exit, exceptions, and failed startup. Only the FastAPI lifespan enables
+  its global fallback for sibling ASGI request tasks. Scripts/tests use isolated
+  contexts; use native `tortoise.transactions.in_transaction("default")` for atomic
+  operations. Do not adapt async database calls with per-call `asyncio.run()`.
+- Converted models inherit `TortoiseBase` from `mealie/db/models/_tortoise_base.py`
+  and explicitly preserve existing table/column names. Use its `UUIDField` for
+  native PostgreSQL UUIDs / SQLite 32-character hex values, and `UTCDateTimeField`
+  for naive UTC storage with aware UTC Python values.
+- The stored/query timestamp remains `update_at`; `updated_at` is a Python alias.
+  Partial saves must include `update_at` to trigger auto-update; bulk/queryset
+  updates must set it explicitly. Keep existing normalization behavior.
+- SQLite preserves existing journal mode unless WAL is requested (or testing
+  requests MEMORY); test databases use synchronous=OFF. PostgreSQL uses asyncpg,
+  with explicit credentials normally and a DSN-aware backend for URL overrides.
+- New async tests use isolated contexts and disposable databases; schema generation
+  is explicit in tests only. Existing tests/fixtures remain on SQLAlchemy in C1.
 
 ### Decisions log
-(One line per decision: session, decision, reason.)
+- 2026-10-11 C1: Foundation is additive dependencies/configuration/lifecycle/model primitives/tests; domain conversions remain C2–C6 and Alembic replacement remains C7.
+- 2026-10-11 C1: Declare `tortoise-orm[asyncpg]==1.1.7` so both database drivers are available; dependency resolution/install and lockfile generation remain blocked by unavailable PyPI access (no local wheels supplied).
+- 2026-10-11 C1: Keep legacy bootstrap before async connection startup; C1 neither generates production schemas nor changes HTTP/Pydantic schemas.
+- 2026-10-11 C1: Register only the abstract base until C2 because Tortoise requires a nonempty module list; suppress only its specific no-concrete-model warning. Remove that entry and warning exception when registering C2 models.
+- 2026-10-11 C1: Preserve UUID and timestamp storage while both ORMs coexist; this supports the staged rewrite, not upgrades from old Alembic databases.
+- 2026-10-11 C1: Preserve PostgreSQL override URI parsing through asyncpg, including sockets, TLS and escaped credentials; translate libpq `connect_timeout` into asyncpg's overall connection timeout.
+
+### C1 validation and remaining work (2026-10-11)
+- Baseline `uv run pytest -n 4 --dist loadfile`: 3172 passed, 18 existing skips,
+  5 failures in `tests/unit_tests/pkgs/safehttp/test_transport.py`, all from
+  sandbox-denied local socket binding (`PermissionError: [Errno 1]`).
+- Final requested command was run again but stopped before pytest: `uv` could not
+  reach PyPI to resolve dependencies. Offline resolution also failed because the
+  required package metadata/artifacts were not cached. `uv.lock` is unchanged and
+  does not yet contain the new dependency; C1 is not complete.
+- Diagnostic `uv run --no-sync pytest -n 4 --dist loadfile`: 3182 passed,
+  18 existing skips, the same 5 socket-binding failures, and 3 collection errors
+  in the new model/setup/PostgreSQL tests because `tortoise`/`asyncpg` are absent.
+  The 10 new configuration tests pass. No existing tests/assertions were changed.
+- Ruff lint/format and static mypy checks pass for the new modules (mypy is
+  configured to ignore missing imports; this does not validate uninstalled APIs).
+  Live PostgreSQL and the new async runtime tests remain unverified.
+- Before completing C1 or starting C2: resolve and install dependencies, generate
+  `uv.lock` with `uv lock`, execute the new runtime tests, and rerun the required
+  full suite in an environment with the needed packages and local socket access.
 
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
-| C1 | Foundation | not started | | |
+| C1 | Foundation | in progress; dependency installation/validation blocked | 2026-10-11 | Required final run blocked by PyPI; no-sync: 5 baseline failures + 3 missing-dependency collection errors |
 | C2 | server | not started | | |
 | C3 | users | not started | | |
 | C4 | group | not started | | |
