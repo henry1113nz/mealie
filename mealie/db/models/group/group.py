@@ -15,7 +15,6 @@ from ..household.invite_tokens import GroupInviteToken
 from ..household.mealplan import GroupMealPlan
 from ..household.webhooks import GroupWebhooksModel
 from ..recipe.category import Category, group_to_categories
-from ..server.task import ServerTaskModel
 from .ai_providers import AIProviderSettings
 from .preferences import GroupPreferencesModel
 
@@ -81,7 +80,6 @@ class Group(SqlAlchemyBase, BaseMixins):
     webhooks: Mapped[list[GroupWebhooksModel]] = orm.relationship(GroupWebhooksModel, **common_args)
     recipe_actions: Mapped[list[GroupRecipeAction]] = orm.relationship("GroupRecipeAction", **common_args)
     cookbooks: Mapped[list[CookBook]] = orm.relationship(CookBook, **common_args)
-    server_tasks: Mapped[list[ServerTaskModel]] = orm.relationship("ServerTaskModel", **common_args)
     data_exports: Mapped[list[GroupDataExportsModel]] = orm.relationship("GroupDataExportsModel", **common_args)
     shopping_lists: Mapped[list[ShoppingList]] = orm.relationship("ShoppingList", **common_args)
     group_reports: Mapped[list[ReportModel]] = orm.relationship("ReportModel", **common_args)
@@ -113,3 +111,15 @@ class Group(SqlAlchemyBase, BaseMixins):
     @auto_init()
     def __init__(self, **_) -> None:
         pass
+
+
+@sa.event.listens_for(Group, "before_delete")
+def delete_server_tasks_before_group(_mapper: orm.Mapper[Group], connection: sa.Connection, group: Group) -> None:
+    """Preserve task cleanup in the group's transaction until Group moves in C4.
+
+    Server tasks now use Tortoise, so SQLAlchemy cannot cascade their former ORM
+    relationship. The legacy FK has no database cascade. Use the same connection
+    so a failed group deletion also rolls back the task deletion.
+    """
+    server_tasks = sa.table("server_tasks", sa.column("group_id", GUID()))
+    connection.execute(server_tasks.delete().where(server_tasks.c.group_id == group.id))

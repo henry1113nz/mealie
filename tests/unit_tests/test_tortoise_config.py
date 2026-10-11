@@ -76,7 +76,10 @@ def test_missing_provider_is_rejected() -> None:
         get_tortoise_config(settings)
 
 
-def test_config_has_no_domain_models_or_shared_mutable_state() -> None:
+def test_config_has_no_domain_models_or_shared_mutable_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Keep the original foundation configuration isolated as domains are added.
+    # The production registry is exercised separately by the server model tests.
+    monkeypatch.setattr("mealie.db.tortoise_config.TORTOISE_MODEL_MODULES", ("mealie.db.models._tortoise_base",))
     config = get_tortoise_config()
     assert config["apps"] == {
         "models": {"models": ["mealie.db.models._tortoise_base"], "default_connection": "default"}

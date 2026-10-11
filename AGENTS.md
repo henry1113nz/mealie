@@ -275,6 +275,13 @@ section at the start of every session and update it at the end.
   is explicit in tests only. Existing tests/fixtures remain on SQLAlchemy in C1.
 - Do not overlap separate pytest runs: non-xdist fixture cleanup removes all of
   `tests/.temp`, including databases used by active xdist workers.
+- Until C4 converts Group, server tasks store a scalar `group_id` UUID and rely on
+  the existing database foreign key. The legacy Group deletion hook removes tasks
+  using the same SQLAlchemy connection/transaction. Replace this bridge with a
+  Tortoise relation and equivalent deletion behavior in C4.
+- During coexistence, inspect both ORM model registries when checking backup
+  datetime coverage. Production table creation remains on the existing Alembic
+  history until C7; registering a converted model does not generate its schema.
 
 ### Decisions log
 - 2026-10-11 C1: Foundation is additive dependencies/configuration/lifecycle/model primitives/tests; domain conversions remain C2–C6 and Alembic replacement remains C7.
@@ -284,6 +291,22 @@ section at the start of every session and update it at the end.
 - 2026-10-11 C1: Preserve UUID and timestamp storage while both ORMs coexist; this supports the staged rewrite, not upgrades from old Alembic databases.
 - 2026-10-11 C1: Preserve PostgreSQL override URI parsing through asyncpg, including sockets, TLS and escaped credentials; translate libpq `connect_timeout` into asyncpg's overall connection timeout.
 - 2026-10-11 C1 follow-up: Explicitly open the connection before the startup health query. This preserves the driver's connection exception (including `sqlite3.OperationalError`) while retaining the health query and context cleanup on failure.
+- 2026-10-11 C2: Converted the deprecated `ServerTaskModel` to Tortoise, preserving
+  `server_tasks`, all column names/nullability, unbounded text, UUID storage and
+  UTC timestamps. No server-task repository, route, service or scheduler callers
+  exist, so no async call-chain conversion is needed in this step.
+- 2026-10-11 C2: Register `mealie.db.models.server.task` explicitly and remove the
+  abstract-only registration/warning suppression and legacy server model import.
+  Other domain conversions and Aerich remain C3–C7.
+- 2026-10-11 C2: Remove the SQLAlchemy Group-to-task relationship and preserve its
+  deletion cleanup with a typed, transaction-local Group `before_delete` hook.
+  The existing foreign key has no database cascade; simply removing the ORM
+  relationship would leave orphan tasks or reject group deletion.
+- 2026-10-11 C2: Preserve the original C1 abstract-registry test's assertions and
+  expected values by isolating its registry in test configuration setup. A new
+  unmocked C2 test checks the production registry, default connection and returned
+  configuration-copy isolation. Extend the backup test's database inspection to
+  include Tortoise datetime fields, retaining its original assertion.
 
 ### C1 validation and remaining work (2026-10-11)
 - Reported gate before this follow-up: 3217 passed, 1 failed, 0 errors,
@@ -311,11 +334,36 @@ section at the start of every session and update it at the end.
   PostgreSQL remains unverified; its adapter tests exercise driver parsing and
   mocked pool creation. Do not claim the count increase is equal to baseline.
 
+### C2 validation and remaining work (2026-10-11)
+- The six new C2 cases pass with `uv run pytest -n 4 --dist loadfile` targeting
+  `tests/unit_tests/test_tortoise_server.py`. They use isolated disposable SQLite
+  databases built from the actual Alembic head history and cover registration,
+  async CRUD, UUID/UTC storage, nullable/long values, foreign-key rejection,
+  group deletion/rollback/isolation and reflected backup dump/drop/restore.
+- The 43 existing foundation and backup datetime checks also pass.
+- Full `uv run pytest -n 4 --dist loadfile`: 3219 passed, 5 failed, 0 errors,
+  18 existing skips. All five failures are in
+  `tests/unit_tests/pkgs/safehttp/test_transport.py` and raise
+  `PermissionError: [Errno 1] Operation not permitted` when binding local sockets,
+  matching the documented sandbox limitation. No new failures were observed.
+  Commands used `UV_FROZEN=1` to retain the committed dependency lockfile.
+- `task py:mypy`: 0 errors across 469 source files. `task py:lint`, Ruff checks
+  on changed tests and formatting checks on all changed Python files pass.
+- All 1180 pre-existing test functions are retained, and their 3914 assertion
+  expressions are structurally unchanged. C2 adds 5 test functions (6 cases) and
+  49 assertions, for 1185 functions and 3963 assertions. No tests or expected
+  values were removed, skipped, marked xfail or weakened. HTTP/Pydantic schemas
+  and frontend files are unchanged.
+- Live PostgreSQL remains unverified in this environment; C1's PostgreSQL
+  adapter/UUID/timestamp checks pass. C4 must replace the scalar group reference
+  and legacy deletion hook; C7 still replaces Alembic and the reflected backup
+  implementation. No other rewrite step was started.
+
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
 | C1 | Foundation | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3218 passed, 0 failures in external measurement, 18 skipped |
-| C2 | server | not started | | |
+| C2 | server | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3219 passed, 5 sandbox socket failures, 18 existing skips |
 | C3 | users | not started | | |
 | C4 | group | not started | | |
 | C5 | household | not started | | |

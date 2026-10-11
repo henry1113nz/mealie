@@ -1,6 +1,5 @@
 """Async database ownership for application lifespans, scripts, and tests."""
 
-import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -21,17 +20,10 @@ async def database_context(
     and tests use isolated contexts. This does not create tables or migrate data.
     """
     async with TortoiseContext() as context:
-        # C1 registers only an abstract base. Tortoise requires a nonempty module
-        # list but warns when that module has no concrete models. Remove this
-        # narrow exception with the abstract-only registry entry in C2.
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=r'Module "mealie\.db\.models\._tortoise_base" has no models', category=RuntimeWarning
-            )
-            await context.init(
-                config=config if config is not None else get_tortoise_config(),
-                _enable_global_fallback=global_fallback,
-            )
+        await context.init(
+            config=config if config is not None else get_tortoise_config(),
+            _enable_global_fallback=global_fallback,
+        )
         # Open before the health query so startup connection errors retain the
         # driver's exception instead of being translated into query errors.
         client = context.db()

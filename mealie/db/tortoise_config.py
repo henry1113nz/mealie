@@ -6,9 +6,8 @@ from mealie.core.config import get_app_settings
 from mealie.core.settings import AppSettings
 from mealie.core.settings.db_providers import PostgresProvider, SQLiteProvider
 
-# Register modules here as each domain is converted. Never discover the legacy
-# SQLAlchemy registry: C1 deliberately has no concrete Tortoise models.
-TORTOISE_MODEL_MODULES: tuple[str, ...] = ("mealie.db.models._tortoise_base",)
+# Register only converted domains; the remaining models still use SQLAlchemy.
+TORTOISE_MODEL_MODULES: tuple[str, ...] = ("mealie.db.models.server.task",)
 DEFAULT_CONNECTION = "default"
 
 

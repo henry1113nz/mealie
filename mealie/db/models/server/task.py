@@ -1,31 +1,22 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from mealie.db.models._model_base import BaseMixins, SqlAlchemyBase
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-from mealie.db.models._model_utils.guid import GUID
-
-from .._model_utils.auto_init import auto_init
-
-if TYPE_CHECKING:
-    from ..group import Group
+from mealie.db.models._tortoise_base import TortoiseBase, UTCDateTimeField, UUIDField
 
 
-class ServerTaskModel(SqlAlchemyBase, BaseMixins):
-    # Server Tasks are deprecated, but the table still exists in the database
+class ServerTaskModel(TortoiseBase):
+    """Deprecated server tasks retained for database and backup compatibility."""
 
-    __tablename__ = "server_tasks"
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    completed_date: Mapped[datetime] = mapped_column(NaiveDateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    log: Mapped[str] = mapped_column(String, nullable=True)
+    name = fields.TextField()
+    completed_date: fields.DatetimeField[datetime | None] = UTCDateTimeField(null=True)
+    status = fields.TextField()
+    log: fields.TextField[str | None] = fields.TextField(null=True)
 
-    group_id: Mapped[GUID] = mapped_column(GUID, ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="server_tasks")
+    # The existing database FK still references groups.id. Keep its scalar UUID
+    # until Group is converted in C4, when this becomes a Tortoise relation.
+    group_id: fields.UUIDField[UUID] = UUIDField(db_index=True)
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "server_tasks"
