@@ -41,6 +41,7 @@ from mealie.schema.user.user import UserRatingUpdate
 from mealie.services.query_filter.builder import PlaceholderKeyword
 from mealie.services.seeder.seeder_service import SeederService
 from tests.utils import api_routes
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -76,7 +77,7 @@ def test_repository_pagination(unique_user: TestUser):
     assert group
 
     seeder = SeederService(AllRepositories(database.session, group_id=group.id))
-    seeder.seed_foods("en-US")
+    run_async(seeder.seed_foods("en-US"))
 
     foods_repo = database.ingredient_foods
 
@@ -112,7 +113,7 @@ def test_pagination_response_and_metadata(unique_user: TestUser):
     assert group
 
     seeder = SeederService(AllRepositories(database.session, group_id=group.id))
-    seeder.seed_foods("en-US")
+    run_async(seeder.seed_foods("en-US"))
 
     foods_repo = database.ingredient_foods
 
@@ -165,7 +166,7 @@ def test_pagination_guides(unique_user: TestUser):
     assert group
 
     seeder = SeederService(AllRepositories(database.session, group_id=group.id))
-    seeder.seed_foods("en-US")
+    run_async(seeder.seed_foods("en-US"))
 
     foods_repo = database.ingredient_foods
     foods_route = (

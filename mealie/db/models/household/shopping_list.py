@@ -1,238 +1,182 @@
-from contextvars import ContextVar
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from pydantic import ConfigDict
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, UniqueConstraint, event, orm
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.ext.orderinglist import ordering_list
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.transactions import in_transaction
 
-from mealie.db.models.recipe.api_extras import ShoppingListExtras, ShoppingListItemExtras, api_extras
-from mealie.db.models.recipe.labels import MultiPurposeLabel
-
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
-from ..recipe.ingredient import IngredientFoodModel, IngredientUnitModel
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
-    from .._legacy_groups import Group
-    from .._legacy_users import User
-    from ..recipe import RecipeModel
-    from .household import Household
+    from ..group.group import Group
+    from ..users.users import User
 
 
-class ShoppingListItemRecipeReference(BaseMixins, SqlAlchemyBase):
-    __tablename__ = "shopping_list_item_recipe_reference"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    shopping_list_item: Mapped[ShoppingListItem] = orm.relationship(
-        "ShoppingListItem", back_populates="recipe_references"
+class ShoppingList(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="shopping_lists",
+        source_field="group_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
-    shopping_list_item_id: FilterableColumn[GUID] = mapped_column(
-        GUID, ForeignKey("shopping_list_items.id"), primary_key=True
+    user_id: UUID
+    user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
+        "models.User",
+        related_name="shopping_lists",
+        source_field="user_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    list_items: fields.ReverseRelation[ShoppingListItem]
+    recipe_references: fields.ReverseRelation[ShoppingListRecipeReference]
+    label_settings: fields.ReverseRelation[ShoppingListMultiPurposeLabel]
+    extras: fields.ReverseRelation[ShoppingListExtras]
 
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("recipes.id"), index=True)
-    recipe: Mapped[RecipeModel | None] = orm.relationship("RecipeModel", back_populates="shopping_list_item_refs")
-    recipe_quantity: FilterableColumn[float] = mapped_column(Float, nullable=False)
-    recipe_scale: FilterableColumn[float] = mapped_column(Float, default=1)
-    recipe_note: FilterableColumn[str | None] = mapped_column(String)
+    class Meta:
+        table = "shopping_lists"
 
-    group_id: AssociationProxy[GUID] = association_proxy("shopping_list_item", "group_id")
-    household_id: AssociationProxy[GUID] = association_proxy("shopping_list_item", "household_id")
+    async def delete(self, using_db: BaseDBAsyncClient | None = None) -> None:
+        from mealie.repos._household_coexistence import delete_shopping_list_dependents
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+        if using_db is not None:
+            await delete_shopping_list_dependents(self.id, using_db)
+            await super().delete(using_db=using_db)
+        else:
+            async with in_transaction("default") as connection:
+                await delete_shopping_list_dependents(self.id, connection)
+                await super().delete(using_db=connection)
 
 
-class ShoppingListItem(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "shopping_list_items"
-
-    # Id's
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    shopping_list: Mapped[ShoppingList] = orm.relationship("ShoppingList", back_populates="list_items")
-    shopping_list_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("shopping_lists.id"), index=True)
-
-    group_id: AssociationProxy[GUID] = association_proxy("shopping_list", "group_id")
-    household_id: AssociationProxy[GUID] = association_proxy("shopping_list", "household_id")
-
-    # Meta
-    is_ingredient: FilterableColumn[bool | None] = mapped_column(Boolean, default=True)
-    position: FilterableColumn[int] = mapped_column(Integer, nullable=False, default=0, index=True)
-    checked: FilterableColumn[bool | None] = mapped_column(Boolean, default=False)
-
-    quantity: FilterableColumn[float | None] = mapped_column(Float, default=1)
-    note: FilterableColumn[str | None] = mapped_column(String)
-
-    extras: Mapped[list[ShoppingListItemExtras]] = orm.relationship(
-        "ShoppingListItemExtras", cascade="all, delete-orphan"
+class ShoppingListItem(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    shopping_list_id: UUID | None
+    shopping_list: fields.ForeignKeyNullableRelation[ShoppingList] = fields.ForeignKeyField(
+        "models.ShoppingList",
+        related_name="list_items",
+        source_field="shopping_list_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    is_ingredient: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
+    position = fields.IntField(default=0, db_index=True)
+    checked: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
+    quantity: fields.FloatField[float | None] = fields.FloatField(default=1, null=True)
+    note: fields.TextField[str | None] = UnboundedCharField(null=True)
+    unit_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
+    food_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
+    label_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
+    is_food: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
+    recipe_references: fields.ReverseRelation[ShoppingListItemRecipeReference]
+    extras: fields.ReverseRelation[ShoppingListItemExtras]
 
-    # Scaling Items
-    unit_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("ingredient_units.id"))
-    unit: Mapped[IngredientUnitModel | None] = orm.relationship(IngredientUnitModel, uselist=False)
+    class Meta:
+        table = "shopping_list_items"
 
-    food_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("ingredient_foods.id"))
-    food: Mapped[IngredientFoodModel | None] = orm.relationship(IngredientFoodModel, uselist=False)
+    async def delete(self, using_db: BaseDBAsyncClient | None = None) -> None:
+        from mealie.repos._household_coexistence import delete_shopping_list_item_dependents
 
-    label_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("multi_purpose_labels.id"))
-    label: Mapped[MultiPurposeLabel | None] = orm.relationship(
-        MultiPurposeLabel, uselist=False, back_populates="shopping_list_items"
+        if using_db is not None:
+            await delete_shopping_list_item_dependents(self.id, using_db)
+            await super().delete(using_db=using_db)
+        else:
+            async with in_transaction("default") as connection:
+                await delete_shopping_list_item_dependents(self.id, connection)
+                await super().delete(using_db=connection)
+
+
+class ShoppingListRecipeReference(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    shopping_list_id: UUID
+    shopping_list: fields.ForeignKeyRelation[ShoppingList] = fields.ForeignKeyField(
+        "models.ShoppingList",
+        related_name="recipe_references",
+        source_field="shopping_list_id",
+        null=False,
+        db_index=False,
+        on_delete=fields.RESTRICT,
     )
+    recipe_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+    recipe_quantity = fields.FloatField()
 
-    # Recipe Reference
-    recipe_references: Mapped[list[ShoppingListItemRecipeReference]] = orm.relationship(
-        ShoppingListItemRecipeReference, cascade="all, delete, delete-orphan"
+    class Meta:
+        table = "shopping_list_recipe_reference"
+
+
+class ShoppingListItemRecipeReference(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    shopping_list_item_id: UUID
+    shopping_list_item: fields.ForeignKeyRelation[ShoppingListItem] = fields.ForeignKeyField(
+        "models.ShoppingListItem",
+        related_name="recipe_references",
+        source_field="shopping_list_item_id",
+        null=False,
+        db_index=False,
+        on_delete=fields.RESTRICT,
     )
-    model_config = ConfigDict(exclude={"label", "food", "unit"})
+    recipe_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+    recipe_quantity = fields.FloatField()
+    recipe_scale = fields.FloatField(default=1)
+    recipe_note: fields.TextField[str | None] = UnboundedCharField(null=True)
 
-    # Deprecated
-    is_food: Mapped[bool | None] = mapped_column(Boolean, default=False)
-
-    @api_extras
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "shopping_list_item_recipe_reference"
 
 
-class ShoppingListRecipeReference(BaseMixins, SqlAlchemyBase):
-    __tablename__ = "shopping_list_recipe_reference"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    shopping_list: Mapped[ShoppingList] = orm.relationship("ShoppingList", back_populates="recipe_references")
-    shopping_list_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("shopping_lists.id"), primary_key=True)
-    group_id: AssociationProxy[GUID] = association_proxy("shopping_list", "group_id")
-    household_id: AssociationProxy[GUID] = association_proxy("shopping_list", "household_id")
-
-    recipe_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("recipes.id"), index=True)
-    recipe: Mapped[RecipeModel | None] = orm.relationship(
-        "RecipeModel", uselist=False, back_populates="shopping_list_refs"
+class ShoppingListMultiPurposeLabel(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    shopping_list_id: UUID
+    shopping_list: fields.ForeignKeyRelation[ShoppingList] = fields.ForeignKeyField(
+        "models.ShoppingList",
+        related_name="label_settings",
+        source_field="shopping_list_id",
+        null=False,
+        db_index=False,
+        on_delete=fields.RESTRICT,
     )
+    label_id: fields.UUIDField[UUID] = UUIDField()
+    position = fields.IntField(default=0)
 
-    recipe_quantity: FilterableColumn[float] = mapped_column(Float, nullable=False)
-    model_config = ConfigDict(exclude={"id", "recipe"})
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "shopping_lists_multi_purpose_labels"
+        unique_together = (("shopping_list", "label_id"),)
 
 
-class ShoppingListMultiPurposeLabel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "shopping_lists_multi_purpose_labels"
-    __table_args__ = (UniqueConstraint("shopping_list_id", "label_id", name="shopping_list_id_label_id_key"),)
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    shopping_list_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("shopping_lists.id"), primary_key=True)
-    shopping_list: Mapped[ShoppingList] = orm.relationship("ShoppingList", back_populates="label_settings")
-
-    label_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("multi_purpose_labels.id"), primary_key=True)
-    label: Mapped[MultiPurposeLabel] = orm.relationship(
-        "MultiPurposeLabel", back_populates="shopping_lists_label_settings"
+class ShoppingListExtras(TortoiseBase):
+    shopping_list_id: UUID | None
+    shopping_list: fields.ForeignKeyNullableRelation[ShoppingList] = fields.ForeignKeyField(
+        "models.ShoppingList",
+        related_name="extras",
+        source_field="shopping_list_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    key_name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    value: fields.TextField[str | None] = UnboundedCharField(null=True)
 
-    group_id: AssociationProxy[GUID] = association_proxy("shopping_list", "group_id")
-    household_id: AssociationProxy[GUID] = association_proxy("shopping_list", "household_id")
-
-    position: FilterableColumn[int] = mapped_column(Integer, nullable=False, default=0)
-    model_config = ConfigDict(exclude={"label"})
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "shopping_list_extras"
 
 
-class ShoppingList(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "shopping_lists"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-
-    group_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="shopping_lists")
-    household_id: AssociationProxy[GUID] = association_proxy("user", "household_id")
-    household: AssociationProxy[Household] = association_proxy("user", "household")
-    user_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("users.id"), nullable=False, index=True)
-    user: Mapped[User] = orm.relationship("User", back_populates="shopping_lists")
-
-    name: FilterableColumn[str | None] = mapped_column(String)
-    list_items: Mapped[list[ShoppingListItem]] = orm.relationship(
-        ShoppingListItem,
-        cascade="all, delete, delete-orphan",
-        order_by="ShoppingListItem.position",
-        collection_class=ordering_list("position"),
+class ShoppingListItemExtras(TortoiseBase):
+    shopping_list_item_id: UUID | None
+    shopping_list_item: fields.ForeignKeyNullableRelation[ShoppingListItem] = fields.ForeignKeyField(
+        "models.ShoppingListItem",
+        related_name="extras",
+        source_field="shopping_list_item_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
+    key_name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    value: fields.TextField[str | None] = UnboundedCharField(null=True)
 
-    recipe_references: Mapped[list[ShoppingListRecipeReference]] = orm.relationship(
-        ShoppingListRecipeReference, cascade="all, delete, delete-orphan"
-    )
-    label_settings: Mapped[list[ShoppingListMultiPurposeLabel]] = orm.relationship(
-        ShoppingListMultiPurposeLabel,
-        cascade="all, delete, delete-orphan",
-        order_by="ShoppingListMultiPurposeLabel.position",
-        collection_class=ordering_list("position"),
-    )
-    extras: Mapped[list[ShoppingListExtras]] = orm.relationship("ShoppingListExtras", cascade="all, delete-orphan")
-    model_config = ConfigDict(exclude={"id", "list_items"})
-
-    @api_extras
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-
-class SessionBuffer:
-    def __init__(self) -> None:
-        self.shopping_list_ids: set[GUID] = set()
-
-    def add(self, shopping_list_id: GUID) -> None:
-        self.shopping_list_ids.add(shopping_list_id)
-
-    def pop(self) -> GUID | None:
-        try:
-            return self.shopping_list_ids.pop()
-        except KeyError:
-            return None
-
-    def clear(self) -> None:
-        self.shopping_list_ids.clear()
-
-
-session_buffer_context = ContextVar("session_buffer", default=SessionBuffer())  # noqa: B039
-
-
-@event.listens_for(ShoppingListItem, "after_insert")
-@event.listens_for(ShoppingListItem, "after_update")
-@event.listens_for(ShoppingListItem, "after_delete")
-def buffer_shopping_list_updates(_, connection, target: ShoppingListItem):
-    """Adds the shopping list id to the session buffer so its `updated_at` property can be updated later"""
-
-    session_buffer = session_buffer_context.get()
-    session_buffer.add(target.shopping_list_id)
-
-
-@event.listens_for(orm.Session, "after_flush")
-def update_shopping_lists(session: orm.Session, _):
-    """Pulls all pending shopping list updates from the buffer and updates their `updated_at` property"""
-
-    session_buffer = session_buffer_context.get()
-    if not session_buffer.shopping_list_ids:
-        return
-
-    local_session = orm.Session(bind=session.connection())
-    try:
-        local_session.begin()
-        while True:
-            shopping_list_id = session_buffer.pop()
-            if not shopping_list_id:
-                break
-
-            shopping_list = local_session.query(ShoppingList).filter(ShoppingList.id == shopping_list_id).first()
-            if not shopping_list:
-                continue
-
-            shopping_list.updated_at = datetime.now(UTC)
-        local_session.commit()
-    except Exception:
-        local_session.rollback()
-        raise
+    class Meta:
+        table = "shopping_list_item_extras"

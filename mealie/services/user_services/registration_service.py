@@ -61,7 +61,7 @@ class RegistrationService:
         new_household_name = self.registration.household or settings.DEFAULT_HOUSEHOLD
 
         group_repos = get_repositories(self.repos.session, group_id=group_id)
-        household_fetch = group_repos.households.get_by_name(new_household_name)
+        household_fetch = await group_repos.households.get_by_name(new_household_name)
         if household_fetch:
             return household_fetch
 
@@ -89,7 +89,7 @@ class RegistrationService:
         new_group = False
 
         if registration.group_token:
-            token_entry = self.repos.group_invite_tokens.get_one(registration.group_token)
+            token_entry = await self.repos.group_invite_tokens.get_one(registration.group_token)
             if not token_entry:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Invalid group token"})
 
@@ -98,7 +98,7 @@ class RegistrationService:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Invalid group token"})
             group = maybe_none_group
 
-            maybe_none_household = self.repos.households.get_one(token_entry.household_id)
+            maybe_none_household = await self.repos.households.get_one(token_entry.household_id)
             if maybe_none_household is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Invalid group token"})
             household = maybe_none_household
@@ -115,16 +115,16 @@ class RegistrationService:
         if new_group and registration.seed_data:
             group_repos = get_repositories(self.repos.session, group_id=group.id)
             seeder_service = SeederService(group_repos)
-            seeder_service.seed_foods(registration.locale)
+            await seeder_service.seed_foods(registration.locale)
             seeder_service.seed_units(registration.locale)
 
         if token_entry and user:
             token_entry.uses_left = token_entry.uses_left - 1
 
             if token_entry.uses_left == 0:
-                self.repos.group_invite_tokens.delete(token_entry.token)
+                await self.repos.group_invite_tokens.delete(token_entry.token)
 
             else:
-                self.repos.group_invite_tokens.update(token_entry.token, token_entry)
+                await self.repos.group_invite_tokens.update(token_entry.token, token_entry)
 
         return user

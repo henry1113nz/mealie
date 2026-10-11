@@ -2,8 +2,8 @@ from pydantic import UUID4, ConfigDict
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models.household.household import Household
-from mealie.db.models.household.preferences import HouseholdPreferencesModel
+from mealie.db.models._legacy_household.household import Household
+from mealie.db.models._legacy_household.preferences import HouseholdPreferencesModel
 from mealie.schema._mealie import MealieModel
 
 

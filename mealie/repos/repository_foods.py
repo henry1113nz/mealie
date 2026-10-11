@@ -2,7 +2,7 @@ from pydantic import UUID4
 from sqlalchemy import select, update
 from sqlalchemy.orm import joinedload
 
-from mealie.db.models.household.shopping_list import ShoppingListItem
+from mealie.db.models._legacy_household.shopping_list import ShoppingListItem
 from mealie.db.models.recipe.ingredient import IngredientFoodModel, RecipeIngredientSubstitutionModel
 from mealie.schema.recipe.recipe_ingredient import IngredientFood
 

@@ -8,10 +8,10 @@ class SeederService(BaseService):
         self.repos = repos
         super().__init__()
 
-    def seed_foods(self, locale: str) -> None:
+    async def seed_foods(self, locale: str) -> None:
         """Seeds foods along with the labels that group them."""
         seeder = IngredientFoodsSeeder(self.repos, self.logger)
-        seeder.seed(locale)
+        await seeder.seed(locale)
 
     def seed_units(self, locale: str) -> None:
         seeder = IngredientUnitsSeeder(self.repos, self.logger)

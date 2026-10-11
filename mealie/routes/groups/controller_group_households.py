@@ -12,15 +12,15 @@ router = UserAPIRouter(prefix="/groups/households", tags=["Groups: Households"])
 @controller(router)
 class GroupHouseholdsController(BaseUserController):
     @router.get("", response_model=PaginationBase[HouseholdSummary])
-    def get_all_households(self, q: PaginationQuery = Depends(PaginationQuery)):
-        response = self.repos.households.page_all(pagination=q, override=HouseholdSummary)
+    async def get_all_households(self, q: PaginationQuery = Depends(PaginationQuery)):
+        response = await self.repos.households.page_all(pagination=q, override=HouseholdSummary)
 
         response.set_pagination_guides(router.url_path_for("get_all_households"), q.model_dump())
         return response
 
     @router.get("/{household_slug}", response_model=HouseholdSummary)
-    def get_one_household(self, household_slug: str):
-        household = self.repos.households.get_by_slug_or_id(household_slug)
+    async def get_one_household(self, household_slug: str):
+        household = await self.repos.households.get_by_slug_or_id(household_slug)
 
         if not household:
             raise HTTPException(status_code=404, detail="Household not found")

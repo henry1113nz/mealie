@@ -24,14 +24,14 @@ class HouseholdSelfServiceController(BaseUserController):
         return HouseholdService(self.group_id, self.household_id, self.repos)
 
     @router.get("/self", response_model=HouseholdInDB)
-    def get_logged_in_user_household(self):
+    async def get_logged_in_user_household(self):
         """Returns the Household Data for the Current User"""
-        return self.household
+        return await self.get_household()
 
     @router.get("/self/recipes/{recipe_slug}", response_model=HouseholdRecipeSummary)
-    def get_household_recipe(self, recipe_slug: str):
+    async def get_household_recipe(self, recipe_slug: str):
         """Returns recipe data for the current household"""
-        response = self.service.get_household_recipe(recipe_slug)
+        response = await self.service.get_household_recipe(recipe_slug)
         if not response:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Recipe not found")
 
@@ -49,14 +49,14 @@ class HouseholdSelfServiceController(BaseUserController):
         return response
 
     @router.get("/preferences", response_model=ReadHouseholdPreferences)
-    def get_household_preferences(self):
-        return self.household.preferences
+    async def get_household_preferences(self):
+        return (await self.get_household()).preferences
 
     @router.put("/preferences", response_model=ReadHouseholdPreferences)
-    def update_household_preferences(self, new_pref: UpdateHouseholdPreferences):
+    async def update_household_preferences(self, new_pref: UpdateHouseholdPreferences):
         self.checks.can_manage_household()
 
-        return self.repos.household_preferences.update(self.household_id, new_pref)
+        return await self.repos.household_preferences.update(self.household_id, new_pref)
 
     @router.put("/permissions", response_model=UserOut)
     async def set_member_permissions(self, permissions: SetPermissions):
@@ -84,5 +84,5 @@ class HouseholdSelfServiceController(BaseUserController):
         return await self.repos.users.update(permissions.user_id, target_user)
 
     @router.get("/statistics", response_model=HouseholdStatistics)
-    def get_statistics(self):
-        return self.service.calculate_statistics()
+    async def get_statistics(self):
+        return await self.service.calculate_statistics()

@@ -59,7 +59,7 @@ class RecipeTimelineEventsController(BaseCrudController):
         return response
 
     @router.post("", response_model=RecipeTimelineEventOut, status_code=201)
-    def create_one(self, data: RecipeTimelineEventIn):
+    async def create_one(self, data: RecipeTimelineEventIn):
         # if the user id is not specified, use the currently-authenticated user
         data.user_id = data.user_id or self.user.id
 
@@ -70,7 +70,7 @@ class RecipeTimelineEventsController(BaseCrudController):
         event_data = data.cast(RecipeTimelineEventCreate)
         event = self.mixins.create_one(event_data)
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.recipe_updated,
             document_data=EventRecipeTimelineEventData(
                 operation=EventOperation.create, recipe_slug=recipe.slug, recipe_timeline_event_id=event.id
@@ -94,11 +94,11 @@ class RecipeTimelineEventsController(BaseCrudController):
         return event
 
     @router.put("/{item_id}", response_model=RecipeTimelineEventOut)
-    def update_one(self, item_id: UUID4, data: RecipeTimelineEventUpdate):
+    async def update_one(self, item_id: UUID4, data: RecipeTimelineEventUpdate):
         event = self.mixins.patch_one(data, item_id)
         recipe = self.group_recipes.get_one(event.recipe_id, "id")
         if recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_updated,
                 document_data=EventRecipeTimelineEventData(
                     operation=EventOperation.update, recipe_slug=recipe.slug, recipe_timeline_event_id=event.id
@@ -115,7 +115,7 @@ class RecipeTimelineEventsController(BaseCrudController):
         return event
 
     @router.delete("/{item_id}", response_model=RecipeTimelineEventOut)
-    def delete_one(self, item_id: UUID4):
+    async def delete_one(self, item_id: UUID4):
         event = self.mixins.delete_one(item_id)
         if event.image_dir.exists():
             try:
@@ -125,7 +125,7 @@ class RecipeTimelineEventsController(BaseCrudController):
 
         recipe = self.group_recipes.get_one(event.recipe_id, "id")
         if recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_updated,
                 document_data=EventRecipeTimelineEventData(
                     operation=EventOperation.delete, recipe_slug=recipe.slug, recipe_timeline_event_id=event.id
@@ -145,7 +145,7 @@ class RecipeTimelineEventsController(BaseCrudController):
     # Image and Assets
 
     @router.put("/{item_id}/image", response_model=UpdateImageResponse)
-    def update_event_image(self, item_id: UUID4, image: bytes = File(...), extension: str = Form(...)):
+    async def update_event_image(self, item_id: UUID4, image: bytes = File(...), extension: str = Form(...)):
         event = self.mixins.get_one(item_id)
         data_service = RecipeDataService(event.recipe_id)
         data_service.write_image(image, extension, event.image_dir)
@@ -155,7 +155,7 @@ class RecipeTimelineEventsController(BaseCrudController):
             event = self.mixins.patch_one(event.cast(RecipeTimelineEventUpdate), event.id)
             recipe = self.group_recipes.get_one(event.recipe_id, "id")
             if recipe:
-                self.publish_event(
+                await self.publish_event(
                     event_type=EventTypes.recipe_updated,
                     document_data=EventRecipeTimelineEventData(
                         operation=EventOperation.update, recipe_slug=recipe.slug, recipe_timeline_event_id=event.id

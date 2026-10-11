@@ -16,7 +16,7 @@ from .._model_utils.guid import GUID
 
 if TYPE_CHECKING:
     from .._legacy_groups import Group
-    from ..household import Household
+    from .._legacy_household import Household
     from .recipe import RecipeModel
 
 households_to_ingredient_foods = sa.Table(
@@ -321,7 +321,7 @@ class IngredientFoodModel(SqlAlchemyBase, BaseMixins):
         substitutions: list[dict] | None = None,
         **_,
     ) -> None:
-        from ..household import Household
+        from .._legacy_household import Household
 
         if name is not None:
             self.name_normalized = self.normalize(name)

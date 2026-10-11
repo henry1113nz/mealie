@@ -12,6 +12,8 @@ from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.repos._utils import NOT_SET, NotSet
 from mealie.repos.repository_generic import GroupRepositoryGeneric, HouseholdRepositoryGeneric, RepositoryGeneric
 from mealie.repos.repository_group import RepositoryGroup
+from mealie.repos.repository_household import RepositoryHousehold
+from mealie.repos.repository_household_base import AsyncHouseholdRepository
 from mealie.repos.repository_users import AsyncUserRepository
 from mealie.schema._mealie.mealie_model import MealieModel
 from mealie.schema.household.group_shopping_list import ShoppingListCreate
@@ -20,7 +22,7 @@ from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import SaveIngredientFood
 from mealie.schema.response.pagination import PaginationQuery
 from mealie.services.household_services.shopping_lists import ShoppingListService
-from tests.utils.async_database import get_repositories
+from tests.utils.async_database import get_repositories, run_async
 from tests.utils.factories import random_email, random_string
 
 
@@ -94,7 +96,9 @@ def test_all_repositories_constructors(session: Session, use_group_id: bool, use
         except TypeError:
             continue
 
-        if issubclass(repo_type, HouseholdRepositoryGeneric):
+        if issubclass(repo_type, (HouseholdRepositoryGeneric, AsyncHouseholdRepository)) and not issubclass(
+            repo_type, RepositoryHousehold
+        ):
             if not (use_group_id and use_household_id):
                 with pytest.raises(ValueError):
                     getattr(repositories, name)
@@ -286,8 +290,12 @@ def test_generic_repo_filter_by_household_with_proxy(session: Session):
     household_2_repos = get_repositories(session, group_id=group.id, household_id=household_2.id)
     shopping_list_service_1 = ShoppingListService(household_1_repos)
     shopping_list_service_2 = ShoppingListService(household_2_repos)
-    shopping_list_1 = shopping_list_service_1.create_one_list(ShoppingListCreate(name=random_string()), user_1.id)
-    shopping_list_2 = shopping_list_service_2.create_one_list(ShoppingListCreate(name=random_string()), user_2.id)
+    shopping_list_1 = run_async(
+        shopping_list_service_1.create_one_list(ShoppingListCreate(name=random_string()), user_1.id)
+    )
+    shopping_list_2 = run_async(
+        shopping_list_service_2.create_one_list(ShoppingListCreate(name=random_string()), user_2.id)
+    )
 
     assert household_1_repos.group_shopping_lists.get_one(shopping_list_1.id) == shopping_list_1
     assert household_1_repos.group_shopping_lists.get_one(shopping_list_2.id) is None
@@ -336,8 +344,8 @@ def test_changing_user_changes_household(session: Session):
     household_2_repos = get_repositories(session, group_id=group.id, household_id=household_2.id)
 
     # create shopping list with user_1/household_1
-    shopping_list = ShoppingListService(household_1_repos).create_one_list(
-        ShoppingListCreate(name=random_string()), user_1.id
+    shopping_list = run_async(
+        ShoppingListService(household_1_repos).create_one_list(ShoppingListCreate(name=random_string()), user_1.id)
     )
 
     # only household_1_repos should find the list

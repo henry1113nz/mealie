@@ -74,6 +74,21 @@ class SynchronousRepositories(AllRepositories):
     def __getattribute__(self, name: str) -> Any:
         value = super().__getattribute__(name)
         if name in {
+            "households",
+            "household_preferences",
+            "household_recipes",
+            "cookbooks",
+            "group_invite_tokens",
+            "group_recipe_actions",
+            "meals",
+            "group_meal_plan_rules",
+            "group_shopping_lists",
+            "group_shopping_list_item",
+            "group_shopping_list_item_references",
+            "group_shopping_list_recipe_refs",
+            "shopping_list_multi_purpose_labels",
+            "group_event_notifier",
+            "webhooks",
             "users",
             "user_ratings",
             "api_tokens",

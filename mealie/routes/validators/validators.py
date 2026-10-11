@@ -36,10 +36,10 @@ async def validate_group(name: str, session: Session = Depends(generate_session)
 
 
 @router.get("/household", response_model=ValidationResponse)
-def validate_household(name: str, session: Session = Depends(generate_session)):
+async def validate_household(name: str, session: Session = Depends(generate_session)):
     """Checks if a household with the given name exists"""
     db = get_repositories(session, group_id=None, household_id=None)
-    existing_element = db.households.get_by_name(name)
+    existing_element = await db.households.get_by_name(name)
     return ValidationResponse(valid=existing_element is None)
 
 

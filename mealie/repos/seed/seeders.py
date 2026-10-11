@@ -83,7 +83,7 @@ class IngredientFoodsSeeder(AbstractSeeder):
     def get_all_foods(self) -> list[IngredientFood]:
         return self.repos.ingredient_foods.get_all()
 
-    def seed_labels(self, locale: str | None = None) -> None:
+    async def seed_labels(self, locale: str | None = None) -> None:
         """Create any labels from the seed file that don't already exist in the group."""
         seen_label_names = {label.name for label in self.repos.group_multi_purpose_labels.get_all()}
         for label in self.load_file(self.get_file(locale)).values():
@@ -93,7 +93,7 @@ class IngredientFoodsSeeder(AbstractSeeder):
 
             seen_label_names.add(name)
             try:
-                self.label_service.create_one(MultiPurposeLabelSave(name=name, group_id=self.repos.group_id))
+                await self.label_service.create_one(MultiPurposeLabelSave(name=name, group_id=self.repos.group_id))
             except Exception as e:
                 self.logger.error(e)
 
@@ -130,10 +130,10 @@ class IngredientFoodsSeeder(AbstractSeeder):
                     label_id=label_out.id if label_out and label_out.id else None,
                 )
 
-    def seed(self, locale: str | None = None) -> None:
+    async def seed(self, locale: str | None = None) -> None:
         self.logger.info("Seeding Ingredient Foods")
         # labels must exist before foods so each food can be linked to its label
-        self.seed_labels(locale)
+        await self.seed_labels(locale)
 
         to_seed = list(self.load_data(locale))
         if not to_seed:

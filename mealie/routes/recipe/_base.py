@@ -3,13 +3,11 @@ from functools import cached_property
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from mealie.db.models.household.cookbook import CookBook
 from mealie.repos.all_repositories import get_repositories
-from mealie.repos.repository_generic import RepositoryGeneric
+from mealie.repos.repository_cookbooks import RepositoryCookbooks
 from mealie.repos.repository_recipes import RepositoryRecipes
 from mealie.routes._base import BaseCrudController
 from mealie.routes._base.mixins import HttpRepo
-from mealie.schema.cookbook.cookbook import ReadCookBook
 from mealie.schema.recipe import Recipe
 from mealie.schema.recipe.recipe import (
     CreateRecipe,
@@ -44,12 +42,11 @@ class BaseRecipeController(BaseCrudController):
         return get_repositories(self.session, group_id=self.group_id, household_id=None).recipes
 
     @cached_property
-    def group_cookbooks(self) -> RepositoryGeneric[ReadCookBook, CookBook]:
+    def group_cookbooks(self) -> RepositoryCookbooks:
         return get_repositories(self.session, group_id=self.group_id, household_id=None).cookbooks
 
-    @cached_property
-    def service(self) -> RecipeService:
-        return RecipeService(self.repos, self.user, self.household, translator=self.translator)
+    async def get_service(self) -> RecipeService:
+        return RecipeService(self.repos, self.user, await self.get_household(), translator=self.translator)
 
     @cached_property
     def mixins(self):

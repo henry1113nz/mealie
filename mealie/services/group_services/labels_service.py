@@ -14,13 +14,13 @@ class MultiPurposeLabelService:
         self.repos = repos
         self.labels = repos.group_multi_purpose_labels
 
-    def _update_shopping_list_label_references(self, new_labels: list[MultiPurposeLabelOut]) -> None:
+    async def _update_shopping_list_label_references(self, new_labels: list[MultiPurposeLabelOut]) -> None:
         # remove the households filter so we get all lists
         household_repos = get_repositories(self.repos.session, group_id=self.repos.group_id, household_id=None)
         shopping_lists_repo = household_repos.group_shopping_lists
         shopping_list_multi_purpose_labels_repo = household_repos.shopping_list_multi_purpose_labels
 
-        shopping_lists = shopping_lists_repo.page_all(PaginationQuery(page=1, per_page=-1))
+        shopping_lists = await shopping_lists_repo.page_all(PaginationQuery(page=1, per_page=-1))
         new_shopping_list_labels: list[ShoppingListMultiPurposeLabelCreate] = []
         for label in new_labels:
             new_shopping_list_labels.extend(
@@ -32,16 +32,16 @@ class MultiPurposeLabelService:
                 ]
             )
 
-        shopping_list_multi_purpose_labels_repo.create_many(new_shopping_list_labels)
+        await shopping_list_multi_purpose_labels_repo.create_many(new_shopping_list_labels)
 
-    def create_one(self, data: MultiPurposeLabelCreate) -> MultiPurposeLabelOut:
+    async def create_one(self, data: MultiPurposeLabelCreate) -> MultiPurposeLabelOut:
         label = self.labels.create(data.cast(MultiPurposeLabelSave, group_id=self.repos.group_id))
-        self._update_shopping_list_label_references([label])
+        await self._update_shopping_list_label_references([label])
         return label
 
-    def create_many(self, data: list[MultiPurposeLabelCreate]) -> list[MultiPurposeLabelOut]:
+    async def create_many(self, data: list[MultiPurposeLabelCreate]) -> list[MultiPurposeLabelOut]:
         labels = self.labels.create_many(
             [label.cast(MultiPurposeLabelSave, group_id=self.repos.group_id) for label in data]
         )
-        self._update_shopping_list_label_references(labels)
+        await self._update_shopping_list_label_references(labels)
         return labels

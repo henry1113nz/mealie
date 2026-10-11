@@ -35,7 +35,7 @@ class RegistrationController(BasePublicController):
 
         result = await registration_service.register_user(data)
 
-        self.event_bus.dispatch(
+        await self.event_bus.dispatch(
             integration_id="registration",
             group_id=result.group_id,
             household_id=result.household_id,

@@ -11,7 +11,7 @@ from mealie.db.models._model_utils.guid import GUID
 
 if TYPE_CHECKING:
     from .._legacy_groups import Group
-    from ..household import Household
+    from .._legacy_household import Household
     from . import RecipeModel
 
 households_to_tools = Table(
@@ -71,7 +71,7 @@ class Tool(SqlAlchemyBase, BaseMixins):
     def __init__(
         self, session: orm.Session, group_id: GUID, name: str, households_with_tool: list[str] | None = None, **_
     ) -> None:
-        from ..household import Household
+        from .._legacy_household import Household
 
         self.slug = slugify(name)
 

@@ -8,6 +8,7 @@ from mealie.core import root_logger
 from mealie.core.exceptions import UnexpectedNone
 from mealie.lang.providers import Translator
 from mealie.repos.all_repositories import AllRepositories
+from mealie.schema.household.household import HouseholdInDB
 from mealie.schema.recipe import Recipe
 from mealie.schema.recipe.recipe_settings import RecipeSettings
 from mealie.schema.reports.reports import (
@@ -59,12 +60,9 @@ class BaseMigrator(BaseService):
         if user.id != user_id:
             raise UnexpectedNone(f"Cannot find user {user_id}")
 
-        household = db.households.get_one(household_id)
-        if not household:
-            raise UnexpectedNone(f"Cannot find household {household_id}")
-
         self.user = user
-        self.household = household
+        self.household_id = household_id
+        self.household: HouseholdInDB
         self.group_id = group_id
         self.group: GroupInDB
 
@@ -75,7 +73,7 @@ class BaseMigrator(BaseService):
         self.logger = root_logger.get_logger()
 
         self.helpers = DatabaseMigrationHelpers(self.db, self.session)
-        self.recipe_service = RecipeService(db, user, household, translator=self.translator)
+        self.recipe_service: RecipeService
 
         super().__init__()
 
@@ -142,6 +140,11 @@ class BaseMigrator(BaseService):
         await self.db.group_reports.update(self.report.id, self.report)
 
     async def migrate(self, report_name: str) -> ReportSummary:
+        household = await self.db.households.get_one(self.household_id)
+        if not household:
+            raise UnexpectedNone(f"Cannot find household {self.household_id}")
+        self.household = household
+        self.recipe_service = RecipeService(self.db, self.user, household, translator=self.translator)
         group = await self.db.groups.get_one(self.group_id)
         if not group:
             raise UnexpectedNone(f"Cannot find group {self.group_id}")

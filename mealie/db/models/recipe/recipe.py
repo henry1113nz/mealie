@@ -16,9 +16,9 @@ from mealie.db.models._model_utils.datetime import NaiveDateTime, get_utc_today
 from mealie.db.models._model_utils.guid import GUID
 from mealie.db.models.recipe.ingredient import RecipeIngredientModel
 
+from .._legacy_household.household_to_recipe import HouseholdToRecipe
 from .._legacy_users import UserToRecipe
 from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from ..household.household_to_recipe import HouseholdToRecipe
 from .api_extras import ApiExtras, api_extras
 from .assets import RecipeAsset
 from .category import recipes_to_categories
@@ -34,8 +34,8 @@ from .tool import recipes_to_tools
 
 if TYPE_CHECKING:
     from .._legacy_groups import Group, GroupMealPlan
+    from .._legacy_household import Household, ShoppingListItemRecipeReference, ShoppingListRecipeReference
     from .._legacy_users import User
-    from ..household import Household, ShoppingListItemRecipeReference, ShoppingListRecipeReference
     from . import Category, Tag, Tool
 
 

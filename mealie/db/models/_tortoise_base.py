@@ -1,7 +1,7 @@
 """Shared model primitives for domains migrated to Tortoise ORM."""
 
 import string
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 from uuid import UUID
 
@@ -71,6 +71,51 @@ class UTCDateTimeField(fields.DatetimeField):
         if converted.tzinfo is None:
             return converted.replace(tzinfo=UTC)
         return converted.astimezone(UTC)
+
+
+class CalendarDateField(fields.DateField):
+    """Preserve SQLAlchemy DATE coercion when callers supply a datetime."""
+
+    skip_to_python_if_native = False
+
+    def to_python_value(self, value: Any) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        return super().to_python_value(value)
+
+    def to_db_value(self, value: Any, instance: type[Model] | Model) -> Any:
+        converted = self.to_python_value(value)
+        self.validate(converted)
+        if isinstance(instance, Model):
+            setattr(instance, self.model_field_name, converted)
+        if converted is not None and instance._meta.db.capabilities.dialect == "sqlite":
+            return converted.isoformat()
+        return converted
+
+
+class NaiveTimeField(fields.TimeField):
+    """Keep wall-clock values naive, matching the existing SQL TIME columns."""
+
+    skip_to_python_if_native = False
+
+    class _db_postgres:
+        SQL_TYPE = "TIME"
+
+    def to_python_value(self, value: Any) -> time | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = time.fromisoformat(value)
+        return value.replace(tzinfo=None)
+
+    def to_db_value(self, value: Any, instance: type[Model] | Model) -> Any:
+        converted = self.to_python_value(value)
+        self.validate(converted)
+        if isinstance(instance, Model):
+            setattr(instance, self.model_field_name, converted)
+        if converted is not None and instance._meta.db.capabilities.dialect == "sqlite":
+            return converted.isoformat(timespec="microseconds")
+        return converted
 
 
 class TortoiseBase(Model):

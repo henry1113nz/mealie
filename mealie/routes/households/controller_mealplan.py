@@ -9,7 +9,7 @@ from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_meals import RepositoryMeals
 from mealie.routes._base import controller
 from mealie.routes._base.base_controllers import BaseCrudController
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.schema import mapper
 from mealie.schema.meal_plan import CreatePlanEntry, ReadPlanEntry, SavePlanEntry, UpdatePlanEntry
 from mealie.schema.meal_plan.new_meal import CreateRandomEntry, PlanEntryPagination, PlanEntryType
@@ -45,13 +45,13 @@ class GroupMealplanController(BaseCrudController):
 
     @cached_property
     def mixins(self):
-        return HttpRepo[CreatePlanEntry, ReadPlanEntry, UpdatePlanEntry](
+        return AsyncHttpRepo[CreatePlanEntry, ReadPlanEntry, UpdatePlanEntry](
             self.repo,
             self.logger,
             self.registered_exceptions,
         )
 
-    def _get_random_recipes_from_mealplan(
+    async def _get_random_recipes_from_mealplan(
         self, plan_date: date, entry_type: PlanEntryType, limit: int = 1
     ) -> list[Recipe]:
         """
@@ -61,7 +61,7 @@ class GroupMealplanController(BaseCrudController):
         Recipes from all households are included unless the rules specify a household filter.
         """
 
-        rules = self.repos.group_meal_plan_rules.get_rules(PlanRulesDay.from_date(plan_date), entry_type.value)
+        rules = await self.repos.group_meal_plan_rules.get_rules(PlanRulesDay.from_date(plan_date), entry_type.value)
         cross_household_recipes = get_repositories(
             self.session, group_id=self.group_id, household_id=None
         ).recipes.by_user(self.user.id)
@@ -79,7 +79,7 @@ class GroupMealplanController(BaseCrudController):
         return recipes_data.items
 
     @router.get("", response_model=PlanEntryPagination)
-    def get_all(
+    async def get_all(
         self,
         q: PaginationQuery = Depends(PaginationQuery),
         start_date: date | None = None,
@@ -98,14 +98,14 @@ class GroupMealplanController(BaseCrudController):
 
             q.query_filter = QueryFilterBuilder.combine_filters(q.query_filter, date_filter)
 
-        return self.repo.page_all(pagination=q)
+        return await self.repo.page_all(pagination=q)
 
     @router.post("", response_model=ReadPlanEntry, status_code=201)
-    def create_one(self, data: CreatePlanEntry):
+    async def create_one(self, data: CreatePlanEntry):
         data = mapper.cast(data, SavePlanEntry, group_id=self.group_id, user_id=self.user.id)
-        result = self.mixins.create_one(data)
+        result = await self.mixins.create_one(data)
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.mealplan_entry_created,
             document_data=EventMealplanData(
                 operation=EventOperation.create,
@@ -127,12 +127,12 @@ class GroupMealplanController(BaseCrudController):
         return result
 
     @router.get("/today")
-    def get_todays_meals(self):
+    async def get_todays_meals(self):
         local_tz = tzlocal()
-        return self.repo.get_today(tz=local_tz)
+        return await self.repo.get_today(tz=local_tz)
 
     @router.post("/random", response_model=ReadPlanEntry)
-    def create_random_meal(self, data: CreateRandomEntry):
+    async def create_random_meal(self, data: CreateRandomEntry):
         """
         `create_random_meal` is a route that provides the randomized functionality for meal planners.
         It operates by following the rules set out in the household's meal plan settings. If no settings
@@ -141,14 +141,14 @@ class GroupMealplanController(BaseCrudController):
         Refer to the meal plan settings routes for more information on how rules can be applied
         to the random meal selector.
         """
-        random_recipes = self._get_random_recipes_from_mealplan(data.date, data.entry_type)
+        random_recipes = await self._get_random_recipes_from_mealplan(data.date, data.entry_type)
         if not random_recipes:
             raise HTTPException(
                 status_code=404, detail=ErrorResponse.respond(message=self.t("mealplan.no-recipes-match-your-rules"))
             )
 
         recipe = random_recipes[0]
-        result = self.mixins.create_one(
+        result = await self.mixins.create_one(
             SavePlanEntry(
                 date=data.date,
                 entry_type=data.entry_type,
@@ -158,7 +158,7 @@ class GroupMealplanController(BaseCrudController):
             )
         )
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.mealplan_entry_created,
             document_data=EventMealplanData(
                 operation=EventOperation.create,
@@ -180,14 +180,14 @@ class GroupMealplanController(BaseCrudController):
         return result
 
     @router.get("/{item_id}", response_model=ReadPlanEntry)
-    def get_one(self, item_id: int):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: int):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=ReadPlanEntry)
-    def update_one(self, item_id: int, data: UpdatePlanEntry):
-        result = self.mixins.update_one(data, item_id)
+    async def update_one(self, item_id: int, data: UpdatePlanEntry):
+        result = await self.mixins.update_one(data, item_id)
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.mealplan_entry_updated,
             document_data=EventMealplanData(
                 operation=EventOperation.update,
@@ -209,10 +209,10 @@ class GroupMealplanController(BaseCrudController):
         return result
 
     @router.delete("/{item_id}", response_model=ReadPlanEntry)
-    def delete_one(self, item_id: int):
-        result = self.mixins.delete_one(item_id)
+    async def delete_one(self, item_id: int):
+        result = await self.mixins.delete_one(item_id)
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.mealplan_entry_deleted,
             document_data=EventMealplanData(
                 operation=EventOperation.delete,

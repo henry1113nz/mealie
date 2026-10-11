@@ -49,13 +49,13 @@ class RecipeCategoryController(BaseCrudController):
         return response
 
     @router.post("", status_code=201)
-    def create_one(self, category: CategoryIn):
+    async def create_one(self, category: CategoryIn):
         """Creates a Category in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(category, CategorySave, group_id=self.group_id)
         new_category = self.mixins.create_one(save_data)
         if new_category:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.category_created,
                 document_data=EventCategoryData(operation=EventOperation.create, category_id=new_category.id),
                 group_id=new_category.group_id,
@@ -97,14 +97,14 @@ class RecipeCategoryController(BaseCrudController):
         return category_obj
 
     @router.put("/{item_id}", response_model=CategorySummary)
-    def update_one(self, item_id: UUID4, update_data: CategoryIn):
+    async def update_one(self, item_id: UUID4, update_data: CategoryIn):
         """Updates an existing Tag in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(update_data, CategorySave, group_id=self.group_id)
         category = self.mixins.update_one(save_data, item_id)
 
         if category:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.category_updated,
                 document_data=EventCategoryData(operation=EventOperation.update, category_id=category.id),
                 group_id=category.group_id,
@@ -119,7 +119,7 @@ class RecipeCategoryController(BaseCrudController):
         return category
 
     @router.delete("/{item_id}")
-    def delete_one(self, item_id: UUID4):
+    async def delete_one(self, item_id: UUID4):
         """
         Removes a recipe category from the database. Deleting a
         category does not impact a recipe. The category will be removed
@@ -127,7 +127,7 @@ class RecipeCategoryController(BaseCrudController):
         """
         self.checks.can_organize()
         if category := self.mixins.delete_one(item_id):
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.category_deleted,
                 document_data=EventCategoryData(operation=EventOperation.delete, category_id=category.id),
                 group_id=category.group_id,

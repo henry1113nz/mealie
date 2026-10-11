@@ -37,7 +37,7 @@ class HouseholdService(BaseService):
     async def create_household(
         repos: AllRepositories, h_base: HouseholdCreate, prefs: CreateHouseholdPreferences | None = None
     ) -> HouseholdInDB:
-        new_household = repos.households.create(h_base)
+        new_household = await repos.households.create(h_base)
         if prefs is None:
             group = await repos.groups.get_one(new_household.group_id)
             if group and group.preferences:
@@ -52,10 +52,10 @@ class HouseholdService(BaseService):
         household_repos = get_repositories(
             repos.session, group_id=new_household.group_id, household_id=new_household.id
         )
-        household_repos.household_preferences.create(save_prefs)
+        await household_repos.household_preferences.create(save_prefs)
         return new_household
 
-    def calculate_statistics(
+    async def calculate_statistics(
         self, group_id: UUID4 | None = None, household_id: UUID4 | None = None
     ) -> HouseholdStatistics:
         """
@@ -65,35 +65,37 @@ class HouseholdService(BaseService):
         group_id = group_id or self.group_id
         household_id = household_id or self.household_id
 
-        return self.repos.households.statistics(group_id, household_id)
+        return await self.repos.households.statistics(group_id, household_id)
 
-    def get_household_recipe(self, recipe_slug: str) -> HouseholdRecipeSummary | None:
+    async def get_household_recipe(self, recipe_slug: str) -> HouseholdRecipeSummary | None:
         """Returns recipe data for the current household"""
         recipe = self._get_recipe(recipe_slug)
-        if not recipe:
+        if not recipe or recipe.id is None:
             return None
 
-        household_recipe_out = self.repos.household_recipes.get_by_recipe(recipe.id)
+        household_recipe_out = await self.repos.household_recipes.get_by_recipe(recipe.id)
         if household_recipe_out:
             return household_recipe_out.cast(HouseholdRecipeSummary)
         else:
             return HouseholdRecipeSummary(recipe_id=recipe.id)
 
-    def set_household_recipe(self, recipe_slug: str | UUID, data: HouseholdRecipeUpdate) -> HouseholdRecipeSummary:
+    async def set_household_recipe(
+        self, recipe_slug: str | UUID, data: HouseholdRecipeUpdate
+    ) -> HouseholdRecipeSummary:
         """Sets the household's recipe data"""
         recipe = self._get_recipe(recipe_slug)
-        if not recipe:
+        if not recipe or recipe.id is None:
             raise exceptions.NoEntryFound("Recipe not found.")
 
-        existing_household_recipe = self.repos.household_recipes.get_by_recipe(recipe.id)
+        existing_household_recipe = await self.repos.household_recipes.get_by_recipe(recipe.id)
 
         if existing_household_recipe:
             updated_data = existing_household_recipe.cast(HouseholdRecipeUpdate, **data.model_dump())
-            household_recipe_out = self.repos.household_recipes.patch(existing_household_recipe.id, updated_data)
+            household_recipe_out = await self.repos.household_recipes.patch(existing_household_recipe.id, updated_data)
         else:
             create_data = HouseholdRecipeCreate(
                 household_id=self.household_id, recipe_id=recipe.id, **data.model_dump()
             )
-            household_recipe_out = self.repos.household_recipes.create(create_data)
+            household_recipe_out = await self.repos.household_recipes.create(create_data)
 
         return household_recipe_out.cast(HouseholdRecipeSummary)

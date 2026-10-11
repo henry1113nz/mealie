@@ -8,17 +8,17 @@ import pytest
 from sqlalchemy import Engine, insert
 from tortoise.transactions import in_transaction
 
-from mealie.db.models.group import Group
-from mealie.db.models.household.cookbook import CookBook
-from mealie.db.models.household.household_to_recipe import HouseholdToRecipe
-from mealie.db.models.household.mealplan import GroupMealPlan
-from mealie.db.models.household.shopping_list import (
+from mealie.db.models._legacy_household.cookbook import CookBook
+from mealie.db.models._legacy_household.household_to_recipe import HouseholdToRecipe
+from mealie.db.models._legacy_household.mealplan import GroupMealPlan
+from mealie.db.models._legacy_household.shopping_list import (
     ShoppingList,
     ShoppingListItem,
     ShoppingListItemRecipeReference,
     ShoppingListMultiPurposeLabel,
     ShoppingListRecipeReference,
 )
+from mealie.db.models.group import Group
 from mealie.db.models.recipe.category import Category, cookbooks_to_categories, recipes_to_categories
 from mealie.db.models.recipe.ingredient import (
     IngredientFoodModel,
@@ -116,7 +116,7 @@ async def test_group_delete_clears_nullable_references_and_deletes_substitutions
 ) -> None:
     repos, other = native_user_repositories
     user = await create_native_user(other, "nullable-link-survivor")
-    target_household = repos.households.get_all()[0]
+    target_household = (await repos.households.get_all())[0]
     recipe_id, kept_recipe_id, food_id, kept_food_id, unit_id, label_id, list_id, item_id = (uuid4() for _ in range(8))
     removed_substitutions, kept_substitutions = {}, {}
     with server_engine.begin() as connection:
@@ -197,7 +197,7 @@ async def test_group_delete_removes_secondary_links_from_either_side_without_del
     native_user_repositories: tuple[AllRepositories, AllRepositories], server_engine: Engine
 ) -> None:
     repos, other = native_user_repositories
-    household = other.households.get_all()[0]
+    household = (await other.households.get_all())[0]
     recipe_id, cookbook_id = uuid4(), uuid4()
     retained_links = []
     with server_engine.begin() as connection:

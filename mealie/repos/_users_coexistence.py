@@ -57,7 +57,9 @@ async def query_ids(model_name: str, group_id: UUID | None, pagination: Paginati
     return await query_model_ids(model, group_id, pagination)
 
 
-async def query_model_ids(model: Any, group_id: UUID | None, pagination: PaginationQuery) -> list[Any]:
+async def query_model_ids(
+    model: Any, group_id: UUID | None, pagination: PaginationQuery, *, household_id: UUID | None = None
+) -> list[Any]:
     query: Select = select(model.id)
     if group_id:
         # Password reset ownership is derived through its user as well.
@@ -67,6 +69,8 @@ async def query_model_ids(model: Any, group_id: UUID | None, pagination: Paginat
             query = query.where(model.user.has(User.group_id == group_id))
         else:
             query = query.filter_by(group_id=group_id)
+    if household_id:
+        query = query.filter_by(household_id=household_id)
     if pagination.query_filter:
         query = QueryFilterBuilder(pagination.query_filter).filter_query(query, model=model)
     ordering = pagination.order_by or "created_at"
@@ -103,13 +107,16 @@ async def query_model_ids(model: Any, group_id: UUID | None, pagination: Paginat
         if connection.capabilities.dialect == "postgres"
         else sqlite.dialect()
     )
-    compiled = query.compile(dialect=dialect, compile_kwargs={"render_postcompile": True})
-    processors = compiled._bind_processors
+    compiled = query.compile(dialect=dialect)
+    expanded = compiled.construct_expanded_state()
+    # Expanding IN parameters have individual names after compilation. Apply
+    # their processors too, particularly UUIDs stored as SQLite hex strings.
+    processors = compiled._bind_processors | expanded.processors
     parameters = [
-        processors[key](compiled.params[key]) if key in processors else compiled.params[key]
-        for key in compiled.positiontup or []
+        processors[key](expanded.parameters[key]) if key in processors else expanded.parameters[key]
+        for key in expanded.positiontup or []
     ]
-    rows = await connection.execute_query_dict(str(compiled), parameters)
+    rows = await connection.execute_query_dict(expanded.statement, parameters)
     return [row["id"] for row in rows]
 
 
@@ -131,16 +138,11 @@ async def delete_user_dependents(user_id: UUID) -> None:
         "UPDATE recipes SET user_id = NULL, update_at = ? WHERE user_id = ?",
         [datetime.now(UTC), user_id],
     )
-    lists = "SELECT id FROM shopping_lists WHERE user_id = ?"
-    items = f"SELECT id FROM shopping_list_items WHERE shopping_list_id IN ({lists})"
-    for table, column, subquery in (
-        ("shopping_list_item_recipe_reference", "shopping_list_item_id", items),
-        ("shopping_list_item_extras", "shopping_list_item_id", items),
-        ("shopping_list_items", "shopping_list_id", lists),
-        ("shopping_list_recipe_reference", "shopping_list_id", lists),
-        ("shopping_lists_multi_purpose_labels", "shopping_list_id", lists),
-        ("shopping_list_extras", "shopping_list_id", lists),
-    ):
-        await execute(f'DELETE FROM "{table}" WHERE "{column}" IN ({subquery})', [user_id])
-    for table in ("shopping_lists", "group_meal_plans", "recipe_comments", "recipe_timeline_events"):
+    from mealie.db.models.household import GroupMealPlan, ShoppingList
+
+    connection = connections.get("default")
+    for shopping_list in await ShoppingList.filter(user_id=user_id).using_db(connection):
+        await shopping_list.delete(using_db=connection)
+    await GroupMealPlan.filter(user_id=user_id).using_db(connection).delete()
+    for table in ("recipe_comments", "recipe_timeline_events"):
         await execute(f'DELETE FROM "{table}" WHERE user_id = ?', [user_id])

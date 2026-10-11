@@ -275,12 +275,12 @@ section at the start of every session and update it at the end.
   is explicit in tests only. Existing tests/fixtures remain on SQLAlchemy in C1.
 - Do not overlap separate pytest runs: non-xdist fixture cleanup removes all of
   `tests/.temp`, including databases used by active xdist workers.
-- Server tasks and users now have native Tortoise Group relations. `Group.delete()`
-  removes dependents in the same async transaction and rejects groups with users.
-  `_groups_coexistence.py` retains household/recipe cascades until C5-C6: follow
-  ownership edges for deletion, clear nullable references and remove association
-  rows while preserving referring objects in other groups. The old SQLAlchemy
-  server-task deletion hook is gone.
+- Server tasks, users and households have native Tortoise Group relations; users
+  also have a native Household relation. `Group.delete()` removes dependents in
+  the same async transaction and rejects groups with users. Household cascades
+  are native in `_household_coexistence.py`; `_groups_coexistence.py` retains only
+  recipe-domain ownership metadata until C6. Clear nullable references and remove
+  association rows while preserving referring objects in other groups.
 - During coexistence, inspect both ORM model registries when checking backup
   datetime coverage. Production table creation remains on the existing Alembic
   history until C7; registering a converted model does not generate its schema.
@@ -288,13 +288,14 @@ section at the start of every session and update it at the end.
   are async. Await them and their service/authentication/import call chains on
   the owning database loop. Script entry points may call `asyncio.run(main())`
   once around an isolated `database_context()`; no per-call async adapters.
-- Until C5-C6 convert the related domains, `_legacy_users.py` and `_legacy_groups/`
-  provide SQLAlchemy relationship projections for those domains, legacy bootstrap
-  and schema loader options. Do not use these projections for application user or
-  group CRUD. `_users_coexistence.py` compiles the existing public filter/order
-  language against legacy relationship metadata, but executes it and cross-domain
-  SQL through the active Tortoise connection/transaction. Remove these bridges as
-  their domains are converted.
+- Until C6 converts recipes, `_legacy_users.py`, `_legacy_groups/` and
+  `_legacy_household/` provide SQLAlchemy relationship projections for the recipe
+  domain, legacy migrations/backup and schema loader options. Do not use these
+  projections for application user, group or household CRUD. Recipe-owned queries
+  and association updates still use them until C6. `_users_coexistence.py` compiles
+  the public filter/order language against legacy metadata, executing through the
+  active Tortoise connection/transaction. Apply bind processors to expanded `IN`
+  parameters as well as scalar parameters, preserving UUID storage on both engines.
 - All seven group repositories (`groups`, `group_preferences`, `group_exports`,
   `group_reports`, `group_report_entries`, `group_ai_provider_settings`,
   `group_ai_providers`) are async. Await their routes/services/scheduler callers.
@@ -312,6 +313,23 @@ section at the start of every session and update it at the end.
   `tests/utils/async_database.py` adapts only test setup/access onto that loop;
   production repositories stay async. Isolated foundation tests temporarily
   detach the application global fallback and restore it afterward.
+- All 15 household repositories are async, including meal plans, cookbooks,
+  notifications, invitations, webhooks and nested shopping-list rows. Household
+  ownership of meals/lists follows the user; nested rows follow the owning list.
+  Preference reads/writes retain the repository's household scope, even when
+  matching by household ID. Cross-household test setup uses the owning repository.
+- Await household services, event dispatch/listeners and food seeding (which adds
+  shopping-list label settings). Controller household and recipe-service getters
+  are async; migrators load their household inside `migrate()`. Notification HTTP
+  publication stays in threadpool workers after all database data is hydrated.
+- C5 recipe/food/unit/label hydration uses `_households_coexistence.py` on the active
+  async transaction until C6. Household model deletion explicitly removes native
+  dependents; recipe join tables remain a transaction-local SQL bridge. Nested
+  shopping-reference replacement preserves retained IDs and rejects foreign IDs.
+- `CalendarDateField` normalizes meal-plan datetime inputs to dates;
+  `NaiveTimeField` preserves webhook wall-clock values as SQLite time text and
+  PostgreSQL `TIME` without attaching a timezone. Existing UUID/UTC conventions
+  remain unchanged.
 
 ### Decisions log
 - 2026-10-11 C1: Foundation is additive dependencies/configuration/lifecycle/model primitives/tests; domain conversions remain C2–C6 and Alembic replacement remains C7.
@@ -398,6 +416,31 @@ section at the start of every session and update it at the end.
   synchronous setup and direct async SPA calls; adapt repository mocks to async.
   Preserve existing C2/C3 registry assertions in isolated configuration setup,
   and validate the full production registry separately in C4.
+- 2026-10-11 C5: Convert all 18 household-domain tables, including shopping-list
+  extras and notifier options, to Tortoise across ten explicitly registered
+  modules. Preserve columns, nullability, defaults, indexes, unique constraints,
+  unbounded strings and UUID/UTC storage. User household references and meal-rule
+  household associations are native; recipe/food/unit/label references remain
+  scalar until C6, with existing Alembic foreign keys enforced.
+- 2026-10-11 C5: Convert all 15 household repositories to native async persistence
+  and explicit hydration into unchanged schemas. Preserve slug retries, query
+  filters/order, user-derived ownership, nested extras/options/references,
+  shopping-list timestamps, recipe last-made watermarks and household statistics.
+  Fix expanded UUID `IN` bind conversion discovered by checked-item restoration
+  tests; both SQLite and PostgreSQL compilation are covered.
+- 2026-10-11 C5: Replace household portions of group/user deletion with native
+  transactional cascades, keeping only C6 recipe reference/association cleanup.
+  Household deletion detaches users and nullable meal-rule ownership, preserving
+  their objects as before; group deletion still rejects populated groups.
+- 2026-10-11 C5: Add `_legacy_household/` for C6 relationship/query metadata and
+  legacy migration/backup checks. Six schema files change only ORM imports; no
+  Pydantic definitions, generated files or frontend files change. Production
+  schema creation remains Alembic; Aerich is still C7.
+- 2026-10-11 C5: Tortoise uses the UUID `id` as the operational primary key for
+  household recipe links and shopping associations, while the existing tables
+  retain their composite primary keys until C7, as with C3 ratings. C7 must also
+  preserve both single-column indexes on `plan_rules_to_households` when replacing
+  Alembic: native M2M schema generation does not describe these legacy indexes.
 
 ### C1 validation and remaining work (2026-10-11)
 - Reported gate before this follow-up: 3217 passed, 1 failed, 0 errors,
@@ -509,6 +552,41 @@ section at the start of every session and update it at the end.
   explicit handling of cyclic AI foreign keys. No later conversion step was
   started. No push, remote or git-configuration change.
 
+### C5 validation and remaining work (2026-10-11)
+- Final full `uv run pytest -n 4 --dist loadfile`: 3256 passed, 5 failed,
+  0 errors, 18 existing skips. All five failures remain in
+  `tests/unit_tests/pkgs/safehttp/test_transport.py`, where local socket binding
+  raises sandbox `PermissionError: [Errno 1] Operation not permitted`. No new
+  failures remain. Commands used `UV_FROZEN=1` to retain the committed lockfile;
+  no pytest runs overlapped.
+- All 15 new C5 cases pass. Native tests use isolated disposable SQLite databases
+  built from the actual Alembic history and cover all 18 registered tables,
+  native relations, column/nullability parity, UUID/UTC/date/time storage,
+  defaults/constraints, slug collisions, hydration, group/household scopes,
+  filtering, statistics, nested replacement/ownership and deletion rollback.
+  PostgreSQL tests cover field conversion and expanded UUID query compilation.
+  Existing API, scheduler, backup and C2-C4 cascade regressions pass in the full run.
+- `task py:mypy`: 0 errors across 492 source files. `task py:lint`, Ruff checks
+  on changed tests, formatting checks and `git diff --check` pass. Native model
+  columns/nullability/defaults/indexes match legacy metadata, and all 28 native
+  household/User foreign-key fields retain the custom UUID field storage.
+- All 1203 pre-existing test functions and 4158 assertion expressions are
+  retained; assertion ASTs match after removing only async invocation adapters.
+  Existing skip-related constructs are unchanged. C5 adds 13 functions (15 cases)
+  and 122 assertions, totaling 1216 functions and 4280 assertions. Test changes
+  only adapt database access, scope setup to the owning household, or invoke
+  converted async services. No existing tests, assertions or expected values were
+  removed, skipped, marked xfail or weakened.
+- All 272 HTTP handler signatures/defaults/return annotations and route
+  decorators match the pre-C5 AST. Pydantic definitions in all schema files are
+  unchanged; only six module import blocks change. No code generation was needed,
+  and no frontend, dependency or lockfile changes were made.
+- Live PostgreSQL remains unverified; its adapter/storage/compiler checks pass.
+  C6 must replace recipe references, hydration/filter metadata and remaining
+  projections; C7 still removes SQLAlchemy/Alembic and introduces Aerich with
+  explicit cyclic foreign-key and association-index handling. Neither later step
+  was started. No push, remote or git-configuration change.
+
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
@@ -516,6 +594,6 @@ section at the start of every session and update it at the end.
 | C2 | server | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3219 passed, 5 sandbox socket failures, 18 existing skips |
 | C3 | users | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3226 passed, 5 sandbox socket failures, 18 existing skips |
 | C4 | group | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3241 passed, 5 sandbox socket failures, 18 existing skips |
-| C5 | household | not started | | |
+| C5 | household | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3256 passed, 5 sandbox socket failures, 18 existing skips |
 | C6 | recipe | not started | | |
 | C7 | Remove SQLAlchemy and Alembic, add Aerich | not started | | |

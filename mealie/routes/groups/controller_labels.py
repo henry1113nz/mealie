@@ -53,13 +53,13 @@ class MultiPurposeLabelsController(BaseCrudController):
         return response
 
     @router.post("", response_model=MultiPurposeLabelOut)
-    def create_one(self, data: MultiPurposeLabelCreate):
+    async def create_one(self, data: MultiPurposeLabelCreate):
         try:
-            new_label = self.service.create_one(data)
+            new_label = await self.service.create_one(data)
         except Exception as ex:
             self.mixins.handle_exception(ex)
             raise  # handle_exception always raises; this satisfies static analysis
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.label_created,
             document_data=EventLabelData(operation=EventOperation.create, label_id=new_label.id),
             group_id=new_label.group_id,
@@ -73,9 +73,9 @@ class MultiPurposeLabelsController(BaseCrudController):
         return self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=MultiPurposeLabelOut)
-    def update_one(self, item_id: UUID4, data: MultiPurposeLabelUpdate):
+    async def update_one(self, item_id: UUID4, data: MultiPurposeLabelUpdate):
         label = self.mixins.update_one(data, item_id)
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.label_updated,
             document_data=EventLabelData(operation=EventOperation.update, label_id=label.id),
             group_id=label.group_id,
@@ -85,10 +85,10 @@ class MultiPurposeLabelsController(BaseCrudController):
         return label
 
     @router.delete("/{item_id}", response_model=MultiPurposeLabelOut)
-    def delete_one(self, item_id: UUID4):
+    async def delete_one(self, item_id: UUID4):
         label = self.mixins.delete_one(item_id)
         if label:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.label_deleted,
                 document_data=EventLabelData(operation=EventOperation.delete, label_id=label.id),
                 group_id=label.group_id,

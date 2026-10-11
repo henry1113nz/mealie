@@ -60,13 +60,13 @@ class EventBusService:
             WebhookEventListener(group_id, household_id),
         ]
 
-    def _publish_event(self, event: Event, group_id: UUID4, household_id: UUID4) -> None:
+    async def _publish_event(self, event: Event, group_id: UUID4, household_id: UUID4) -> None:
         """Publishes the event to all listeners"""
         for listener in self._get_listeners(group_id, household_id):
-            if subscribers := listener.get_subscribers(event):
-                listener.publish_to_subscribers(event, subscribers)
+            if subscribers := await listener.get_subscribers(event):
+                await listener.publish_to_subscribers(event, subscribers)
 
-    def dispatch(
+    async def dispatch(
         self,
         integration_id: str,
         group_id: UUID4,
@@ -87,7 +87,7 @@ class EventBusService:
                 raise ValueError("Session is required if household_id is not provided")
 
             repos = get_repositories(self.session, group_id=group_id)
-            households = repos.households.page_all(PaginationQuery(page=1, per_page=-1)).items
+            households = (await repos.households.page_all(PaginationQuery(page=1, per_page=-1))).items
             household_ids = [household.id for household in households]
         else:
             household_ids = [household_id]
@@ -96,7 +96,7 @@ class EventBusService:
             if self.bg:
                 self.bg.add_task(self._publish_event, event=event, group_id=group_id, household_id=household_id)
             else:
-                self._publish_event(event, group_id, household_id)
+                await self._publish_event(event, group_id, household_id)
 
     @classmethod
     def as_dependency(

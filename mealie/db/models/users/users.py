@@ -9,6 +9,7 @@ from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UT
 
 if TYPE_CHECKING:
     from ..group.group import Group
+    from ..household.household import Household
     from .password_reset import PasswordResetModel
     from .user_to_recipe import UserToRecipe
 
@@ -52,9 +53,16 @@ class User(TortoiseBase):
     group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group", related_name="users", source_field="group_id", db_index=True, on_delete=fields.RESTRICT
     )
-    # Household and Recipe remain legacy models until C5-C6. Their existing
-    # database foreign keys continue to enforce these scalar references.
-    household_id: fields.UUIDField[UUID | None] = UUIDField(null=True, db_index=True)
+    household_id: UUID | None
+    household: fields.ForeignKeyNullableRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="users",
+        source_field="household_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    # Recipe remains legacy until C6; the database enforces this reference.
     owned_recipes_id: fields.UUIDField[UUID | None] = UUIDField(null=True)
 
     cache_key: fields.TextField[str | None] = UnboundedCharField(default="1234", null=True)

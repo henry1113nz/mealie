@@ -64,14 +64,14 @@ class TagController(BaseCrudController):
         return self.mixins.get_one(item_id)
 
     @router.post("", status_code=201)
-    def create_one(self, tag: TagIn):
+    async def create_one(self, tag: TagIn):
         """Creates a Tag in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(tag, TagSave, group_id=self.group_id)
         new_tag = self.mixins.create_one(save_data)
 
         if new_tag:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.tag_created,
                 document_data=EventTagData(operation=EventOperation.create, tag_id=new_tag.id),
                 group_id=new_tag.group_id,
@@ -86,14 +86,14 @@ class TagController(BaseCrudController):
         return new_tag
 
     @router.put("/{item_id}", response_model=RecipeTagResponse)
-    def update_one(self, item_id: UUID4, new_tag: TagIn):
+    async def update_one(self, item_id: UUID4, new_tag: TagIn):
         """Updates an existing Tag in the database"""
         self.checks.can_organize()
         save_data = mapper.cast(new_tag, TagSave, group_id=self.group_id)
         tag = self.repo.update(item_id, save_data)
 
         if tag:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.tag_updated,
                 document_data=EventTagData(operation=EventOperation.update, tag_id=tag.id),
                 group_id=tag.group_id,
@@ -108,7 +108,7 @@ class TagController(BaseCrudController):
         return tag
 
     @router.delete("/{item_id}")
-    def delete_recipe_tag(self, item_id: UUID4):
+    async def delete_recipe_tag(self, item_id: UUID4):
         """
         Removes a recipe tag from the database. Deleting a
         tag does not impact a recipe. The tag will be removed
@@ -122,7 +122,7 @@ class TagController(BaseCrudController):
             raise HTTPException(status.HTTP_400_BAD_REQUEST) from e
 
         if tag:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.tag_deleted,
                 document_data=EventTagData(operation=EventOperation.delete, tag_id=tag.id),
                 group_id=tag.group_id,

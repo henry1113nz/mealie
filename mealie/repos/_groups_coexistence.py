@@ -1,7 +1,7 @@
-"""Transactional group deletion while household and recipe models remain legacy.
+"""Transactional group deletion while recipe models remain legacy.
 
 Only model metadata comes from SQLAlchemy; every statement executes through the
-active Tortoise transaction. C5/C6 replace the explicit ownership map as those
+active Tortoise transaction. C6 replaces the explicit recipe ownership map as those
 models gain native relations and deletion behavior.
 """
 
@@ -25,17 +25,13 @@ from mealie.db.models.users.users import User
 # such as ingredient.food_id and ingredient.referenced_recipe_id are references,
 # not ownership, and must never make another group's recipe a deletion target.
 _OWNERS: dict[str, tuple[str, str]] = {
-    "household_preferences": ("household_id", "households"),
-    "households_to_recipes": ("household_id", "households"),
-    "households_to_ingredient_foods": ("household_id", "households"),
-    "households_to_tools": ("household_id", "households"),
-    "group_events_notifier_options": ("event_notifier_id", "group_events_notifiers"),
-    "plan_rules_to_households": ("group_plan_rule_id", "group_meal_plan_rules"),
-    "plan_rules_to_categories": ("group_plan_rule_id", "group_meal_plan_rules"),
-    "plan_rules_to_tags": ("plan_rule_id", "group_meal_plan_rules"),
-    "cookbooks_to_categories": ("cookbook_id", "cookbooks"),
-    "cookbooks_to_tags": ("cookbook_id", "cookbooks"),
-    "cookbooks_to_tools": ("cookbook_id", "cookbooks"),
+    "households_to_ingredient_foods": ("food_id", "ingredient_foods"),
+    "households_to_tools": ("tool_id", "tools"),
+    "plan_rules_to_categories": ("category_id", "categories"),
+    "plan_rules_to_tags": ("tag_id", "tags"),
+    "cookbooks_to_categories": ("category_id", "categories"),
+    "cookbooks_to_tags": ("tag_id", "tags"),
+    "cookbooks_to_tools": ("tool_id", "tools"),
     "recipes_to_categories": ("recipe_id", "recipes"),
     "recipes_to_tags": ("recipe_id", "recipes"),
     "recipes_to_tools": ("recipe_id", "recipes"),
@@ -55,69 +51,59 @@ _OWNERS: dict[str, tuple[str, str]] = {
     "ingredient_foods_aliases": ("food_id", "ingredient_foods"),
     "ingredient_foods_substitutions": ("food_id", "ingredient_foods"),
     "ingredient_food_extras": ("ingredient_food_id", "ingredient_foods"),
-    "shopping_list_items": ("shopping_list_id", "shopping_lists"),
-    "shopping_list_item_recipe_reference": ("shopping_list_item_id", "shopping_list_items"),
-    "shopping_list_recipe_reference": ("shopping_list_id", "shopping_lists"),
-    "shopping_lists_multi_purpose_labels": ("shopping_list_id", "shopping_lists"),
-    "shopping_list_extras": ("shopping_list_id", "shopping_lists"),
-    "shopping_list_item_extras": ("shopping_list_item_id", "shopping_list_items"),
     "users_to_recipes": ("recipe_id", "recipes"),
 }
 # Reverse relationships also remove dependent association rows. These alternate
 # edges never delete the referenced recipe, household, list, category or food.
 _ALTERNATE_OWNERS: dict[str, tuple[str, str]] = {
-    "group_meal_plans": ("recipe_id", "recipes"),
     "recipe_share_tokens": ("recipe_id", "recipes"),
-    "shopping_list_recipe_reference": ("recipe_id", "recipes"),
-    "shopping_list_item_recipe_reference": ("recipe_id", "recipes"),
-    "households_to_recipes": ("recipe_id", "recipes"),
-    "households_to_ingredient_foods": ("food_id", "ingredient_foods"),
-    "households_to_tools": ("tool_id", "tools"),
     "group_to_categories": ("category_id", "categories"),
-    "plan_rules_to_households": ("household_id", "households"),
-    "plan_rules_to_categories": ("category_id", "categories"),
-    "plan_rules_to_tags": ("tag_id", "tags"),
-    "cookbooks_to_categories": ("category_id", "categories"),
-    "cookbooks_to_tags": ("tag_id", "tags"),
-    "cookbooks_to_tools": ("tool_id", "tools"),
     "recipes_to_categories": ("category_id", "categories"),
     "recipes_to_tags": ("tag_id", "tags"),
     "recipes_to_tools": ("tool_id", "tools"),
-    "shopping_lists_multi_purpose_labels": ("label_id", "multi_purpose_labels"),
     "ingredient_foods_substitutions": ("substitute_food_id", "ingredient_foods"),
     "recipes_ingredients_substitutions": ("substitute_food_id", "ingredient_foods"),
-    "group_events_notifiers": ("household_id", "households"),
-    "invite_tokens": ("household_id", "households"),
-    "recipe_actions": ("household_id", "households"),
-    "cookbooks": ("household_id", "households"),
-    "webhook_urls": ("household_id", "households"),
 }
 _NULL_REFERENCES = (
     ("recipes_ingredients", "referenced_recipe_id", "recipes"),
     ("recipes_ingredients", "food_id", "ingredient_foods"),
     ("recipes_ingredients", "unit_id", "ingredient_units"),
-    ("shopping_list_items", "food_id", "ingredient_foods"),
-    ("shopping_list_items", "unit_id", "ingredient_units"),
-    ("shopping_list_items", "label_id", "multi_purpose_labels"),
     ("ingredient_foods", "label_id", "multi_purpose_labels"),
     ("users", "owned_recipes_id", "recipes"),
-    ("users", "household_id", "households"),
-    ("group_meal_plan_rules", "household_id", "households"),
 )
 _NATIVE_TABLES = {
-    "groups",
-    "group_preferences",
-    "group_data_exports",
-    "group_reports",
-    "report_entries",
-    "ai_provider_settings",
-    "ai_providers",
     "ai_provider_headers",
     "ai_provider_params",
-    "users",
+    "ai_provider_settings",
+    "ai_providers",
+    "cookbooks",
+    "group_data_exports",
+    "group_events_notifier_options",
+    "group_events_notifiers",
+    "group_meal_plan_rules",
+    "group_meal_plans",
+    "group_preferences",
+    "group_reports",
+    "groups",
+    "household_preferences",
+    "households",
+    "households_to_recipes",
+    "invite_tokens",
     "long_live_tokens",
     "password_reset_tokens",
+    "plan_rules_to_households",
+    "recipe_actions",
+    "report_entries",
     "server_tasks",
+    "shopping_list_extras",
+    "shopping_list_item_extras",
+    "shopping_list_item_recipe_reference",
+    "shopping_list_items",
+    "shopping_list_recipe_reference",
+    "shopping_lists",
+    "shopping_lists_multi_purpose_labels",
+    "users",
+    "webhook_urls",
 }
 
 
@@ -161,6 +147,19 @@ async def delete_group_dependents(group_id: UUID, using_db: BaseDBAsyncClient) -
     await GroupPreferencesModel.filter(group_id=group_id).using_db(using_db).delete()
     await GroupDataExportsModel.filter(group_id=group_id).using_db(using_db).delete()
 
+    from mealie.repos._household_coexistence import clear_recipe_domain_references, delete_group_household_dependents
+
+    await delete_group_household_dependents(group_id, using_db)
+    postgres = using_db.capabilities.dialect == "postgres"
+    recipe_identifiers: dict[str, list[Any]] = {}
+    for table_name in ("recipes", "ingredient_foods", "ingredient_units", "multi_purpose_labels"):
+        rows = await using_db.execute_query_dict(
+            f'SELECT id FROM "{table_name}" WHERE group_id = {"$1" if postgres else "?"}',
+            [str(group_id) if postgres else group_id.hex],
+        )
+        recipe_identifiers[table_name] = [row["id"] for row in rows]
+    await clear_recipe_domain_references(recipe_identifiers, using_db)
+
     metadata = SqlAlchemyBase.metadata
     owned = {
         name: table
@@ -190,10 +189,10 @@ async def delete_group_dependents(group_id: UUID, using_db: BaseDBAsyncClient) -
             f'WHERE "{column}" IN (SELECT id FROM "{parent}" WHERE {predicate})',
             [datetime.now(UTC), *([group_id] * predicate.count("?"))],
         )
-    for table in reversed(sort_tables(owned.values())):
-        predicate = condition(table.name)
+    for owned_table in reversed(sort_tables(owned.values())):
+        predicate = condition(owned_table.name)
         await _execute(
             using_db,
-            f'DELETE FROM "{table.name}" WHERE {predicate}',
+            f'DELETE FROM "{owned_table.name}" WHERE {predicate}',
             [group_id] * predicate.count("?"),
         )

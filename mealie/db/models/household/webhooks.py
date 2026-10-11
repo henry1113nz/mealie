@@ -1,38 +1,42 @@
-import datetime as dt
+from datetime import UTC, datetime, time
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, String, Time, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
 
-from .._model_base import BaseMixins, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._tortoise_base import NaiveTimeField, TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
-    from .._legacy_groups import Group
+    from ..group.group import Group
     from .household import Household
 
 
-class GroupWebhooksModel(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "webhook_urls"
-    id: Mapped[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
+class GroupWebhooksModel(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    group_id: UUID | None
+    group: fields.ForeignKeyNullableRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="webhooks",
+        source_field="group_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    household_id: UUID | None
+    household: fields.ForeignKeyNullableRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="webhooks",
+        source_field="household_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    enabled: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
+    name: fields.TextField[str | None] = UnboundedCharField(null=True)
+    url: fields.TextField[str | None] = UnboundedCharField(null=True)
+    webhook_type: fields.TextField[str | None] = UnboundedCharField(null=True, default="")
+    scheduled_time: fields.TimeField[time | None] = NaiveTimeField(null=True, default=lambda: datetime.now(UTC).time())
+    time: fields.TextField[str | None] = UnboundedCharField(null=True, default="00:00")
 
-    group: Mapped[Group | None] = orm.relationship("Group", back_populates="webhooks", single_parent=True)
-    group_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("groups.id"), index=True)
-    household: Mapped[Household | None] = orm.relationship("Household", back_populates="webhooks", single_parent=True)
-    household_id: Mapped[GUID | None] = mapped_column(GUID, ForeignKey("households.id"), index=True)
-
-    enabled: Mapped[bool | None] = mapped_column(Boolean, default=False)
-    name: Mapped[str | None] = mapped_column(String)
-    url: Mapped[str | None] = mapped_column(String)
-
-    # New Fields
-    webhook_type: Mapped[str | None] = mapped_column(String, default="")  # Future use for different types of webhooks
-    scheduled_time: Mapped[dt.time | None] = mapped_column(Time, default=lambda: dt.datetime.now(dt.UTC).time())
-
-    # Column is no longer used but is kept for since it's super annoying to
-    # delete a column in SQLite and it's not a big deal to keep it around
-    time: Mapped[str | None] = mapped_column(String, default="00:00")
-
-    @auto_init()
-    def __init__(self, **_) -> None: ...
+    class Meta:
+        table = "webhook_urls"

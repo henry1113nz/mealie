@@ -8,7 +8,7 @@ from pydantic import UUID4
 from mealie.core.exceptions import mealie_registered_exceptions
 from mealie.repos.all_repositories import get_repositories
 from mealie.routes._base import BaseCrudController, controller
-from mealie.routes._base.mixins import HttpRepo
+from mealie.routes._base.mixins import AsyncHttpRepo
 from mealie.routes._base.routers import MealieCrudRoute
 from mealie.schema import mapper
 from mealie.schema.cookbook import CreateCookBook, ReadCookBook, SaveCookBook, UpdateCookBook
@@ -42,16 +42,16 @@ class GroupCookbookController(BaseCrudController):
 
     @cached_property
     def mixins(self):
-        return HttpRepo[CreateCookBook, ReadCookBook, UpdateCookBook](
+        return AsyncHttpRepo[CreateCookBook, ReadCookBook, UpdateCookBook](
             self.cookbooks,
             self.logger,
             self.registered_exceptions,
         )
 
     @router.get("", response_model=CookBookPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
         # Fetch all cookbooks for the group, rather than the household
-        response = self.group_cookbooks.page_all(
+        response = await self.group_cookbooks.page_all(
             pagination=q,
             override=ReadCookBook,
         )
@@ -60,12 +60,12 @@ class GroupCookbookController(BaseCrudController):
         return response
 
     @router.post("", response_model=ReadCookBook, status_code=201)
-    def create_one(self, data: CreateCookBook):
+    async def create_one(self, data: CreateCookBook):
         data = mapper.cast(data, SaveCookBook, group_id=self.group_id, household_id=self.household_id)
-        cookbook = self.mixins.create_one(data)
+        cookbook = await self.mixins.create_one(data)
 
         if cookbook:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.cookbook_created,
                 document_data=EventCookbookData(operation=EventOperation.create, cookbook_id=cookbook.id),
                 group_id=cookbook.group_id,
@@ -76,13 +76,13 @@ class GroupCookbookController(BaseCrudController):
         return cookbook
 
     @router.put("", response_model=list[ReadCookBook])
-    def update_many(self, data: list[UpdateCookBook]):
+    async def update_many(self, data: list[UpdateCookBook]):
         updated_by_group_and_household: defaultdict[UUID4, defaultdict[UUID4, list[ReadCookBook]]] = defaultdict(
             lambda: defaultdict(list)
         )
 
         for cookbook in data:
-            cb = self.mixins.update_one(cookbook, cookbook.id)
+            cb = await self.mixins.update_one(cookbook, cookbook.id)
             updated_by_group_and_household[cb.group_id][cb.household_id].append(cb)
 
         all_updated: list[ReadCookBook] = []
@@ -90,7 +90,7 @@ class GroupCookbookController(BaseCrudController):
             for group_id, household_dict in updated_by_group_and_household.items():
                 for household_id, updated_cookbooks in household_dict.items():
                     all_updated.extend(updated_cookbooks)
-                    self.publish_event(
+                    await self.publish_event(
                         event_type=EventTypes.cookbook_updated,
                         document_data=EventCookbookBulkData(
                             operation=EventOperation.update, cookbook_ids=[cb.id for cb in updated_cookbooks]
@@ -102,7 +102,7 @@ class GroupCookbookController(BaseCrudController):
         return all_updated
 
     @router.get("/{item_id}", response_model=ReadCookBook)
-    def get_one(self, item_id: UUID4 | str):
+    async def get_one(self, item_id: UUID4 | str):
         if isinstance(item_id, UUID):
             match_attr = "id"
         else:
@@ -113,17 +113,17 @@ class GroupCookbookController(BaseCrudController):
                 match_attr = "slug"
 
         # Allow fetching other households' cookbooks
-        cookbook = self.group_cookbooks.get_one(item_id, match_attr)
+        cookbook = await self.group_cookbooks.get_one(item_id, match_attr)
         if cookbook is None:
             raise HTTPException(status_code=404)
 
         return cookbook
 
     @router.put("/{item_id}", response_model=ReadCookBook)
-    def update_one(self, item_id: str, data: CreateCookBook):
-        cookbook = self.mixins.update_one(data, item_id)  # type: ignore
+    async def update_one(self, item_id: str, data: CreateCookBook):
+        cookbook = await self.mixins.update_one(data, item_id)  # type: ignore
         if cookbook:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.cookbook_updated,
                 document_data=EventCookbookData(operation=EventOperation.update, cookbook_id=cookbook.id),
                 group_id=cookbook.group_id,
@@ -134,10 +134,10 @@ class GroupCookbookController(BaseCrudController):
         return cookbook
 
     @router.delete("/{item_id}", response_model=ReadCookBook)
-    def delete_one(self, item_id: str):
-        cookbook = self.mixins.delete_one(item_id)
+    async def delete_one(self, item_id: str):
+        cookbook = await self.mixins.delete_one(item_id)
         if cookbook:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.cookbook_deleted,
                 document_data=EventCookbookData(operation=EventOperation.delete, cookbook_id=cookbook.id),
                 group_id=cookbook.group_id,

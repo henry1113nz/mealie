@@ -99,8 +99,8 @@ class BasePublicGroupExploreController(BasePublicController):
     def group_id(self) -> UUID4 | None | NotSet:
         return self.group.id
 
-    def get_public_household(self, household_slug_or_id: str | UUID4) -> HouseholdInDB:
-        household = self.repos.households.get_by_slug_or_id(household_slug_or_id)
+    async def get_public_household(self, household_slug_or_id: str | UUID4) -> HouseholdInDB:
+        household = await self.repos.households.get_by_slug_or_id(household_slug_or_id)
         if not household or household.preferences.private_household:
             raise HTTPException(404, "household not found")
         return household
@@ -160,9 +160,8 @@ class BaseUserController(_BaseController):
     async def get_group(self) -> GroupInDB:
         return await self.repos.groups.get_one(self.group_id)
 
-    @property
-    def household(self) -> HouseholdInDB:
-        return self.repos.households.get_one(self.household_id)
+    async def get_household(self) -> HouseholdInDB:
+        return await self.repos.households.get_one(self.household_id)
 
     @property
     def checks(self) -> OperationChecks:
@@ -195,7 +194,7 @@ class BaseCrudController(BaseUserController):
 
     event_bus: EventBusService = Depends(EventBusService.as_dependency)
 
-    def publish_event(
+    async def publish_event(
         self,
         event_type: EventTypes,
         document_data: EventDocumentDataBase,
@@ -203,7 +202,7 @@ class BaseCrudController(BaseUserController):
         household_id: UUID4 | None,
         message: str = "",
     ) -> None:
-        self.event_bus.dispatch(
+        await self.event_bus.dispatch(
             integration_id=self.integration_id,
             group_id=group_id,
             household_id=household_id,

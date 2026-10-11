@@ -27,7 +27,7 @@ async def get_app_info(session: Session = Depends(generate_session)):
 
     if default_group and default_group_slug:
         group_repos = get_repositories(session, group_id=default_group.id, household_id=None)
-        default_household = group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
+        default_household = await group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
         if default_household and default_household.preferences and not default_household.preferences.private_household:
             default_household_slug = default_household.slug
 

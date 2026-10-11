@@ -12,8 +12,8 @@ from tortoise.exceptions import DoesNotExist, IntegrityError
 from tortoise.transactions import in_transaction
 
 from mealie.core.settings import AppSettings
-from mealie.db.models.household.mealplan import GroupMealPlan
-from mealie.db.models.household.shopping_list import ShoppingList, ShoppingListItem
+from mealie.db.models._legacy_household.mealplan import GroupMealPlan
+from mealie.db.models._legacy_household.shopping_list import ShoppingList, ShoppingListItem
 from mealie.db.models.recipe.api_extras import ShoppingListExtras, ShoppingListItemExtras
 from mealie.db.models.recipe.comment import RecipeComment
 from mealie.db.models.recipe.recipe import RecipeModel
@@ -53,14 +53,14 @@ async def native_user_repositories(
             for index in range(2):
                 group = await unfiltered.groups.create({"name": f"Native group {index}"})
                 repos = get_repositories(session, group_id=group.id, household_id=None)
-                repos.households.create({"name": f"Native household {index}", "group_id": group.id})
+                await repos.households.create({"name": f"Native household {index}", "group_id": group.id})
                 repositories.append(repos)
             yield repositories[0], repositories[1]
 
 
 async def create_native_user(repos: AllRepositories, name: str) -> PrivateUser:
     group = await repos.groups.get_one(repos.group_id)
-    household = repos.households.get_all()[0]
+    household = (await repos.households.get_all())[0]
     return await repos.users.create(
         {
             "username": name,

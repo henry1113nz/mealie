@@ -357,15 +357,15 @@ class RecipeController(BaseRecipeController):
             ctx = ScraperContext(self.repos)
             recipe.recipe_category = extras.use_categories(ctx)  # type: ignore
 
-        new_recipe = await self.service.create_one(recipe)
-        self._publish_recipe_created(new_recipe)
+        new_recipe = await (await self.get_service()).create_one(recipe)
+        await self._publish_recipe_created(new_recipe)
         return new_recipe.slug
 
-    def _publish_recipe_created(self, new_recipe: Recipe) -> None:
+    async def _publish_recipe_created(self, new_recipe: Recipe) -> None:
         if not new_recipe:
             return
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.recipe_created,
             document_data=EventRecipeData(operation=EventOperation.create, recipe_slug=new_recipe.slug),
             group_id=new_recipe.group_id,
@@ -400,7 +400,7 @@ class RecipeController(BaseRecipeController):
             translate_language=translate_language,
             create_new_organizers=create_new_organizers,
         )
-        async for event in self._create_recipe_with_ai(req, images):
+        async for event in await self._create_recipe_with_ai(req, images):
             if isinstance(event.data, SSEDataEventDone):
                 return event.data.slug
             if isinstance(event.data, SSEDataEventMessage) and event.event == SSEDataEventStatus.ERROR:
@@ -429,13 +429,15 @@ class RecipeController(BaseRecipeController):
             translate_language=translate_language,
             create_new_organizers=create_new_organizers,
         )
-        async for event in self._create_recipe_with_ai(req, images):
+        async for event in await self._create_recipe_with_ai(req, images):
             yield event
 
-    def _create_recipe_with_ai(self, req: ScrapeRecipeAI, images: list[UploadFile]) -> AsyncIterable[ServerSentEvent]:
+    async def _create_recipe_with_ai(
+        self, req: ScrapeRecipeAI, images: list[UploadFile]
+    ) -> AsyncIterable[ServerSentEvent]:
         """Create a recipe using AI, returning progress via SSE"""
 
-        ai_service = AIRecipeService(self.repos, self.user, self.household, translator=self.translator)
+        ai_service = AIRecipeService(self.repos, self.user, await self.get_household(), translator=self.translator)
 
         async def create(on_progress: Callable[[str], Awaitable[None]]) -> str:
             recipe = await ai_service.create_from_ai(
@@ -446,7 +448,7 @@ class RecipeController(BaseRecipeController):
                 create_new_organizers=req.create_new_organizers,
                 on_progress=on_progress,
             )
-            self._publish_recipe_created(recipe)
+            await self._publish_recipe_created(recipe)
             return recipe.slug
 
         return self._stream_recipe_creation(create)
@@ -454,11 +456,13 @@ class RecipeController(BaseRecipeController):
     @router.post("/create/url/bulk", status_code=202)
     async def parse_recipe_url_bulk(self, bulk: CreateRecipeByUrlBulk, bg_tasks: BackgroundTasks):
         """Takes in a URL and attempts to scrape data and load it into the database"""
-        bulk_scraper = RecipeBulkScraperService(self.service, self.repos, await self.get_group(), self.translator)
+        bulk_scraper = RecipeBulkScraperService(
+            await self.get_service(), self.repos, await self.get_group(), self.translator
+        )
         report_id = await bulk_scraper.get_report_id()
         bg_tasks.add_task(bulk_scraper.scrape, bulk)
 
-        self.publish_event(
+        await self.publish_event(
             event_type=EventTypes.recipe_created,
             document_data=EventRecipeBulkReportData(operation=EventOperation.create, report_id=report_id),
             group_id=self.group_id,
@@ -474,8 +478,8 @@ class RecipeController(BaseRecipeController):
     async def create_recipe_from_zip(self, archive: UploadFile = File(...)):
         """Create recipe from archive"""
         with get_temporary_zip_path() as temp_path:
-            recipe = await self.service.create_from_zip(archive, temp_path)
-            self.publish_event(
+            recipe = await (await self.get_service()).create_from_zip(archive, temp_path)
+            await self.publish_event(
                 event_type=EventTypes.recipe_created,
                 document_data=EventRecipeData(operation=EventOperation.create, recipe_slug=recipe.slug),
                 group_id=recipe.group_id,
@@ -496,7 +500,7 @@ class RecipeController(BaseRecipeController):
         """
 
         req = ScrapeRecipeAI(translate_language=translate_language)
-        async for event in self._create_recipe_with_ai(req, images):
+        async for event in await self._create_recipe_with_ai(req, images):
             if isinstance(event.data, SSEDataEventDone):
                 return event.data.slug
             if isinstance(event.data, SSEDataEventMessage) and event.event == SSEDataEventStatus.ERROR:
@@ -509,7 +513,7 @@ class RecipeController(BaseRecipeController):
     # CRUD Operations
 
     @router.get("", response_model=PaginationBase[RecipeSummary])
-    def get_all(
+    async def get_all(
         self,
         request: Request,
         q: PaginationQuery = Depends(make_dependable(PaginationQuery)),
@@ -530,7 +534,7 @@ class RecipeController(BaseRecipeController):
                     cb_match_attr = "id"
                 except ValueError:
                     cb_match_attr = "slug"
-            cookbook_data = self.group_cookbooks.get_one(search_query.cookbook, cb_match_attr)
+            cookbook_data = await self.group_cookbooks.get_one(search_query.cookbook, cb_match_attr)
 
             if cookbook_data is None:
                 raise HTTPException(status_code=404, detail="cookbook not found")
@@ -584,10 +588,10 @@ class RecipeController(BaseRecipeController):
         return JSONBytes(content=json_compatible_response)
 
     @router.get("/{slug}", response_model=Recipe)
-    def get_one(self, slug: str = Path(..., description="A recipe's slug or id")):
+    async def get_one(self, slug: str = Path(..., description="A recipe's slug or id")):
         """Takes in a recipe's slug or id and returns all data for a recipe"""
         try:
-            recipe = self.service.get_one(slug)
+            recipe = (await self.get_service()).get_one(slug)
         except Exception as e:
             self.handle_exceptions(e)
             return None
@@ -598,13 +602,13 @@ class RecipeController(BaseRecipeController):
     async def create_one(self, data: CreateRecipe) -> str | None:
         """Takes in a JSON string and loads data into the database as a new entry"""
         try:
-            new_recipe = await self.service.create_one(data)
+            new_recipe = await (await self.get_service()).create_one(data)
         except Exception as e:
             self.handle_exceptions(e)
             return None
 
         if new_recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_created,
                 document_data=EventRecipeData(operation=EventOperation.create, recipe_slug=new_recipe.slug),
                 group_id=new_recipe.group_id,
@@ -619,15 +623,15 @@ class RecipeController(BaseRecipeController):
         return new_recipe.slug
 
     @router.post("/{slug}/duplicate", status_code=201, response_model=Recipe)
-    def duplicate_one(self, slug: str, req: RecipeDuplicate) -> Recipe:
+    async def duplicate_one(self, slug: str, req: RecipeDuplicate) -> Recipe:
         """Duplicates a recipe with a new custom name if given"""
         try:
-            new_recipe = self.service.duplicate_one(slug, req)
+            new_recipe = (await self.get_service()).duplicate_one(slug, req)
         except Exception as e:
             self.handle_exceptions(e)
 
         if new_recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_created,
                 document_data=EventRecipeData(operation=EventOperation.create, recipe_slug=new_recipe.slug),
                 group_id=new_recipe.group_id,
@@ -641,15 +645,15 @@ class RecipeController(BaseRecipeController):
         return new_recipe
 
     @router.put("/{slug}")
-    def update_one(self, slug: str, data: RecipeIn):
+    async def update_one(self, slug: str, data: RecipeIn):
         """Updates a recipe by existing slug and data."""
         try:
-            recipe = self.service.update_one(slug, data)
+            recipe = (await self.get_service()).update_one(slug, data)
         except Exception as e:
             self.handle_exceptions(e)
 
         if recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_updated,
                 document_data=EventRecipeData(operation=EventOperation.update, recipe_slug=recipe.slug),
                 group_id=recipe.group_id,
@@ -664,12 +668,12 @@ class RecipeController(BaseRecipeController):
         return recipe
 
     @router.put("")
-    def update_many(self, data: list[RecipeIn]):
+    async def update_many(self, data: list[RecipeIn]):
         updated_by_group_and_household: defaultdict[UUID4, defaultdict[UUID4, list[Recipe]]] = defaultdict(
             lambda: defaultdict(list)
         )
         for recipe in data:
-            r = self.service.update_one(recipe.id, recipe)  # type: ignore
+            r = (await self.get_service()).update_one(recipe.id, recipe)  # type: ignore
             updated_by_group_and_household[r.group_id][r.household_id].append(r)
 
         all_updated: list[Recipe] = []
@@ -677,7 +681,7 @@ class RecipeController(BaseRecipeController):
             for group_id, household_dict in updated_by_group_and_household.items():
                 for household_id, updated_recipes in household_dict.items():
                     all_updated.extend(updated_recipes)
-                    self.publish_event(
+                    await self.publish_event(
                         event_type=EventTypes.recipe_updated,
                         document_data=EventRecipeBulkData(
                             operation=EventOperation.update, recipe_slugs=[r.slug for r in updated_recipes]
@@ -689,15 +693,15 @@ class RecipeController(BaseRecipeController):
         return all_updated
 
     @router.patch("/{slug}")
-    def patch_one(self, slug: str, data: RecipeIn):
+    async def patch_one(self, slug: str, data: RecipeIn):
         """Updates a recipe by existing slug and data."""
         try:
-            recipe = self.service.patch_one(slug, data)
+            recipe = (await self.get_service()).patch_one(slug, data)
         except Exception as e:
             self.handle_exceptions(e)
 
         if recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_updated,
                 document_data=EventRecipeData(operation=EventOperation.update, recipe_slug=recipe.slug),
                 group_id=recipe.group_id,
@@ -712,12 +716,12 @@ class RecipeController(BaseRecipeController):
         return recipe
 
     @router.patch("")
-    def patch_many(self, data: list[RecipeIn]):
+    async def patch_many(self, data: list[RecipeIn]):
         updated_by_group_and_household: defaultdict[UUID4, defaultdict[UUID4, list[Recipe]]] = defaultdict(
             lambda: defaultdict(list)
         )
         for recipe in data:
-            r = self.service.patch_one(recipe.id, recipe)  # type: ignore
+            r = (await self.get_service()).patch_one(recipe.id, recipe)  # type: ignore
             updated_by_group_and_household[r.group_id][r.household_id].append(r)
 
         all_updated: list[Recipe] = []
@@ -725,7 +729,7 @@ class RecipeController(BaseRecipeController):
             for group_id, household_dict in updated_by_group_and_household.items():
                 for household_id, updated_recipes in household_dict.items():
                     all_updated.extend(updated_recipes)
-                    self.publish_event(
+                    await self.publish_event(
                         event_type=EventTypes.recipe_updated,
                         document_data=EventRecipeBulkData(
                             operation=EventOperation.update, recipe_slugs=[r.slug for r in updated_recipes]
@@ -737,16 +741,16 @@ class RecipeController(BaseRecipeController):
         return all_updated
 
     @router.patch("/{slug}/last-made")
-    def update_last_made(self, slug: str, data: RecipeLastMade):
+    async def update_last_made(self, slug: str, data: RecipeLastMade):
         """Update a recipe's last made timestamp"""
 
         try:
-            recipe = self.service.update_last_made(slug, data.timestamp)
+            recipe = await (await self.get_service()).update_last_made(slug, data.timestamp)
         except Exception as e:
             self.handle_exceptions(e)
 
         if recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_updated,
                 document_data=EventRecipeData(operation=EventOperation.update, recipe_slug=recipe.slug),
                 group_id=recipe.group_id,
@@ -761,15 +765,15 @@ class RecipeController(BaseRecipeController):
         return recipe
 
     @router.delete("/{slug}")
-    def delete_one(self, slug: str):
+    async def delete_one(self, slug: str):
         """Deletes a recipe by slug"""
         try:
-            recipe = self.service.delete_one(slug)
+            recipe = (await self.get_service()).delete_one(slug)
         except Exception as e:
             self.handle_exceptions(e)
 
         if recipe:
-            self.publish_event(
+            await self.publish_event(
                 event_type=EventTypes.recipe_deleted,
                 document_data=EventRecipeData(operation=EventOperation.delete, recipe_slug=recipe.slug),
                 group_id=recipe.group_id,
@@ -809,28 +813,28 @@ class RecipeController(BaseRecipeController):
             )
 
         recipe.image = cache.cache_key.new_key()
-        self.service.update_one(recipe.slug, recipe)
+        (await self.get_service()).update_one(recipe.slug, recipe)
         return UpdateImageResponse(image=recipe.image)
 
     @router.put("/{slug}/image", response_model=UpdateImageResponse, tags=["Recipe: Images and Assets"])
-    def update_recipe_image(self, slug: str, image: bytes = File(...), extension: str = Form(...)):
+    async def update_recipe_image(self, slug: str, image: bytes = File(...), extension: str = Form(...)):
         try:
-            new_version = self.service.update_recipe_image(slug, image, extension)
+            new_version = (await self.get_service()).update_recipe_image(slug, image, extension)
             return UpdateImageResponse(image=new_version)
         except Exception as e:
             self.handle_exceptions(e)
             return None
 
     @router.delete("/{slug}/image", tags=["Recipe: Images and Assets"])
-    def delete_recipe_image(self, slug: str):
+    async def delete_recipe_image(self, slug: str):
         try:
-            self.service.delete_recipe_image(slug)
+            (await self.get_service()).delete_recipe_image(slug)
             return SuccessResponse.respond(message=self.t("recipe.recipe-image-deleted"))
         except Exception as e:
             self.handle_exceptions(e)
             return None
 
-    def _save_recipe_asset(
+    async def _save_recipe_asset(
         self,
         slug: str,
         name: str,
@@ -852,7 +856,7 @@ class RecipeController(BaseRecipeController):
 
         file_name = f"{file_slug}.{extension}"
 
-        recipe = self.service.get_one(slug)
+        recipe = (await self.get_service()).get_one(slug)
 
         dest = recipe.asset_dir / file_name
 
@@ -880,12 +884,12 @@ class RecipeController(BaseRecipeController):
         if recipe.assets is not None:
             recipe.assets.append(asset_in)
 
-        self.service.update_one(slug, recipe)
+        (await self.get_service()).update_one(slug, recipe)
 
         return asset_in
 
     @router.post("/{slug}/assets", response_model=RecipeAsset, tags=["Recipe: Images and Assets"])
-    def upload_recipe_asset(
+    async def upload_recipe_asset(
         self,
         slug: str,
         name: str = Form(...),
@@ -894,12 +898,12 @@ class RecipeController(BaseRecipeController):
         file: UploadFile = File(...),
     ):
         """Upload a file to store as a recipe asset"""
-        return self._save_recipe_asset(slug, name, icon, extension, lambda buffer: copyfileobj(file.file, buffer))
+        return await self._save_recipe_asset(slug, name, icon, extension, lambda buffer: copyfileobj(file.file, buffer))
 
     @router.post("/{slug}/assets/url", response_model=RecipeAsset, tags=["Recipe: Images and Assets"])
     async def create_recipe_asset_from_url(self, slug: str, url: ScrapeRecipe):
         """Download an image from a URL and store it as a recipe asset."""
-        recipe = self.service.get_one(slug)
+        recipe = (await self.get_service()).get_one(slug)
         data_service = RecipeDataService(recipe.id)
 
         try:
@@ -927,6 +931,6 @@ class RecipeController(BaseRecipeController):
             )
 
         content, extension = downloaded
-        return self._save_recipe_asset(
+        return await self._save_recipe_asset(
             slug, asset_name_from_url(url.url), "mdi-file-image", extension, lambda buffer: buffer.write(content)
         )

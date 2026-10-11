@@ -43,7 +43,7 @@ class GroupReportsController(BaseUserController):
     @router.delete("/{item_id}", status_code=200)
     async def delete_one(self, item_id: UUID4):
         try:
-            (await self.mixins.delete_one(item_id))  # type: ignore
+            await self.mixins.delete_one(item_id)  # type: ignore
             return SuccessResponse.respond(self.t("group.report-deleted"))
         except Exception as ex:
             raise HTTPException(500, ErrorResponse.respond("Failed to delete report")) from ex

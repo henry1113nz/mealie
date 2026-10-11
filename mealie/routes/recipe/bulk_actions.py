@@ -1,4 +1,3 @@
-from functools import cached_property
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
@@ -28,9 +27,8 @@ class RecipeBulkActionsController(BaseUserController):
     async def get_service(self) -> RecipeBulkActionsService:
         return RecipeBulkActionsService(self.repos, self.user, await self.get_group())
 
-    @cached_property
-    def recipe_service(self) -> RecipeService:
-        return RecipeService(self.repos, self.user, self.household, self.translator)
+    async def get_recipe_service(self) -> RecipeService:
+        return RecipeService(self.repos, self.user, await self.get_household(), self.translator)
 
     # TODO Should these actions return some success response?
     @router.post("/tag")
@@ -46,10 +44,10 @@ class RecipeBulkActionsController(BaseUserController):
         (await self.get_service()).assign_categories(assign_cats.recipes, assign_cats.categories)
 
     @router.post("/delete")
-    def bulk_delete_recipes(self, delete_recipes: DeleteRecipes):
+    async def bulk_delete_recipes(self, delete_recipes: DeleteRecipes):
         # TODO: this route should be migrated to the standard recipe controller
         try:
-            self.recipe_service.delete_many(delete_recipes.recipes)
+            (await self.get_recipe_service()).delete_many(delete_recipes.recipes)
         except PermissionDenied as e:
             self.logger.error("Permission Denied on recipe controller action")
             raise HTTPException(

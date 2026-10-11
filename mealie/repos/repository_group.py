@@ -17,6 +17,8 @@ from mealie.db.models.group import Group, ReportEntryModel, ReportModel
 from mealie.db.models.group.ai_providers import AIProvider, AIProviderHeaders, AIProviderParams, AIProviderSettings
 from mealie.db.models.group.exports import GroupDataExportsModel
 from mealie.db.models.group.preferences import GroupPreferencesModel
+from mealie.db.models.household.household import Household
+from mealie.db.models.household.webhooks import GroupWebhooksModel
 from mealie.db.models.users.users import User
 from mealie.schema._mealie import MealieModel
 from mealie.schema.group.ai_providers import AIProviderSettingsOut
@@ -58,9 +60,7 @@ class AsyncGroupRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposit
                 ai_provider_settings=await self._serialize(settings, AIProviderSettingsOut) if settings else None,
             )
             if "households" in target.model_fields:
-                data["households"] = await bridge.execute(
-                    "SELECT id, name FROM households WHERE group_id = ?", [entry.id]
-                )
+                data["households"] = await Household.filter(group_id=entry.id).values("id", "name")
             if "users" in target.model_fields:
                 data["users"] = await User.filter(group_id=entry.id).values(
                     "id", "group_id", "household_id", "username", "full_name"
@@ -72,7 +72,7 @@ class AsyncGroupRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposit
                     [entry.id],
                 )
             if "webhooks" in target.model_fields:
-                data["webhooks"] = await bridge.execute("SELECT * FROM webhook_urls WHERE group_id = ?", [entry.id])
+                data["webhooks"] = await GroupWebhooksModel.filter(group_id=entry.id).values()
         elif isinstance(entry, AIProviderSettings):
             data["providers"] = await AIProvider.filter(settings_id=entry.id).values("id", "name")
         elif isinstance(entry, AIProvider):

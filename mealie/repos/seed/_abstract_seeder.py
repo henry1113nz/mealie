@@ -1,5 +1,6 @@
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable
 from functools import cached_property
 from logging import Logger
 from pathlib import Path
@@ -42,4 +43,4 @@ class AbstractSeeder(ABC):
         return self.load_file(self.get_file(self.source_locale))
 
     @abstractmethod
-    def seed(self, locale: str | None = None) -> None: ...
+    def seed(self, locale: str | None = None) -> None | Awaitable[None]: ...

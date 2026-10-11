@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from mealie.core import root_logger
 from mealie.db.models._legacy_groups.group import Group
+from mealie.db.models._legacy_household.shopping_list import ShoppingList, ShoppingListMultiPurposeLabel
 from mealie.db.models._legacy_users import User
 from mealie.db.models._model_base import SqlAlchemyBase
-from mealie.db.models.household.shopping_list import ShoppingList, ShoppingListMultiPurposeLabel
 from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
 from mealie.db.models.recipe.labels import MultiPurposeLabel
 from mealie.db.models.recipe.recipe import RecipeModel

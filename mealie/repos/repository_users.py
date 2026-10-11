@@ -16,6 +16,7 @@ from tortoise.transactions import in_transaction
 from mealie.assets import users as users_assets
 from mealie.core.config import get_app_settings
 from mealie.db.models.group.group import Group
+from mealie.db.models.household.household import Household
 from mealie.db.models.users import User
 from mealie.db.models.users.password_reset import PasswordResetModel
 from mealie.db.models.users.user_to_recipe import UserToRecipe
@@ -55,7 +56,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
         self.model = sql_model
         self.schema = schema
         self.group_id = group_id if isinstance(group_id, UUID) else None
-        self.household_id = None
+        self.household_id: UUID | None = None
 
     async def _query(self) -> QuerySet[DBModel]:
         query = self.model.all()
@@ -73,12 +74,12 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
         data = {key: getattr(entry, key) for key in entry._meta.db_fields}
         if isinstance(entry, User):
             group = await Group.get_or_none(id=entry.group_id)
-            household = await bridge.related_record("households", "id", entry.household_id)
+            household = await Household.get_or_none(id=entry.household_id)
             data.update(
                 group=group.name if group else None,
                 group_slug=group.slug if group else None,
-                household=household["name"] if household else None,
-                household_slug=household["slug"] if household else None,
+                household=household.name if household else None,
+                household_slug=household.slug if household else None,
                 tokens=await LongLiveToken.filter(user_id=entry.id).values("id", "name", "created_at"),
             )
         elif "user" in (schema or self.schema).model_fields:
@@ -262,19 +263,19 @@ class RepositoryUsers(AsyncUserRepository[PrivateUser, User]):
         group = await Group.get_or_none(name=group_name)
         if not group:
             raise ValueError(f"Group {group_name} does not exist; cannot create user")
-        household = await bridge.related_record("households", "name", household_name, group_id=group.id)
+        household = await Household.get_or_none(name=household_name, group_id=group.id)
         if not household:
             raise ValueError(
                 f'Household "{household_name}" does not exist on group "{group_name}" ({group.id}); cannot create user'
             )
         values = await super()._prepare(data, creating=creating)
-        values.update(group_id=group.id, household_id=household["id"])
+        values.update(group_id=group.id, household_id=household.id)
         if entry is not None:
             # Legacy updates accept explicit foreign-key changes when the named
             # relationship is unchanged (e.g. administrative group reassignment).
             if group.id == entry.group_id and "group_id" in data:
                 values["group_id"] = data["group_id"]
-            if UUID(str(household["id"])) == entry.household_id and "household_id" in data:
+            if UUID(str(household.id)) == entry.household_id and "household_id" in data:
                 values["household_id"] = data["household_id"]
         values["username"] = data.get("full_name") if data.get("username") is None else data["username"]
         if not creating:

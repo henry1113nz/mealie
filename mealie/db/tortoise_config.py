@@ -17,6 +17,16 @@ TORTOISE_MODEL_MODULES: tuple[str, ...] = (
     "mealie.db.models.group.ai_providers",
     "mealie.db.models.group.exports",
     "mealie.db.models.group.report",
+    "mealie.db.models.household.household",
+    "mealie.db.models.household.preferences",
+    "mealie.db.models.household.cookbook",
+    "mealie.db.models.household.events",
+    "mealie.db.models.household.household_to_recipe",
+    "mealie.db.models.household.invite_tokens",
+    "mealie.db.models.household.mealplan",
+    "mealie.db.models.household.recipe_action",
+    "mealie.db.models.household.shopping_list",
+    "mealie.db.models.household.webhooks",
 )
 DEFAULT_CONNECTION = "default"
 

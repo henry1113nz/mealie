@@ -1,55 +1,58 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, orm
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.transactions import in_transaction
 
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils import guid
-from .._model_utils.auto_init import auto_init
-from ..recipe.category import Category, cookbooks_to_categories
-from ..recipe.tag import Tag, cookbooks_to_tags
-from ..recipe.tool import Tool, cookbooks_to_tools
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
-    from .._legacy_groups import Group
+    from ..group.group import Group
     from .household import Household
 
 
-class CookBook(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "cookbooks"
-    __table_args__: tuple[UniqueConstraint, ...] = (
-        UniqueConstraint("slug", "group_id", name="cookbook_slug_group_id_key"),
+class CookBook(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    position = fields.IntField(default=1)
+    group_id: UUID | None
+    group: fields.ForeignKeyNullableRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="cookbooks",
+        source_field="group_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
-
-    id: FilterableColumn[guid.GUID] = mapped_column(guid.GUID, primary_key=True, default=guid.GUID.generate)
-    position: FilterableColumn[int] = mapped_column(Integer, nullable=False, default=1)
-
-    group_id: FilterableColumn[guid.GUID | None] = mapped_column(guid.GUID, ForeignKey("groups.id"), index=True)
-    group: Mapped[Group | None] = orm.relationship("Group", back_populates="cookbooks")
-    household_id: FilterableColumn[guid.GUID | None] = mapped_column(guid.GUID, ForeignKey("households.id"), index=True)
-    household: Mapped[Household | None] = orm.relationship("Household", back_populates="cookbooks")
-
-    name: FilterableColumn[str] = mapped_column(String, nullable=False)
-    slug: FilterableColumn[str] = mapped_column(String, nullable=False, index=True)
-    description: FilterableColumn[str | None] = mapped_column(String, default="")
-    public: FilterableColumn[str | None] = mapped_column(Boolean, default=False)
-    query_filter_string: Mapped[str] = mapped_column(String, nullable=False, default="")
-
-    # Old filters - deprecated in favor of query filter strings
-    categories: Mapped[list[Category]] = orm.relationship(
-        Category, secondary=cookbooks_to_categories, single_parent=True
+    household_id: UUID | None
+    household: fields.ForeignKeyNullableRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="cookbooks",
+        source_field="household_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
-    require_all_categories: FilterableColumn[bool | None] = mapped_column(Boolean, default=True)
+    name = UnboundedCharField()
+    slug = UnboundedCharField(db_index=True)
+    description: fields.TextField[str | None] = UnboundedCharField(null=True, default="")
+    public: fields.BooleanField[bool | None] = fields.BooleanField(default=False, null=True)
+    query_filter_string = UnboundedCharField(default="")
+    require_all_categories: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
+    require_all_tags: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
+    require_all_tools: fields.BooleanField[bool | None] = fields.BooleanField(default=True, null=True)
 
-    tags: Mapped[list[Tag]] = orm.relationship(Tag, secondary=cookbooks_to_tags, single_parent=True)
-    require_all_tags: FilterableColumn[bool | None] = mapped_column(Boolean, default=True)
+    class Meta:
+        table = "cookbooks"
+        unique_together = (("slug", "group"),)
 
-    tools: Mapped[list[Tool]] = orm.relationship(Tool, secondary=cookbooks_to_tools, single_parent=True)
-    require_all_tools: FilterableColumn[bool | None] = mapped_column(Boolean, default=True)
+    async def delete(self, using_db: BaseDBAsyncClient | None = None) -> None:
+        from mealie.repos._household_coexistence import delete_cookbook_dependents
 
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
-
-    def update(self, *args, **kwarg):
-        self.__init__(*args, **kwarg)
+        if using_db is not None:
+            await delete_cookbook_dependents(self.id, using_db)
+            await super().delete(using_db=using_db)
+        else:
+            async with in_transaction("default") as connection:
+                await delete_cookbook_dependents(self.id, connection)
+                await super().delete(using_db=connection)

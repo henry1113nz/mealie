@@ -7,9 +7,9 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from fastapi.encoders import jsonable_encoder
 from pydantic import UUID4
-from sqlalchemy import and_, or_, select
 from sqlalchemy.orm.session import Session
-from sqlalchemy.sql.elements import ColumnElement
+from starlette.concurrency import run_in_threadpool
+from tortoise.expressions import Q
 
 from mealie.db.db_setup import session_context
 from mealie.db.models.household.webhooks import GroupWebhooksModel
@@ -33,12 +33,12 @@ class EventListenerBase(ABC):
         self._repos = None
 
     @abstractmethod
-    def get_subscribers(self, event: Event) -> list:
+    async def get_subscribers(self, event: Event) -> list:
         """Get a list of all subscribers to this event"""
         ...
 
     @abstractmethod
-    def publish_to_subscribers(self, event: Event, subscribers: list) -> None:
+    async def publish_to_subscribers(self, event: Event, subscribers: list) -> None:
         """Publishes the event to all subscribers"""
         ...
 
@@ -74,9 +74,9 @@ class AppriseEventListener(EventListenerBase):
     def __init__(self, group_id: UUID4, household_id: UUID4) -> None:
         super().__init__(group_id, household_id, ApprisePublisher())
 
-    def get_subscribers(self, event: Event) -> list[str]:
+    async def get_subscribers(self, event: Event) -> list[str]:
         with self.ensure_repos(self.group_id, self.household_id) as repos:
-            notifiers: list[GroupEventNotifierPrivate] = repos.group_event_notifier.multi_query(
+            notifiers: list[GroupEventNotifierPrivate] = await repos.group_event_notifier.multi_query(
                 {"enabled": True}, override_schema=GroupEventNotifierPrivate
             )
 
@@ -85,8 +85,8 @@ class AppriseEventListener(EventListenerBase):
 
         return urls
 
-    def publish_to_subscribers(self, event: Event, subscribers: list[str]) -> None:
-        self.publisher.publish(event, subscribers)
+    async def publish_to_subscribers(self, event: Event, subscribers: list[str]) -> None:
+        await run_in_threadpool(self.publisher.publish, event, subscribers)
 
     @staticmethod
     def update_urls_with_event_data(urls: list[str], event: Event):
@@ -136,17 +136,17 @@ class WebhookEventListener(EventListenerBase):
     def __init__(self, group_id: UUID4, household_id: UUID4) -> None:
         super().__init__(group_id, household_id, WebhookPublisher())
 
-    def get_subscribers(self, event: Event) -> list[ReadWebhook]:
+    async def get_subscribers(self, event: Event) -> list[ReadWebhook]:
         # we only care about events that contain webhook information
         if not (event.event_type == EventTypes.webhook_task and isinstance(event.document_data, EventWebhookData)):
             return []
 
-        scheduled_webhooks = self.get_scheduled_webhooks(
+        scheduled_webhooks = await self.get_scheduled_webhooks(
             event.document_data.webhook_start_dt, event.document_data.webhook_end_dt
         )
         return scheduled_webhooks
 
-    def publish_to_subscribers(self, event: Event, subscribers: list[ReadWebhook]) -> None:
+    async def publish_to_subscribers(self, event: Event, subscribers: list[ReadWebhook]) -> None:
         with self.ensure_repos(self.group_id, self.household_id) as repos:
             if not isinstance(event.document_data, EventWebhookData):
                 return
@@ -154,7 +154,7 @@ class WebhookEventListener(EventListenerBase):
             match event.document_data.document_type:
                 case EventDocumentType.mealplan:
                     meal_repo = repos.meals
-                    meal_data = meal_repo.get_meals_by_date_range(
+                    meal_data = await meal_repo.get_meals_by_date_range(
                         event.document_data.webhook_start_dt, event.document_data.webhook_end_dt
                     )
                     event.document_data.webhook_body = meal_data or None
@@ -165,33 +165,19 @@ class WebhookEventListener(EventListenerBase):
 
             # Only publish to subscribers if we have a webhook body to send
             if event.document_data.webhook_body is not None:
-                self.publisher.publish(event, [webhook.url for webhook in subscribers])
+                await run_in_threadpool(self.publisher.publish, event, [webhook.url for webhook in subscribers])
 
-    def get_scheduled_webhooks(self, start_dt: datetime, end_dt: datetime) -> list[ReadWebhook]:
-        """Fetches all scheduled webhooks from the database"""
+    async def get_scheduled_webhooks(self, start_dt: datetime, end_dt: datetime) -> list[ReadWebhook]:
+        """Fetches scheduled webhooks, including windows spanning midnight UTC."""
         start_time = start_dt.astimezone(UTC).time()
         end_time = end_dt.astimezone(UTC).time()
-
-        # Webhooks store a time of day, not a datetime, so we compare against the window's time of day.
-        # This means the window can wrap around midnight UTC, which inverts the comparison.
-        time_filter: ColumnElement[bool]
-        if start_time <= end_time:
-            time_filter = and_(
-                GroupWebhooksModel.scheduled_time > start_time,
-                GroupWebhooksModel.scheduled_time <= end_time,
-            )
-        else:
-            # the window spans midnight UTC
-            time_filter = or_(
-                GroupWebhooksModel.scheduled_time > start_time,
-                GroupWebhooksModel.scheduled_time <= end_time,
-            )
-
-        with self.ensure_session() as session:
-            stmt = select(GroupWebhooksModel).where(
-                GroupWebhooksModel.enabled == True,  # noqa: E712 - required for SQLAlchemy comparison
-                time_filter,
-                GroupWebhooksModel.group_id == self.group_id,
-                GroupWebhooksModel.household_id == self.household_id,
-            )
-            return session.execute(stmt).scalars().all()
+        after_start = Q(scheduled_time__gt=start_time)
+        before_end = Q(scheduled_time__lte=end_time)
+        time_filter = after_start & before_end if start_time <= end_time else after_start | before_end
+        webhooks = await GroupWebhooksModel.filter(
+            time_filter,
+            enabled=True,
+            group_id=self.group_id,
+            household_id=self.household_id,
+        )
+        return [ReadWebhook.model_validate(webhook) for webhook in webhooks]

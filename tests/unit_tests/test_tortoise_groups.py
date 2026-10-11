@@ -25,7 +25,7 @@ from mealie.db.models.group import (
 )
 from mealie.db.models.server.task import ServerTaskModel
 from mealie.db.models.users.users import User
-from mealie.db.tortoise_config import get_tortoise_config
+from mealie.db.tortoise_config import TORTOISE_MODEL_MODULES, get_tortoise_config
 from mealie.db.tortoise_setup import database_context
 from mealie.repos import _users_coexistence as bridge
 from mealie.repos.all_repositories import AllRepositories
@@ -41,7 +41,11 @@ from tests.unit_tests.test_tortoise_users import native_user_repositories as nat
 
 
 @pytest.mark.asyncio
-async def test_group_registry_and_native_cross_domain_relations(server_settings: AppSettings) -> None:
+async def test_group_registry_and_native_cross_domain_relations(
+    server_settings: AppSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Preserve C4 registry expectations in isolated setup; C5 covers the expanded registry.
+    monkeypatch.setattr("mealie.db.tortoise_config.TORTOISE_MODEL_MODULES", TORTOISE_MODEL_MODULES[:9])
     config = get_tortoise_config(server_settings)
     assert config["apps"]["models"]["models"] == [
         "mealie.db.models.server.task",
@@ -56,7 +60,8 @@ async def test_group_registry_and_native_cross_domain_relations(server_settings:
     ]
     config["apps"]["models"]["models"].append("unused.module")
     assert "unused.module" not in get_tortoise_config(server_settings)["apps"]["models"]["models"]
-    async with database_context(get_tortoise_config(server_settings)) as context:
+    config["apps"]["models"]["models"] = list(TORTOISE_MODEL_MODULES)
+    async with database_context(config) as context:
         for model in (
             Group,
             GroupPreferencesModel,
@@ -158,7 +163,7 @@ async def test_group_repository_hydration_slugs_filters_and_preference_scope(
     preference = await repos.group_preferences.create({"group_id": group.id, "private_group": False})
     hydrated = await repos.groups.get_by_slug_or_id(group.slug)
     assert hydrated.preferences == preference
-    assert hydrated.households[0].id == repos.households.get_all()[0].id
+    assert hydrated.households[0].id == (await repos.households.get_all())[0].id
     assert await other.group_preferences.get_one(group.id) is None
     page = await repos.groups.page_all(
         PaginationQuery(query_filter=f"id={group.id}", order_by="name", order_direction=OrderDirection.asc)

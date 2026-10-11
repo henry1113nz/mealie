@@ -13,6 +13,7 @@ from mealie.services.event_bus_service.event_types import (
     EventWebhookData,
 )
 from tests.utils import random_string
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_bool
 from tests.utils.fixture_schemas import TestUser
 
@@ -65,7 +66,7 @@ def test_get_scheduled_webhooks_filter_query(unique_user: TestUser):
             expected.append(new_item)
 
     event_bus_listener = WebhookEventListener(UUID(unique_user.group_id), UUID(unique_user.household_id))
-    results = event_bus_listener.get_scheduled_webhooks(start, datetime.now(UTC) + timedelta(minutes=5))
+    results = run_async(event_bus_listener.get_scheduled_webhooks(start, datetime.now(UTC) + timedelta(minutes=5)))
 
     assert len(results) == len(expected)
 
@@ -102,7 +103,7 @@ def test_get_scheduled_webhooks_filter_query_spanning_midnight(unique_user_fn_sc
     end = datetime(2026, 1, 2, 0, 5, tzinfo=UTC)
 
     event_bus_listener = WebhookEventListener(UUID(unique_user.group_id), UUID(unique_user.household_id))
-    results = event_bus_listener.get_scheduled_webhooks(start, end)
+    results = run_async(event_bus_listener.get_scheduled_webhooks(start, end))
 
     result_ids = {result.id for result in results}
     assert result_ids == {before_midnight.id, after_midnight.id}
@@ -157,9 +158,9 @@ def test_event_listener_get_meals_by_date_range(unique_user: TestUser):
         )
 
         event_bus_listener = WebhookEventListener(UUID(unique_user.group_id), UUID(unique_user.household_id))
-        subscribers = event_bus_listener.get_scheduled_webhooks(start_date, end_date)
+        subscribers = run_async(event_bus_listener.get_scheduled_webhooks(start_date, end_date))
 
-        event_bus_listener.publish_to_subscribers(event, subscribers)
+        run_async(event_bus_listener.publish_to_subscribers(event, subscribers))
 
         assert event.document_data.webhook_body is not None
         meals = event.document_data.webhook_body

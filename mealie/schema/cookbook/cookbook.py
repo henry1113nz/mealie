@@ -7,7 +7,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.root_logger import get_logger
-from mealie.db.models.household.cookbook import CookBook
+from mealie.db.models._legacy_household.cookbook import CookBook
 from mealie.db.models.recipe import RecipeModel
 from mealie.schema._mealie import MealieModel
 from mealie.schema.response.pagination import PaginationBase

@@ -1,97 +1,48 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-import sqlalchemy as sa
-import sqlalchemy.orm as orm
-from pydantic import ConfigDict
-from sqlalchemy.orm import Mapped, mapped_column
+from tortoise import fields
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.transactions import in_transaction
 
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
-from ..recipe.ingredient import households_to_ingredient_foods
-from ..recipe.tool import households_to_tools
-from .household_to_recipe import HouseholdToRecipe
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
-    from .._legacy_groups import Group
-    from .._legacy_users import User
-    from ..recipe import IngredientFoodModel, RecipeModel, Tool
-    from . import (
-        CookBook,
-        GroupEventNotifierModel,
-        GroupInviteToken,
-        GroupRecipeAction,
-        GroupWebhooksModel,
-        HouseholdPreferencesModel,
+    from ..group.group import Group
+    from ..users.users import User
+    from .mealplan import GroupMealPlanRules
+    from .preferences import HouseholdPreferencesModel
+
+
+class Household(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    name = UnboundedCharField(db_index=True)
+    slug: fields.TextField[str | None] = UnboundedCharField(null=True, db_index=True)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="households",
+        source_field="group_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
     )
 
+    users: fields.ReverseRelation[User]
+    preferences: fields.ReverseRelation[HouseholdPreferencesModel]
+    matching_meal_plan_rules: fields.ManyToManyRelation[GroupMealPlanRules]
 
-class Household(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "households"
-    __table_args__ = (
-        sa.UniqueConstraint("group_id", "name", name="household_name_group_id_key"),
-        sa.UniqueConstraint("group_id", "slug", name="household_slug_group_id_key"),
-    )
+    class Meta:
+        table = "households"
+        unique_together = (("group", "name"), ("group", "slug"))
 
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    name: FilterableColumn[str] = mapped_column(sa.String, index=True, nullable=False)
-    slug: FilterableColumn[str | None] = mapped_column(sa.String, index=True)
+    async def delete(self, using_db: BaseDBAsyncClient | None = None) -> None:
+        from mealie.repos._household_coexistence import delete_household_dependents
 
-    invite_tokens: Mapped[list[GroupInviteToken]] = orm.relationship(
-        "GroupInviteToken", back_populates="household", cascade="all, delete-orphan"
-    )
-    preferences: Mapped[HouseholdPreferencesModel] = orm.relationship(
-        "HouseholdPreferencesModel",
-        back_populates="household",
-        uselist=False,
-        single_parent=True,
-        cascade="all, delete-orphan",
-    )
-
-    group_id: FilterableColumn[GUID] = mapped_column(GUID, sa.ForeignKey("groups.id"), nullable=False, index=True)
-    group: Mapped[Group] = orm.relationship("Group", back_populates="households")
-    users: Mapped[list[User]] = orm.relationship("User", back_populates="household")
-
-    COMMON_ARGS = {
-        "back_populates": "household",
-        "cascade": "all, delete-orphan",
-        "single_parent": True,
-    }
-
-    recipe_actions: Mapped[list[GroupRecipeAction]] = orm.relationship("GroupRecipeAction", **COMMON_ARGS)
-    cookbooks: Mapped[list[CookBook]] = orm.relationship("CookBook", **COMMON_ARGS)
-
-    webhooks: Mapped[list[GroupWebhooksModel]] = orm.relationship("GroupWebhooksModel", **COMMON_ARGS)
-    group_event_notifiers: Mapped[list[GroupEventNotifierModel]] = orm.relationship(
-        "GroupEventNotifierModel", **COMMON_ARGS
-    )
-
-    made_recipes: Mapped[list[RecipeModel]] = orm.relationship(
-        "RecipeModel", secondary=HouseholdToRecipe.__tablename__, back_populates="made_by"
-    )
-    ingredient_foods_on_hand: Mapped[list[IngredientFoodModel]] = orm.relationship(
-        "IngredientFoodModel",
-        secondary=households_to_ingredient_foods,
-        back_populates="households_with_ingredient_food",
-    )
-    tools_on_hand: Mapped[list[Tool]] = orm.relationship(
-        "Tool", secondary=households_to_tools, back_populates="households_with_tool"
-    )
-
-    model_config = ConfigDict(
-        exclude={
-            "users",
-            "webhooks",
-            "recipe_actions",
-            "cookbooks",
-            "preferences",
-            "invite_tokens",
-            "group_event_notifiers",
-            "group",
-            "made_recipes",
-        }
-    )
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+        if using_db is not None:
+            await delete_household_dependents(self.id, using_db)
+            await super().delete(using_db=using_db)
+        else:
+            async with in_transaction("default") as connection:
+                await delete_household_dependents(self.id, connection)
+                await super().delete(using_db=connection)

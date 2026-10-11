@@ -35,7 +35,7 @@ async def init_db(session: orm.Session) -> None:
     default_group = await default_group_init(instance_repos, settings.DEFAULT_GROUP)
 
     group_repos = get_repositories(session, group_id=default_group.id, household_id=None)
-    default_household = group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
+    default_household = await group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
     if default_household is None:
         default_household = await default_household_init(group_repos, settings.DEFAULT_HOUSEHOLD)
     household_repos = get_repositories(session, group_id=default_group.id, household_id=default_household.id)

@@ -21,17 +21,17 @@ router = APIRouter(prefix="/households/invitations", tags=["Households: Invitati
 @controller(router)
 class GroupInvitationsController(BaseUserController):
     @router.get("", response_model=list[ReadInviteToken])
-    def get_invite_tokens(self):
+    async def get_invite_tokens(self):
         if not self.user.admin:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 detail="Only admins can list invite tokens",
             )
 
-        return self.repos.group_invite_tokens.page_all(PaginationQuery(page=1, per_page=-1)).items
+        return (await self.repos.group_invite_tokens.page_all(PaginationQuery(page=1, per_page=-1))).items
 
     @router.post("", response_model=ReadInviteToken, status_code=status.HTTP_201_CREATED)
-    def create_invite_token(self, body: CreateInviteToken):
+    async def create_invite_token(self, body: CreateInviteToken):
         settings = get_app_settings()
         if not settings.ALLOW_PASSWORD_LOGIN:
             raise HTTPException(
@@ -57,7 +57,7 @@ class GroupInvitationsController(BaseUserController):
         token = SaveInviteToken(
             uses_left=body.uses, group_id=body.group_id, household_id=body.household_id, token=url_safe_token()
         )
-        return self.repos.group_invite_tokens.create(token)
+        return await self.repos.group_invite_tokens.create(token)
 
     @router.post("/email", response_model=EmailInitationResponse)
     def email_invitation(

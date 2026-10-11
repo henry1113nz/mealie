@@ -1,33 +1,20 @@
-from datetime import UTC, datetime
-
-from sqlalchemy import select
+from datetime import UTC, datetime, tzinfo
 
 from mealie.db.models.household import GroupMealPlan
 from mealie.schema.meal_plan.new_meal import ReadPlanEntry
 
-from .repository_generic import HouseholdRepositoryGeneric
+from .repository_household_base import AsyncHouseholdRepository
 
 
-class RepositoryMeals(HouseholdRepositoryGeneric[ReadPlanEntry, GroupMealPlan]):
-    def get_today(self, tz=UTC) -> list[ReadPlanEntry]:
+class RepositoryMeals(AsyncHouseholdRepository[ReadPlanEntry, GroupMealPlan]):
+    async def get_today(self, tz: tzinfo = UTC) -> list[ReadPlanEntry]:
         if not self.household_id:
             raise Exception("household_id not set")
-
         today = datetime.now(tz=tz).date()
-        stmt = select(GroupMealPlan).filter(
-            GroupMealPlan.date == today, GroupMealPlan.household_id == self.household_id
-        )
-        plans = self.session.execute(stmt).scalars().all()
-        return [self.schema.model_validate(x) for x in plans]
+        return [await self._serialize(entry) for entry in await (await self._query()).filter(date=today)]
 
-    def get_meals_by_date_range(self, start_date: datetime, end_date: datetime) -> list[ReadPlanEntry]:
+    async def get_meals_by_date_range(self, start_date: datetime, end_date: datetime) -> list[ReadPlanEntry]:
         if not self.household_id:
             raise Exception("household_id not set")
-
-        stmt = select(GroupMealPlan).filter(
-            GroupMealPlan.date >= start_date.date(),
-            GroupMealPlan.date <= end_date.date(),
-            GroupMealPlan.household_id == self.household_id,
-        )
-        plans = self.session.execute(stmt).scalars().all()
-        return [self.schema.model_validate(x) for x in plans]
+        plans = await (await self._query()).filter(date__gte=start_date.date(), date__lte=end_date.date())
+        return [await self._serialize(entry) for entry in plans]

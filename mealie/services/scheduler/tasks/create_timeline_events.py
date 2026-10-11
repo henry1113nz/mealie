@@ -34,7 +34,7 @@ async def _create_mealplan_timeline_events_for_household(
     recipe_id_to_slug_map: dict[UUID4, str] = {}
 
     local_tz = tzlocal()
-    mealplans = repos.meals.get_today(tz=local_tz)
+    mealplans = await repos.meals.get_today(tz=local_tz)
     for mealplan in mealplans:
         if not (mealplan.recipe and mealplan.user_id):
             continue
@@ -67,7 +67,7 @@ async def _create_mealplan_timeline_events_for_household(
             continue
 
         # bump up the last made date
-        household_to_recipe = household_service.get_household_recipe(mealplan.recipe.slug)
+        household_to_recipe = await household_service.get_household_recipe(mealplan.recipe.slug)
         last_made = household_to_recipe.last_made if household_to_recipe else None
         if (not last_made or last_made.date() < event_time.date()) and mealplan.recipe_id not in recipes_to_update:
             recipes_to_update[mealplan.recipe_id] = mealplan.recipe
@@ -90,7 +90,7 @@ async def _create_mealplan_timeline_events_for_household(
     # TODO: use bulk operations
     for event in timeline_events_to_create:
         new_event = repos.recipe_timeline_events.create(event)
-        event_bus_service.dispatch(
+        await event_bus_service.dispatch(
             integration_id=DEFAULT_INTEGRATION_ID,
             group_id=group_id,
             household_id=household_id,
@@ -103,9 +103,9 @@ async def _create_mealplan_timeline_events_for_household(
         )
 
     for recipe in recipes_to_update.values():
-        household_service.set_household_recipe(recipe.slug, HouseholdRecipeUpdate(last_made=event_time))
+        await household_service.set_household_recipe(recipe.slug, HouseholdRecipeUpdate(last_made=event_time))
         repos.recipes.patch(recipe.slug, {"last_made": event_time})
-        event_bus_service.dispatch(
+        await event_bus_service.dispatch(
             integration_id=DEFAULT_INTEGRATION_ID,
             group_id=group_id,
             household_id=household_id,
@@ -116,7 +116,7 @@ async def _create_mealplan_timeline_events_for_household(
 
 async def _create_mealplan_timeline_events_for_group(event_time: datetime, session: Session, group_id: UUID4) -> None:
     repos = get_repositories(session, group_id=group_id)
-    households_data = repos.households.page_all(PaginationQuery(page=1, per_page=-1))
+    households_data = await repos.households.page_all(PaginationQuery(page=1, per_page=-1))
     household_ids = [household.id for household in households_data.items]
     for household_id in household_ids:
         await _create_mealplan_timeline_events_for_household(event_time, session, group_id, household_id)

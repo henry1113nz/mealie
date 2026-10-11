@@ -26,8 +26,12 @@ class DataSeederController(BaseUserController):
         return SuccessResponse.respond("Seeding Successful")
 
     @router.post("/foods", response_model=SuccessResponse)
-    def seed_foods(self, data: SeederConfig) -> dict:
-        return self._wrap(lambda: self.service.seed_foods(data.locale))
+    async def seed_foods(self, data: SeederConfig) -> dict:
+        try:
+            await self.service.seed_foods(data.locale)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=ErrorResponse.respond("Seeding Failed")) from e
+        return SuccessResponse.respond("Seeding Successful")
 
     @router.post("/units", response_model=SuccessResponse)
     def seed_units(self, data: SeederConfig) -> dict:

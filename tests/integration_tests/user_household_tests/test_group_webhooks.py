@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from mealie.schema.household.webhook import ReadWebhook
 from mealie.services.scheduler.tasks.post_webhooks import post_test_webhook
 from tests.utils import api_routes, assert_deserialize, jsonify
+from tests.utils.async_database import run_async
 from tests.utils.fixture_schemas import TestUser
 
 
@@ -122,7 +123,7 @@ def test_post_test_webhook(
     )
 
     test_message = "This is a test webhook message"
-    post_test_webhook(webhook, test_message)
+    run_async(post_test_webhook(webhook, test_message))
 
     # Verify that the outbound post was called with the correct parameters
     assert len(mock_calls) == 1

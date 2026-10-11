@@ -63,14 +63,14 @@ async def post_group_webhooks(
         if household_id is None:
             with session_context() as session:
                 household_repos = get_repositories(session, group_id=group_id)
-                households_data = household_repos.households.page_all(PaginationQuery(page=1, per_page=-1))
+                households_data = await household_repos.households.page_all(PaginationQuery(page=1, per_page=-1))
                 household_ids = [household.id for household in households_data.items]
         else:
             household_ids = [household_id]
 
         for household_id in household_ids:
             event_bus = EventBusService()
-            event_bus.dispatch(
+            await event_bus.dispatch(
                 integration_id=INTERNAL_INTEGRATION_ID,
                 group_id=group_id,
                 household_id=household_id,
@@ -79,7 +79,7 @@ async def post_group_webhooks(
             )
 
 
-def post_test_webhook(webhook: ReadWebhook, message: str = "") -> None:
+async def post_test_webhook(webhook: ReadWebhook, message: str = "") -> None:
     dt = datetime.min.replace(tzinfo=UTC)
     event_type = EventTypes.test_message
 
@@ -97,4 +97,4 @@ def post_test_webhook(webhook: ReadWebhook, message: str = "") -> None:
     )
 
     listener = WebhookEventListener(webhook.group_id, webhook.household_id)
-    listener.publish_to_subscribers(event, [webhook])
+    await listener.publish_to_subscribers(event, [webhook])

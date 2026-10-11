@@ -16,7 +16,7 @@ from mealie.schema.response.responses import ErrorResponse
 from mealie.services.household_services.household_service import HouseholdService
 
 from .._base import BaseAdminController, controller
-from .._base.mixins import HttpRepo
+from .._base.mixins import AsyncHttpRepo
 
 router = APIRouter(prefix="/households")
 
@@ -35,15 +35,15 @@ class AdminHouseholdManagementRoutes(BaseAdminController):
 
     @property
     def mixins(self):
-        return HttpRepo[HouseholdCreate, HouseholdInDB, UpdateHouseholdAdmin](
+        return AsyncHttpRepo[HouseholdCreate, HouseholdInDB, UpdateHouseholdAdmin](
             self.repo,
             self.logger,
             self.registered_exceptions,
         )
 
     @router.get("", response_model=HouseholdPagination)
-    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
-        response = self.repo.page_all(
+    async def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+        response = await self.repo.page_all(
             pagination=q,
             override=HouseholdInDB,
         )
@@ -56,28 +56,28 @@ class AdminHouseholdManagementRoutes(BaseAdminController):
         return await HouseholdService.create_household(self.repos, data)
 
     @router.get("/{item_id}", response_model=HouseholdInDB)
-    def get_one(self, item_id: UUID4):
-        return self.mixins.get_one(item_id)
+    async def get_one(self, item_id: UUID4):
+        return await self.mixins.get_one(item_id)
 
     @router.put("/{item_id}", response_model=HouseholdInDB)
-    def update_one(self, item_id: UUID4, data: UpdateHouseholdAdmin):
-        household = self.repo.get_one(item_id)
+    async def update_one(self, item_id: UUID4, data: UpdateHouseholdAdmin):
+        household = await self.repo.get_one(item_id)
 
         if data.preferences:
-            preferences = self.repos.household_preferences.get_one(value=item_id, key="household_id")
+            preferences = await self.repos.household_preferences.get_one(value=item_id, key="household_id")
             preferences = mapper(data.preferences, preferences)
-            household.preferences = self.repos.household_preferences.update(item_id, preferences)
+            household.preferences = await self.repos.household_preferences.update(item_id, preferences)
 
         if data.name not in ["", household.name]:
             # only update the household if the name changed, since the name is the only field that can be updated
             household.name = data.name
-            household = self.repo.update(item_id, household)
+            household = await self.repo.update(item_id, household)
 
         return household
 
     @router.delete("/{item_id}", response_model=HouseholdInDB)
     async def delete_one(self, item_id: UUID4):
-        item = self.repo.get_one(item_id)
+        item = await self.repo.get_one(item_id)
         if item:
             user_count = await User.filter(group_id=item.group_id, household_id=item_id).count()
             if user_count:
@@ -86,4 +86,4 @@ class AdminHouseholdManagementRoutes(BaseAdminController):
                     detail=ErrorResponse.respond(message="Cannot delete household with users"),
                 )
 
-        return self.mixins.delete_one(item_id)
+        return await self.mixins.delete_one(item_id)

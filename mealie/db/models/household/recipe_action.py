@@ -1,29 +1,38 @@
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from tortoise import fields
 
-from .._model_base import BaseMixins, FilterableColumn, SqlAlchemyBase
-from .._model_utils.auto_init import auto_init
-from .._model_utils.guid import GUID
+from mealie.db.models._tortoise_base import TortoiseBase, UnboundedCharField, UUIDField
 
 if TYPE_CHECKING:
-    from .._legacy_groups import Group
+    from ..group.group import Group
     from .household import Household
 
 
-class GroupRecipeAction(SqlAlchemyBase, BaseMixins):
-    __tablename__ = "recipe_actions"
-    id: FilterableColumn[GUID] = mapped_column(GUID, primary_key=True, default=GUID.generate)
-    group_id: FilterableColumn[GUID] = mapped_column(GUID, ForeignKey("groups.id"), index=True)
-    group: Mapped[Group] = relationship("Group", back_populates="recipe_actions", single_parent=True)
-    household_id: FilterableColumn[GUID | None] = mapped_column(GUID, ForeignKey("households.id"), index=True)
-    household: Mapped[Household] = relationship("Household", back_populates="recipe_actions")
+class GroupRecipeAction(TortoiseBase):
+    id: fields.UUIDField[UUID] = UUIDField(primary_key=True)
+    group_id: UUID
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
+        "models.Group",
+        related_name="recipe_actions",
+        source_field="group_id",
+        null=False,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    household_id: UUID | None
+    household: fields.ForeignKeyNullableRelation[Household] = fields.ForeignKeyField(
+        "models.Household",
+        related_name="recipe_actions",
+        source_field="household_id",
+        null=True,
+        db_index=True,
+        on_delete=fields.RESTRICT,
+    )
+    action_type = UnboundedCharField(db_index=True)
+    title = UnboundedCharField(db_index=True)
+    url = UnboundedCharField()
 
-    action_type: FilterableColumn[str] = mapped_column(String, index=True)
-    title: FilterableColumn[str] = mapped_column(String, index=True)
-    url: Mapped[str] = mapped_column(String)
-
-    @auto_init()
-    def __init__(self, **_) -> None:
-        pass
+    class Meta:
+        table = "recipe_actions"
