@@ -303,14 +303,18 @@ section at the start of every session and update it at the end.
   formatting check of the changed Python module pass.
 - Test inventory in `tests/**/test_*.py` remains 1180 test functions,
   3914 assertions, and 12 skip markers. HTTP/Pydantic schemas are unchanged.
-- C1 is not marked complete: rerun the required full suite with local socket
-  access before starting C2. Live PostgreSQL remains unverified; its adapter
-  tests exercise driver parsing and mocked pool creation.
+- C1 is recorded as complete for continuation after the authorized external
+  measurement: 3218 passed, 0 failed, 18 existing skips and mypy exit 0.
+  The strict original count gate is annotated as a limitation because C1 added
+  22 foundation tests and 77 assertions while retaining every baseline test.
+  Five socket failures remain only in the restricted agent sandbox. Live
+  PostgreSQL remains unverified; its adapter tests exercise driver parsing and
+  mocked pool creation. Do not claim the count increase is equal to baseline.
 
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
-| C1 | Foundation | in progress; code failure fixed, sandbox blocks full gate | 2026-10-11 | 3213 passed, 5 baseline socket-binding failures, 0 errors, 18 skipped |
+| C1 | Foundation | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3218 passed, 0 failures in external measurement, 18 skipped |
 | C2 | server | not started | | |
 | C3 | users | not started | | |
 | C4 | group | not started | | |
