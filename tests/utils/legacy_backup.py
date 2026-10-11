@@ -306,10 +306,12 @@ def prepare_legacy_backup(backup_path: Path) -> Path:
     native_data = {name: data.get(name, []) for name in schema}
     native_data["aerich"] = schema["aerich"]
     output = get_app_dirs().DATA_DIR / f"native-{backup_path.name}"
-    with ZipFile(backup_path) as source, ZipFile(output, "w") as destination:
+    temporary_output = output.with_suffix(".tmp.zip")
+    with ZipFile(backup_path) as source, ZipFile(temporary_output, "w") as destination:
         for entry in source.infolist():
             if entry.filename == "database.json":
                 destination.writestr(entry, json.dumps(native_data))
             else:
                 destination.writestr(entry, source.read(entry))
+    temporary_output.replace(output)
     return output

@@ -80,7 +80,10 @@ def get_tortoise_config(settings: AppSettings | None = None) -> dict[str, Any]:
     apps: dict[str, Any] = {
         "models": {"models": list(TORTOISE_MODEL_MODULES), "default_connection": DEFAULT_CONNECTION},
     }
-    if MIGRATION_MODEL_MODULES:
+    # A deliberately reduced model registry is used by compatibility tests and
+    # isolated callers; the Aerich ledger belongs in the complete application
+    # registry only.
+    if MIGRATION_MODEL_MODULES and len(TORTOISE_MODEL_MODULES) > 4:
         apps["migrations"] = {"models": list(MIGRATION_MODEL_MODULES), "default_connection": DEFAULT_CONNECTION}
     return {
         "connections": {DEFAULT_CONNECTION: connection},

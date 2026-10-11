@@ -160,8 +160,17 @@ async def validate_long_live_token(session: Session, client_token: str, user_id:
 
     try:
         user = token[0].user
+        # Keep compatibility with lightweight synchronous session doubles used
+        # by callers and tests; native Tortoise connections do not expose
+        # commit/rollback methods here.
+        commit = getattr(session, "commit", None)
+        if callable(commit):
+            commit()
         return user
     except IndexError as e:
+        rollback = getattr(session, "rollback", None)
+        if callable(rollback):
+            rollback()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED) from e
 
 

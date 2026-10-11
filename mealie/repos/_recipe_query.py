@@ -22,11 +22,12 @@ async def execute_select(query: NativeQuery) -> list[dict[str, Any]]:
 def apply_search(
     query: NativeQuery, model: type[Model], schema: type[MealieModel], parser: SearchFilter
 ) -> NativeQuery:
-    if not schema._searchable_properties:
-        raise AttributeError("Not Implemented")
-    properties = [column(model, name) for name in schema._searchable_properties]
     if model.__name__ == "RecipeModel":
         properties = [column(model, "name_normalized"), column(model, "description_normalized")]
+    else:
+        if not schema._searchable_properties:
+            raise AttributeError("Not Implemented")
+        properties = [column(model, name) for name in schema._searchable_properties]
     if parser.search_type is SearchType.fuzzy:
         expressions = [Expression(f"{prop} %> ?", [parser.search]) for prop in properties]
         order = Expression(f"{properties[0]} <->> ?", [parser.search])

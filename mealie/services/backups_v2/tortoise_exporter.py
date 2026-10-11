@@ -30,6 +30,7 @@ class BackupColumn:
     nullable: bool
     primary_key: bool = False
     sequence: bool = False
+    default: Any = None
 
 
 @dataclass
@@ -86,7 +87,8 @@ class TortoiseExporter(BaseService):
                 table = tables[name] = BackupTable(name)
                 for column in await connection.execute_query_dict(f"PRAGMA table_info({_quote(name)})"):
                     table.columns[column["name"]] = BackupColumn(
-                        column["name"], column["type"].lower(), not bool(column["notnull"]), bool(column["pk"])
+                        column["name"], column["type"].lower(), not bool(column["notnull"]), bool(column["pk"]),
+                        default=column.get("dflt_value"),
                     )
                 for fk in await connection.execute_query_dict(f"PRAGMA foreign_key_list({_quote(name)})"):
                     table.foreign_keys.append(BackupForeignKey(fk["from"], fk["table"], fk["to"]))
