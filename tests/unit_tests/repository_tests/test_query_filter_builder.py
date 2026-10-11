@@ -1,9 +1,9 @@
 import pytest
-import sqlalchemy as sa
 
-from mealie.db.models._legacy_recipe.ingredient import IngredientFoodModel
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
-from mealie.db.models._legacy_users import LongLiveToken, User
+from mealie.db.models.recipe.ingredient import IngredientFoodModel
+from mealie.db.models.recipe.recipe import RecipeModel
+from mealie.db.models.users import LongLiveToken, User
+from mealie.services.query_filter import sql as sa
 from mealie.services.query_filter.builder import (
     LogicalOperator,
     NonFilterableValueError,
@@ -13,6 +13,12 @@ from mealie.services.query_filter.builder import (
     RelationalKeyword,
     RelationalOperator,
 )
+
+
+@pytest.fixture(autouse=True)
+def query_database_models(api_client):
+    """Resolve native relations on the application database context."""
+    yield
 
 
 def test_query_filter_builder_json():
@@ -110,7 +116,7 @@ def test_filterable_field_does_not_raise():
     """Filtering on a FilterableColumn field should not raise."""
     model, attr = QueryFilterBuilder.get_model_and_model_attr_from_attr_string("full_name", User)
     assert model is User
-    assert attr is User.full_name
+    assert attr is User._meta.fields_map["full_name"]
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +128,7 @@ def test_deep_traversal_to_filterable_field_works():
     """Traversing a relationship to a FilterableColumn field should succeed."""
     model, attr = QueryFilterBuilder.get_model_and_model_attr_from_attr_string("user.full_name", RecipeModel)
     assert model is User
-    assert attr is User.full_name
+    assert attr is User._meta.fields_map["full_name"]
 
 
 def test_deep_traversal_to_non_filterable_field_raises():
@@ -157,7 +163,7 @@ def test_association_proxy_resolving_to_filterable_field_works():
     """Single-hop association proxy (e.g. household_id) resolving to a FilterableColumn should succeed."""
     model, attr = QueryFilterBuilder.get_model_and_model_attr_from_attr_string("household_id", RecipeModel)
     assert model is User
-    assert attr is User.household_id
+    assert attr is User._meta.fields_map["household_id"]
 
 
 def test_deep_traversal_to_food_label_works():
@@ -166,14 +172,14 @@ def test_deep_traversal_to_food_label_works():
         "recipe_ingredient.food.label_id", RecipeModel
     )
     assert model is IngredientFoodModel
-    assert attr is IngredientFoodModel.label_id
+    assert attr is IngredientFoodModel._meta.fields_map["label_id"]
 
 
 def test_filter_query_by_food_label_joins_through_ingredients():
     """Filtering recipes by food label should join recipes -> ingredients -> foods."""
     label_id = "a5f1c6d2-0000-4000-8000-000000000001"
     builder = QueryFilterBuilder(f'recipe_ingredient.food.label_id IN ["{label_id}"]')
-    query = builder.filter_query(sa.select(RecipeModel.id), RecipeModel)
+    query = builder.filter_query(sa.select(RecipeModel), RecipeModel)
 
     sql = " ".join(str(query.compile(compile_kwargs={"literal_binds": True})).split())
     # The builder correlates through the relationship chain with EXISTS rather than joining, so a
@@ -192,7 +198,7 @@ def test_filter_query_excluding_food_label_excludes_the_whole_recipe():
     """
     label_id = "a5f1c6d2-0000-4000-8000-000000000001"
     builder = QueryFilterBuilder(f'recipe_ingredient.food.label_id NOT IN ["{label_id}"]')
-    query = builder.filter_query(sa.select(RecipeModel.id), RecipeModel)
+    query = builder.filter_query(sa.select(RecipeModel), RecipeModel)
 
     sql = " ".join(str(query.compile(compile_kwargs={"literal_binds": True})).split())
     # NOT wraps the whole correlated EXISTS, so the recipe drops out as soon as one of its

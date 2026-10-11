@@ -7,8 +7,8 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
 from jwt.exceptions import PyJWTError
 from pydantic import BaseModel
-from sqlalchemy.orm.session import Session
 from starlette.datastructures import URLPath
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core import root_logger, security
 from mealie.core.config import get_app_settings

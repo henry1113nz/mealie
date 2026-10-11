@@ -2,7 +2,7 @@ import importlib.util
 import pathlib
 from functools import lru_cache
 
-from mealie.db.init_db import ALEMBIC_DIR
+ALEMBIC_DIR = pathlib.Path(__file__).parents[1] / "fixtures" / "legacy_alembic"
 
 ALEMBIC_MIGRATIONS = ALEMBIC_DIR / "versions"
 

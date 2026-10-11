@@ -4,12 +4,8 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import UUID4, BaseModel, ConfigDict, Field, StringConstraints, field_validator
-from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.config import get_app_dirs, get_app_settings
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
-from mealie.db.models._legacy_users import LongLiveToken, User, UserToRecipe
 from mealie.db.models.users.users import AuthMethod
 from mealie.schema._mealie import MealieModel
 from mealie.schema.group.ai_providers import AIProviderSettingsOut
@@ -17,7 +13,6 @@ from mealie.schema.group.group_preferences import ReadGroupPreferences
 from mealie.schema.household.webhook import CreateWebhook, ReadWebhook
 from mealie.schema.response.pagination import PaginationBase
 
-from ...db.models._legacy_groups import Group
 from ..recipe import CategoryBase
 
 DEFAULT_INTEGRATION_ID = "generic"
@@ -34,10 +29,6 @@ class LongLiveTokenOut(MealieModel):
     id: int
     created_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(LongLiveToken.user)]
 
 
 class LongLiveTokenCreateResponse(LongLiveTokenOut):
@@ -93,12 +84,6 @@ class UserRatingUpdate(MealieModel):
 
 class UserRatingOut(UserRatingCreate):
     id: UUID4
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(UserToRecipe.recipe).joinedload(RecipeModel.user).load_only(User.household_id, User.group_id)
-        ]
 
 
 class UserRatings[DataT: BaseModel](BaseModel):
@@ -182,10 +167,6 @@ class UserOut(UserBase):
     def is_default_user(self) -> bool:
         return self.email == settings._DEFAULT_EMAIL.strip().lower()
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(User.group), joinedload(User.household), joinedload(User.tokens)]
-
 
 class UserSummary(MealieModel):
     id: UUID4
@@ -234,10 +215,6 @@ class PrivateUser(UserOut):
     def directory(self) -> Path:
         return PrivateUser.get_directory(self.id)
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(User.group), joinedload(User.household), joinedload(User.tokens)]
-
 
 class UpdateGroup(GroupBase):
     id: UUID4
@@ -283,17 +260,6 @@ class GroupInDB(UpdateGroup):
     def exports(self) -> Path:
         return GroupInDB.get_export_directory(self.id)
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(Group.categories),
-            joinedload(Group.webhooks),
-            joinedload(Group.preferences),
-            joinedload(Group.households),
-            selectinload(Group.users).joinedload(User.group),
-            selectinload(Group.users).joinedload(User.tokens),
-        ]
-
 
 class GroupSummary(GroupBase):
     id: UUID4
@@ -301,12 +267,6 @@ class GroupSummary(GroupBase):
     slug: str
     preferences: ReadGroupPreferences | None = None
     ai_provider_settings: AIProviderSettingsOut | None = None
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(Group.preferences),
-        ]
 
 
 class GroupPagination(PaginationBase):

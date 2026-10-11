@@ -10,8 +10,6 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import ConnectionPoolEntry
@@ -22,23 +20,27 @@ from tortoise.transactions import in_transaction
 from mealie.core.config import get_app_settings
 from mealie.core.settings import AppSettings
 from mealie.core.settings.db_providers import SQLiteProvider
-from mealie.db.init_db import ALEMBIC_DIR
-from mealie.db.models._legacy_groups import Group as LegacyGroup
+from mealie.db.init_db import prepare_database
 from mealie.db.models.group.group import Group
 from mealie.db.models.server.task import ServerTaskModel
 from mealie.db.tortoise_config import TORTOISE_MODEL_MODULES, get_tortoise_config
 from mealie.db.tortoise_setup import database_context
-from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
+from mealie.services.backups_v2.tortoise_exporter import TortoiseExporter as AlchemyExporter
+from tests.fixtures.legacy_models.group import Group as LegacyGroup
+from tests.utils.async_database import run_async
 
 
 @pytest.fixture(scope="module")
-def migrated_server_database(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Exercise the production migration schema while legacy domains coexist."""
+def migrated_server_database(tmp_path_factory: pytest.TempPathFactory, api_client) -> Path:
+    """Exercise the checked-in production Aerich schema on a disposable database."""
     provider = SQLiteProvider(data_dir=tmp_path_factory.mktemp("server_migrations"))
     settings = get_app_settings().model_copy(update={"DB_PROVIDER": provider})
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr("mealie.core.config.get_app_settings", lambda: settings)
-        command.upgrade(Config(str(ALEMBIC_DIR / "alembic.ini")), "head")
+
+    async def migrate() -> None:
+        async with database_context(get_tortoise_config(settings)):
+            await prepare_database()
+
+    run_async(migrate())
     return provider.db_path
 
 
@@ -84,6 +86,7 @@ def create_group(engine: Engine) -> UUID:
 async def test_server_model_is_registered_with_the_default_connection(
     server_settings: AppSettings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr("mealie.db.tortoise_config.MIGRATION_MODEL_MODULES", ())
     # Preserve the original configuration assertions, then register relation targets.
     monkeypatch.setattr("mealie.db.tortoise_config.TORTOISE_MODEL_MODULES", ("mealie.db.models.server.task",))
     config = get_tortoise_config(server_settings)
@@ -199,18 +202,15 @@ async def test_server_tasks_survive_the_legacy_backup_restore(
 
     assert server_settings.DB_URL is not None
     exporter = AlchemyExporter(server_settings.DB_URL)
-    try:
-        backup = json.loads(json.dumps(exporter.dump()))
+    async with database_context(config):
+        backup = json.loads(json.dumps(await exporter.dump()))
         assert len(backup["server_tasks"]) == 2
-        exporter.drop_all()
+        await exporter.drop_all()
         # The restore's migration environment and bootstrap must stay isolated
         # from the worker's shared application database.
         monkeypatch.setattr("mealie.core.config.get_app_settings", lambda: server_settings)
-        monkeypatch.setattr("mealie.db.init_db.prepare_database", lambda: False)
         monkeypatch.setattr("mealie.db.init_db.initialize_data", AsyncMock())
         await exporter.restore(backup)
-    finally:
-        exporter.engine.dispose()
 
     async with database_context(config):
         restored = await ServerTaskModel.get(id=task.id)

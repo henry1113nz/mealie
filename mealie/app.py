@@ -64,9 +64,8 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
     import mealie.db.init_db as init_db
     from mealie.db.tortoise_setup import database_context
 
-    run_fixes = init_db.prepare_database()
-
     async with database_context(global_fallback=True):
+        run_fixes = await init_db.prepare_database()
         await init_db.initialize_data(run_fixes)
         logger.info("end: database initialization")
         await start_scheduler()

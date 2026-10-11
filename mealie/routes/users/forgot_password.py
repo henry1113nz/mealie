@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.db.db_setup import generate_session
 from mealie.schema.user.user_passwords import ForgotPassword, ResetPassword

@@ -18,7 +18,6 @@ from recipe_scrapers.plugins import SchemaOrgFillPlugin
 from slugify import slugify
 
 import mealie.services.scraper.recipe_scraper as recipe_scraper_module
-from mealie.db.models._legacy_recipe import RecipeModel
 from mealie.pkgs.safehttp.fetch import FetchResult
 from mealie.pkgs.safehttp.transport import AsyncSafeTransport
 from mealie.schema.cookbook.cookbook import SaveCookBook
@@ -39,6 +38,7 @@ from mealie.services.recipe.recipe_data_service import RecipeDataService
 from mealie.services.scraper.recipe_scraper import DEFAULT_SCRAPER_STRATEGIES
 from mealie.services.scraper.scraper import ParserErrors
 from tests import utils
+from tests.fixtures.legacy_models.recipe import RecipeModel
 from tests.utils import api_routes
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser

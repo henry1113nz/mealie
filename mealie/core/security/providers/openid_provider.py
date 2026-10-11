@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
 from authlib.oidc.core import UserInfo
 from pydantic import UUID4
-from sqlalchemy.orm.session import Session
 from starlette.concurrency import run_in_threadpool
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings
@@ -130,7 +130,6 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                         "auth_method": AuthMethod.OIDC,
                     }
                 )
-                self.session.commit()
                 await self._update_profile_image_from_claim(user.id, claims)
 
             except Exception as e:

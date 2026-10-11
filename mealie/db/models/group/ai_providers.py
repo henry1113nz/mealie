@@ -84,7 +84,7 @@ class AIProviderSettings(TortoiseBase):
 
     # These selections point back into providers, which already depend on these
     # settings. Retain every foreign key; C7 must create this cycle with deferred
-    # DDL when replacing the existing Alembic schema bootstrap.
+    # DDL in the initial Aerich migration.
     default_provider_id: UUID | None
     default_provider: fields.ForeignKeyNullableRelation[AIProvider] = fields.ForeignKeyField(
         "models.AIProvider",

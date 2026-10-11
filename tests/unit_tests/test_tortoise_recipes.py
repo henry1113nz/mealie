@@ -8,7 +8,6 @@ from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from mealie.core.settings import AppSettings
-from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.db.models._tortoise_base import TortoiseBase, UUIDField
 from mealie.db.models.group import Group
 from mealie.db.models.household import (
@@ -52,6 +51,7 @@ from mealie.db.models.users.user_to_recipe import UserToRecipe
 from mealie.db.models.users.users import User
 from mealie.db.tortoise_config import get_tortoise_config
 from mealie.db.tortoise_setup import database_context
+from tests.fixtures.legacy_models._model_base import SqlAlchemyBase
 from tests.unit_tests.test_tortoise_server import migrated_server_database as migrated_server_database
 from tests.unit_tests.test_tortoise_server import server_settings as server_settings
 

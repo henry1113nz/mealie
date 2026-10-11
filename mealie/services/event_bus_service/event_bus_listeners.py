@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from fastapi.encoders import jsonable_encoder
 from pydantic import UUID4
-from sqlalchemy.orm.session import Session
 from starlette.concurrency import run_in_threadpool
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 from tortoise.expressions import Q
 
 from mealie.db.db_setup import session_context
@@ -44,15 +44,7 @@ class EventListenerBase(ABC):
 
     @contextlib.contextmanager
     def ensure_session(self) -> Generator[Session]:
-        """
-        ensure_session ensures that a session is available for the caller by checking if a session
-        was provided during construction, and if not, creating a new session with the `with_session`
-        function and closing it when the context manager exits.
-
-        This is _required_ when working with sessions inside an event bus listener where the listener
-        may be constructed during a request where the session is provided by the request, but the when
-        run as a scheduled task, the session is not provided and must be created.
-        """
+        """Borrow the connection owned by the request or scheduler database context."""
         if self._session is None:
             with session_context() as session:
                 self._session = session

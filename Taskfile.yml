@@ -49,7 +49,7 @@ tasks:
     desc: setup python dependencies
     run: once
     cmds:
-      - uv sync --extra pgsql --group dev
+      - uv sync --group dev
       - uv run pre-commit install
     sources:
       - uv.lock
@@ -156,11 +156,11 @@ tasks:
       before installation begins
     internal: true
     cmds:
-      - uv export --no-dev --no-editable --no-emit-project --extra pgsql --format
+      - uv export --no-dev --no-editable --no-emit-project --format
         requirements-txt --output-file dist/dependencies.txt
       - cp dist/dependencies.txt dist/requirements.txt
       # Include mealie in the requirements, hashing the package that was just built to ensure it's the one installed
-      - echo "mealie[pgsql]=={{.MEALIE_VERSION}} \\" >> dist/requirements.txt
+      - echo "mealie=={{.MEALIE_VERSION}} \\" >> dist/requirements.txt
       - pip hash dist/mealie-{{.MEALIE_VERSION}}-py3-none-any.whl | tail -n1 |
         tr -d '\n' >> dist/requirements.txt
       - echo " \\" >> dist/requirements.txt
@@ -232,8 +232,7 @@ tasks:
     desc: generates a new database migration file e.g. task py:migrate -- "add new
       column"
     cmds:
-      - uv run alembic --config mealie/alembic/alembic.ini revision
-        --autogenerate -m "{{ .CLI_ARGS }}"
+      - uv run aerich --app models migrate --name "{{ .CLI_ARGS }}"
       - task: py:format
 
   ui:build:

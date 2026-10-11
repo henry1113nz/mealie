@@ -2,10 +2,9 @@ from collections.abc import Sequence
 from functools import cached_property
 
 from pydantic import UUID4
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 from tortoise.transactions import in_transaction
 
-from mealie.db.models._model_utils.guid import GUID
 from mealie.db.models.group import Group, ReportEntryModel, ReportModel
 from mealie.db.models.group.ai_providers import AIProvider, AIProviderSettings
 from mealie.db.models.group.exports import GroupDataExportsModel
@@ -144,8 +143,7 @@ class AllRepositories:
     def uuid_to_str(self, val: UUID4) -> str:
         """Helper method to convert a UUID into a database-safe string"""
 
-        dialect = self.session.bind.dialect
-        return GUID.convert_value_to_guid(val, dialect) or ""
+        return val.hex if self.session.capabilities.dialect == "sqlite" else str(val)
 
     # ================================================================
     # Recipe

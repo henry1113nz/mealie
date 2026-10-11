@@ -3,8 +3,8 @@ from datetime import timedelta
 import ldap
 import ldap.filter
 from ldap.ldapobject import LDAPObject
-from sqlalchemy.orm.session import Session
 from starlette.concurrency import run_in_threadpool
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings

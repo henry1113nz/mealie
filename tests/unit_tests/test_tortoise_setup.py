@@ -135,7 +135,7 @@ async def test_app_closes_database_when_scheduler_startup_fails(
         clients.append(get_connection("default"))
         raise RuntimeError("scheduler startup failed")
 
-    monkeypatch.setattr(legacy_init, "prepare_database", lambda: False)
+    monkeypatch.setattr(legacy_init, "prepare_database", AsyncMock(return_value=False))
     monkeypatch.setattr(legacy_init, "initialize_data", AsyncMock())
     monkeypatch.setattr(setup, "get_tortoise_config", lambda: database_config)
     monkeypatch.setattr(application, "start_scheduler", fail_scheduler)

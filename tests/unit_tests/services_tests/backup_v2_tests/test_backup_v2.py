@@ -5,23 +5,24 @@ from sqlalchemy.orm import Session
 
 import tests.data as test_data
 from mealie.core.config import get_app_settings
-from mealie.db.db_setup import session_context
-from mealie.db.models._legacy_groups import Group
-from mealie.db.models._legacy_household.cookbook import CookBook
-from mealie.db.models._legacy_household.household import Household
-from mealie.db.models._legacy_household.household_to_recipe import HouseholdToRecipe
-from mealie.db.models._legacy_household.mealplan import GroupMealPlanRules
-from mealie.db.models._legacy_household.shopping_list import ShoppingList
-from mealie.db.models._legacy_recipe.ingredient import IngredientFoodModel, IngredientUnitModel
-from mealie.db.models._legacy_recipe.labels import MultiPurposeLabel
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
-from mealie.db.models._legacy_recipe.tool import Tool
-from mealie.db.models._legacy_users import User, UserToRecipe
-from mealie.db.models._model_utils.guid import GUID
-from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
 from mealie.services.backups_v2.backup_file import BackupFile
 from mealie.services.backups_v2.backup_v2 import BackupV2
+from mealie.services.backups_v2.tortoise_exporter import TortoiseExporter as AlchemyExporter
+from tests.fixtures.legacy_models._model_utils.guid import GUID
+from tests.fixtures.legacy_models.group import Group
+from tests.fixtures.legacy_models.household.cookbook import CookBook
+from tests.fixtures.legacy_models.household.household import Household
+from tests.fixtures.legacy_models.household.household_to_recipe import HouseholdToRecipe
+from tests.fixtures.legacy_models.household.mealplan import GroupMealPlanRules
+from tests.fixtures.legacy_models.household.shopping_list import ShoppingList
+from tests.fixtures.legacy_models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
+from tests.fixtures.legacy_models.recipe.labels import MultiPurposeLabel
+from tests.fixtures.legacy_models.recipe.recipe import RecipeModel
+from tests.fixtures.legacy_models.recipe.tool import Tool
+from tests.fixtures.legacy_models.users import User, UserToRecipe
 from tests.utils.async_database import run_async
+from tests.utils.legacy_backup import prepare_legacy_backup
+from tests.utils.legacy_database import session_context
 
 
 def dict_sorter(d: dict) -> Any:
@@ -32,7 +33,7 @@ def dict_sorter(d: dict) -> Any:
 
 def test_database_backup():
     backup_v2 = BackupV2()
-    path_to_backup = backup_v2.backup()
+    path_to_backup = run_async(backup_v2.backup())
 
     assert path_to_backup.exists()
 
@@ -41,27 +42,23 @@ def test_database_backup():
     with backup as contents:
         assert contents.validate()
 
-    backup_v2.db_exporter.engine.dispose()
-
 
 def test_database_restore():
     settings = get_app_settings()
 
     # Capture existing database snapshot
     original_exporter = AlchemyExporter(settings.DB_URL)
-    snapshop_1 = original_exporter.dump()
-    original_exporter.engine.dispose()
+    snapshop_1 = run_async(original_exporter.dump())
 
     # Create Backup
     backup_v2 = BackupV2(settings.DB_URL)
-    path_to_backup = backup_v2.backup()
+    path_to_backup = run_async(backup_v2.backup())
 
     assert path_to_backup.exists()
     run_async(backup_v2.restore(path_to_backup))
 
     new_exporter = AlchemyExporter(settings.DB_URL)
-    snapshop_2 = new_exporter.dump()
-    new_exporter.engine.dispose()
+    snapshop_2 = run_async(new_exporter.dump())
 
     for s1, s2 in zip(snapshop_1, snapshop_2, strict=False):
         assert snapshop_1[s1].sort(key=dict_sorter) == snapshop_2[s2].sort(key=dict_sorter)
@@ -260,12 +257,12 @@ def test_database_restore_data():
     backup_v2 = BackupV2(settings.DB_URL)
 
     backup_v2.directories.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    original_data_backup = backup_v2.backup()
+    original_data_backup = run_async(backup_v2.backup())
 
     try:
         for backup_path in backup_paths:
             assert backup_path.exists()
-            run_async(backup_v2.restore(backup_path))
+            run_async(backup_v2.restore(prepare_legacy_backup(backup_path)))
 
             with session_context() as session:
                 for migration_func in migration_funcs:

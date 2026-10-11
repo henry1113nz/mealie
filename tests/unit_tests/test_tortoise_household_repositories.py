@@ -7,12 +7,13 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import Engine
 
-from mealie.db.models._legacy_household import ShoppingListItem as LegacyShoppingListItem
+from mealie.db.models.household import ShoppingListItem as LegacyShoppingListItem
 from mealie.db.models.household.shopping_list import ShoppingListItemRecipeReference
 from mealie.db.models.users import User
 from mealie.repos import _users_coexistence as bridge
 from mealie.repos.all_repositories import AllRepositories, get_repositories
 from mealie.schema.response.pagination import PaginationQuery
+from mealie.services.query_filter import sql as query_sql
 from tests.unit_tests.test_tortoise_server import migrated_server_database as migrated_server_database
 from tests.unit_tests.test_tortoise_server import server_engine as server_engine
 from tests.unit_tests.test_tortoise_server import server_settings as server_settings
@@ -30,7 +31,7 @@ async def test_household_uuid_in_compilation_applies_expanded_parameter_conversi
         capabilities=SimpleNamespace(dialect=dialect),
         execute_query_dict=AsyncMock(return_value=[{"id": str(identifier)}]),
     )
-    monkeypatch.setattr(bridge, "connections", SimpleNamespace(get=lambda alias: connection))
+    monkeypatch.setattr(query_sql, "connections", SimpleNamespace(get=lambda alias: connection))
     result = await bridge.query_model_ids(
         LegacyShoppingListItem, None, PaginationQuery(query_filter=f'id IN ["{identifier}"] AND checked=true')
     )

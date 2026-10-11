@@ -4,12 +4,13 @@ import random
 import shutil
 from collections.abc import Iterable
 from math import ceil
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import BaseModel
 from tortoise import Model, fields
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
@@ -28,21 +29,15 @@ from mealie.schema.user.user import PrivateUser, UserRatingOut
 from . import _users_coexistence as bridge
 from ._utils import NOT_SET, NotSet
 
-
-class LegacySession(Protocol):
-    def expire_all(self) -> None: ...
+type DatabaseSession = BaseDBAsyncClient
 
 
 class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
-    """Native async persistence for converted user models.
-
-    Retain the session only to expire legacy relationship projections after writes
-    until the other domains are converted.
-    """
+    """Native async persistence for user models on the owning connection."""
 
     def __init__(
         self,
-        session: LegacySession,
+        session: DatabaseSession,
         primary_key: str,
         sql_model: type[DBModel],
         schema: type[Schema],
@@ -184,7 +179,7 @@ class AsyncUserRepository[Schema: MealieModel, DBModel: Model]:
         return result
 
     async def _after_write(self, entry: DBModel) -> None:
-        self.session.expire_all()
+        pass
 
     async def create(self, data: Schema | BaseModel | dict[str, Any]) -> Schema:
         values = data.copy() if isinstance(data, dict) else data.model_dump()

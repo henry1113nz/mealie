@@ -2,7 +2,7 @@ from datetime import UTC, datetime, time, timedelta
 
 from dateutil.tz import tzlocal
 from pydantic import UUID4
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.db.db_setup import session_context
 from mealie.repos.all_repositories import get_repositories

@@ -9,7 +9,6 @@ from tortoise import Model
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
-from mealie.db.models import _legacy_household
 from mealie.db.models.group import Group
 from mealie.db.models.household import (
     CookBook,
@@ -41,7 +40,7 @@ from mealie.schema.response.pagination import PaginationQuery
 from . import _households_coexistence as recipe_bridge
 from . import _users_coexistence as bridge
 from ._utils import NOT_SET, NotSet
-from .repository_users import AsyncUserRepository, LegacySession
+from .repository_users import AsyncUserRepository, DatabaseSession
 
 
 class AsyncHouseholdRepository[Schema: MealieModel, DBModel: Model](AsyncUserRepository[Schema, DBModel]):
@@ -56,7 +55,7 @@ class AsyncHouseholdRepository[Schema: MealieModel, DBModel: Model](AsyncUserRep
 
     def __init__(
         self,
-        session: LegacySession,
+        session: DatabaseSession,
         primary_key: str,
         sql_model: type[DBModel],
         schema: type[Schema],
@@ -97,7 +96,7 @@ class AsyncHouseholdRepository[Schema: MealieModel, DBModel: Model](AsyncUserRep
         return query
 
     async def _query_identifiers(self, pagination: PaginationQuery) -> list[Any]:
-        model = getattr(_legacy_household, self.model.__name__)
+        model = self.model
         return await bridge.query_model_ids(model, self.group_id, pagination, household_id=self.household_id)
 
     async def _query_one(self, match_value: Any, match_key: str | None = None) -> DBModel:

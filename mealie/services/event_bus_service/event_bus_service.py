@@ -1,6 +1,6 @@
 from fastapi import BackgroundTasks, Depends
 from pydantic import UUID4
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.config import get_app_settings
 from mealie.db.db_setup import generate_session

@@ -41,13 +41,13 @@ class AdminBackupController(BaseAdminController):
         return AllBackups(imports=imports, templates=templates)
 
     @router.post("", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse)
-    def create_one(self):
+    async def create_one(self):
         from mealie.services.backups_v2.backup_v2 import BackupV2
 
         backup = BackupV2()
 
         try:
-            backup.backup()
+            await backup.backup()
         except Exception as e:
             logger.exception(e)
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR) from e

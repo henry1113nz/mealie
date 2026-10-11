@@ -2,22 +2,12 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
-import sqlalchemy as sa
 from fastapi import HTTPException
 from pydantic import UUID4
-from sqlalchemy import orm
 
-from mealie.db.models._legacy_recipe.ingredient import (
-    IngredientFoodSubstitutionModel,
-    RecipeIngredientModel,
-    RecipeIngredientSubstitutionModel,
-    households_to_ingredient_foods,
-)
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
-from mealie.db.models._legacy_recipe.settings import RecipeSettings
-from mealie.db.models._legacy_recipe.tool import Tool, households_to_tools, recipes_to_tools
-from mealie.db.models._legacy_users import User
-from mealie.db.models.recipe.recipe import RecipeModel as NativeRecipe
+from mealie.db.models.household.household import Household
+from mealie.db.models.recipe.recipe import RecipeModel
+from mealie.db.models.users import User
 from mealie.schema.recipe.recipe import Recipe, RecipeSummary
 from mealie.schema.recipe.recipe_ingredient import IngredientFood, IngredientFoodSummary, RecipeIngredient
 from mealie.schema.recipe.recipe_suggestion import (
@@ -26,13 +16,14 @@ from mealie.schema.recipe.recipe_suggestion import (
     RecipeSuggestionSubstitutedFood,
 )
 from mealie.schema.recipe.recipe_tool import RecipeToolOut
-from mealie.schema.response.pagination import PaginationQuery, RequestQuery
+from mealie.schema.response.pagination import PaginationQuery
+from mealie.services.query_filter.sql import Expression, NativeQuery
 
 from ._recipe_persistence import recipe_data
-from ._recipe_query import execute_select, query_identifiers
+from ._recipe_query import query_identifiers
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm.session import Session
+    from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 
 class RecipeSuggestionMixin:
@@ -59,7 +50,7 @@ class RecipeSuggestionMixin:
 
         def _log_exception(self, e: Exception) -> None: ...
 
-        def add_order_by_to_query(self, query: sa.Select, request_query: RequestQuery) -> sa.Select: ...
+        def _base_query(self) -> NativeQuery: ...
 
     @staticmethod
     def _find_substitute_on_hand(
@@ -80,167 +71,83 @@ class RecipeSuggestionMixin:
         return None
 
     @staticmethod
-    def _covered_by_substitution(ingredients_alias, food_ids: list[UUID4]):
-        """
-        Whether an ingredient can be covered by a substitution to one of `food_ids`.
-
-        The substitution runs from the recipe's food to the user's: if the recipe calls for
-        chicken stock and the user has chicken broth, the substitution that makes the recipe
-        cookable is `stock -> broth`. Expanding the user's foods by what they can substitute
-        for is the same query backwards, and quietly wrong.
-
-        Both branches require a non-null substitute food. Note-only substitutions have no
-        food to match against and can never satisfy an ingredient.
-        """
-
-        food_level = (
-            sa.select(1)
-            .where(
-                IngredientFoodSubstitutionModel.food_id == ingredients_alias.food_id,
-                IngredientFoodSubstitutionModel.substitute_food_id.isnot(None),
-                IngredientFoodSubstitutionModel.substitute_food_id.in_(food_ids),
-            )
-            .correlate(ingredients_alias)
-            .exists()
+    def _covered_by_substitution(food_ids: list[UUID4]) -> Expression:
+        if not food_ids:
+            return Expression("FALSE")
+        placeholders = ", ".join("?" for _ in food_ids)
+        return Expression(
+            "(EXISTS (SELECT 1 FROM ingredient_foods_substitutions fs "
+            "WHERE fs.food_id = ri.food_id AND fs.substitute_food_id IN (" + placeholders + ")) "
+            "OR EXISTS (SELECT 1 FROM recipes_ingredients_substitutions rs "
+            "WHERE rs.ingredient_id = ri.id AND rs.substitute_food_id IN (" + placeholders + ")))",
+            [*food_ids, *food_ids],
         )
-        recipe_level = (
-            sa.select(1)
-            .where(
-                RecipeIngredientSubstitutionModel.ingredient_id == ingredients_alias.id,
-                RecipeIngredientSubstitutionModel.substitute_food_id.isnot(None),
-                RecipeIngredientSubstitutionModel.substitute_food_id.in_(food_ids),
-            )
-            .correlate(ingredients_alias)
-            .exists()
-        )
-
-        return sa.or_(food_level, recipe_level)
 
     async def _with_on_hand_ids(
         self, params: RecipeSuggestionQuery, user_food_ids: list[UUID4], user_tool_ids: list[UUID4]
     ) -> tuple[list[UUID4], list[UUID4]]:
-        """The user's ids, plus whatever their household already has on hand."""
-
-        food_ids = user_food_ids.copy()
-        tool_ids = user_tool_ids.copy()
-
-        if params.include_foods_on_hand and self.user_id:
-            foods_on_hand_query = (
-                sa.select(households_to_ingredient_foods.c.food_id)
-                .join(User, households_to_ingredient_foods.c.household_id == User.household_id)
-                .filter(
-                    sa.not_(households_to_ingredient_foods.c.food_id.in_(food_ids)),
-                    User.id == self.user_id,
-                )
-            )
-            food_ids.extend(UUID(str(row["food_id"])) for row in await execute_select(foods_on_hand_query))
-
-        if params.include_tools_on_hand and self.user_id:
-            tools_on_hand_query = (
-                sa.select(households_to_tools.c.tool_id)
-                .join(User, households_to_tools.c.household_id == User.household_id)
-                .filter(
-                    sa.not_(households_to_tools.c.tool_id.in_(tool_ids)),
-                    User.id == self.user_id,
-                )
-            )
-            tool_ids.extend(UUID(str(row["tool_id"])) for row in await execute_select(tools_on_hand_query))
-
+        food_ids, tool_ids = user_food_ids.copy(), user_tool_ids.copy()
+        if self.user_id:
+            user = await User.get_or_none(id=self.user_id)
+            household = await Household.get_or_none(id=user.household_id) if user and user.household_id else None
+            if household:
+                if params.include_foods_on_hand:
+                    food_ids = list(
+                        dict.fromkeys(
+                            [*food_ids, *await household.ingredient_foods_on_hand.all().values_list("id", flat=True)]
+                        )
+                    )
+                if params.include_tools_on_hand:
+                    tool_ids = list(
+                        dict.fromkeys([*tool_ids, *await household.tools_on_hand.all().values_list("id", flat=True)])
+                    )
         return food_ids, tool_ids
 
-    def _filter_suggestions_by_tools(
-        self, q: sa.Select, params: RecipeSuggestionQuery, tools_alias, tool_ids_with_on_hand: list[UUID4]
-    ) -> sa.Select:
-        """Drops recipes missing too many tools, and orders by how many are missing."""
+    @staticmethod
+    def _membership(column: str, values: list[UUID4], *, negate: bool = False) -> Expression:
+        if not values:
+            return Expression("TRUE" if negate else "FALSE")
+        return Expression(f"{column} {'NOT ' if negate else ''}IN ({', '.join('?' for _ in values)})", list(values))
 
-        unmatched_tools_query = (
-            sa.select(recipes_to_tools.c.recipe_id, sa.func.count().label("unmatched_tools_count"))
-            .join(tools_alias, recipes_to_tools.c.tool_id == tools_alias.id)
-            .filter(sa.not_(tools_alias.id.in_(tool_ids_with_on_hand)))
-            .group_by(recipes_to_tools.c.recipe_id)
-            .subquery()
+    def _filter_suggestions_by_tools(
+        self, query: NativeQuery, params: RecipeSuggestionQuery, tool_ids: list[UUID4]
+    ) -> NativeQuery:
+        unmatched = self._membership("rt.tool_id", tool_ids, negate=True)
+        count = Expression(
+            "(SELECT COUNT(*) FROM recipes_to_tools rt WHERE rt.recipe_id = recipes.id AND " + unmatched.sql + ")",
+            unmatched.parameters,
+        )
+        return query.filter(Expression(count.sql + " <= ?", count.parameters + [params.max_missing_tools])).order_by(
+            count.asc()
         )
 
-        return (
-            q.outerjoin(unmatched_tools_query, RecipeModel.id == unmatched_tools_query.c.recipe_id)
-            .filter(
-                sa.or_(
-                    unmatched_tools_query.c.unmatched_tools_count.is_(None),
-                    unmatched_tools_query.c.unmatched_tools_count <= params.max_missing_tools,
-                )
-            )
-            .order_by(unmatched_tools_query.c.unmatched_tools_count.asc().nulls_first())
+    def _food_count(self, condition: Expression) -> Expression:
+        return Expression(
+            "(SELECT COUNT(*) FROM recipes_ingredients ri WHERE ri.recipe_id = recipes.id "
+            "AND ri.food_id IS NOT NULL AND " + condition.sql + ")",
+            condition.parameters,
         )
 
     def _filter_suggestions_by_foods(
-        self,
-        q: sa.Select,
-        params: RecipeSuggestionQuery,
-        settings_alias,
-        ingredients_alias,
-        user_food_ids: list[UUID4],
-        food_ids_with_on_hand: list[UUID4],
-    ) -> sa.Select:
-        """
-        Drops recipes missing too many foods, and orders by how many are missing.
-        """
-
-        unmatched_filter = sa.not_(ingredients_alias.food_id.in_(food_ids_with_on_hand))
+        self, query: NativeQuery, params: RecipeSuggestionQuery, user_food_ids: list[UUID4], food_ids: list[UUID4]
+    ) -> NativeQuery:
+        missing = self._membership("ri.food_id", food_ids, negate=True)
         if params.include_substitutions:
-            covered = self._covered_by_substitution(ingredients_alias, food_ids_with_on_hand)
-            unmatched_filter = sa.and_(unmatched_filter, sa.not_(covered))
-
-        unmatched_foods_query = (
-            sa.select(ingredients_alias.recipe_id, sa.func.count().label("unmatched_foods_count"))
-            .filter(unmatched_filter)
-            .filter(ingredients_alias.food_id.isnot(None))
-            .group_by(ingredients_alias.recipe_id)
-            .subquery()
-        )
-        total_user_foods_query = (
-            sa.select(ingredients_alias.recipe_id, sa.func.count().label("total_user_foods_count"))
-            .filter(ingredients_alias.food_id.in_(user_food_ids))
-            .group_by(ingredients_alias.recipe_id)
-            .subquery()
-        )
-        substituted_user_foods_query = None
+            missing = missing & ~self._covered_by_substitution(food_ids)
+        unmatched = self._food_count(missing)
+        matched = self._food_count(self._membership("ri.food_id", user_food_ids))
+        query.filter(Expression("EXISTS (SELECT 1 FROM recipe_settings WHERE recipe_settings.recipe_id = recipes.id)"))
+        query.filter(Expression(unmatched.sql + " <= ?", unmatched.parameters + [params.max_missing_foods]))
+        query.order_by(unmatched.asc(), matched.desc())
+        at_least_one = Expression(matched.sql + " > 0", matched.parameters)
         if params.include_substitutions:
-            substituted_user_foods_query = (
-                sa.select(ingredients_alias.recipe_id, sa.func.count().label("substituted_user_foods_count"))
-                .filter(ingredients_alias.food_id.isnot(None))
-                .filter(sa.not_(ingredients_alias.food_id.in_(user_food_ids)))
-                .filter(self._covered_by_substitution(ingredients_alias, user_food_ids))
-                .group_by(ingredients_alias.recipe_id)
-                .subquery()
+            substituted = self._food_count(
+                self._membership("ri.food_id", user_food_ids, negate=True)
+                & self._covered_by_substitution(user_food_ids)
             )
-
-        q = (
-            q.join(settings_alias, RecipeModel.settings)
-            .outerjoin(unmatched_foods_query, RecipeModel.id == unmatched_foods_query.c.recipe_id)
-            .outerjoin(total_user_foods_query, RecipeModel.id == total_user_foods_query.c.recipe_id)
-            .filter(
-                sa.or_(
-                    unmatched_foods_query.c.unmatched_foods_count.is_(None),
-                    unmatched_foods_query.c.unmatched_foods_count <= params.max_missing_foods,
-                ),
-            )
-            .order_by(
-                unmatched_foods_query.c.unmatched_foods_count.asc().nulls_first(),
-                # favor recipes with more matched foods, in case the user is looking for something specific
-                total_user_foods_query.c.total_user_foods_count.desc().nulls_last(),
-            )
-        )
-
-        # recipes cookable as written outrank recipes cookable with a swap
-        at_least_one_match = [total_user_foods_query.c.total_user_foods_count > 0]
-        if substituted_user_foods_query is not None:
-            q = q.outerjoin(
-                substituted_user_foods_query, RecipeModel.id == substituted_user_foods_query.c.recipe_id
-            ).order_by(substituted_user_foods_query.c.substituted_user_foods_count.desc().nulls_last())
-            at_least_one_match.append(substituted_user_foods_query.c.substituted_user_foods_count > 0)
-
-        # only include recipes that have at least one food in the user's list
-        return q.filter(sa.or_(*at_least_one_match))
+            query.order_by(substituted.desc())
+            at_least_one = at_least_one | Expression(substituted.sql + " > 0", substituted.parameters)
+        return query.filter(at_least_one)
 
     def _missing_and_substituted_foods(
         self, recipe: Recipe, params: RecipeSuggestionQuery, on_hand_food_ids: set[UUID4]
@@ -316,35 +223,17 @@ class RecipeSuggestionMixin:
             params, user_food_ids, user_tool_ids
         )
 
-        ## Build suggestion query
-        settings_alias = orm.aliased(RecipeSettings)
-        ingredients_alias = orm.aliased(RecipeIngredientModel)
-        tools_alias = orm.aliased(Tool)
-
-        q = sa.select(RecipeModel.id).filter(RecipeModel.household_id.is_not(None))
-        fltr = self._filter_builder()
-        q = q.filter_by(**fltr)
-
-        # Tools goes first so we can order by missing tools count before foods
+        q = self._base_query()
         if user_tool_ids:
-            q = self._filter_suggestions_by_tools(q, params, tools_alias, tool_ids_with_on_hand)
-
+            q = self._filter_suggestions_by_tools(q, params, tool_ids_with_on_hand)
         if user_food_ids:
-            q = self._filter_suggestions_by_foods(
-                q, params, settings_alias, ingredients_alias, user_food_ids, food_ids_with_on_hand
-            )
-
-        ## Add filters and loader options
-        if self.group_id:
-            q = q.filter(RecipeModel.group_id == self.group_id)
-        if self.household_id:
-            q = q.filter(RecipeModel.household_id == self.household_id)
+            q = self._filter_suggestions_by_foods(q, params, user_food_ids, food_ids_with_on_hand)
         try:
             identifiers = await query_identifiers(RecipeModel, cast(PaginationQuery, params), query=q)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         identifiers = identifiers[: params.limit]
-        entries = {entry.id: entry for entry in await NativeRecipe.filter(id__in=identifiers)}
+        entries = {entry.id: entry for entry in await RecipeModel.filter(id__in=identifiers)}
         data = [Recipe.model_validate(await recipe_data(entries[UUID(str(key))])) for key in identifiers]
 
         on_hand_food_ids = set(food_ids_with_on_hand)

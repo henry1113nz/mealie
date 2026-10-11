@@ -8,11 +8,9 @@ from zipfile import ZipFile
 from mealie.core.config import get_app_settings
 from mealie.core.settings.static import APP_VERSION
 from mealie.services._base_service import BaseService
-from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
 from mealie.services.backups_v2.backup_file import BackupFile
-
-
-class BackupSchemaMismatch(Exception): ...
+from mealie.services.backups_v2.tortoise_exporter import BackupSchemaMismatch as BackupSchemaMismatch
+from mealie.services.backups_v2.tortoise_exporter import TortoiseExporter
 
 
 class BackupV2(BaseService):
@@ -29,7 +27,7 @@ class BackupV2(BaseService):
         # type - one of these has to be a string
         self.db_url: str = db_url or self.settings.DB_URL  # type: ignore
 
-        self.db_exporter = AlchemyExporter(self.db_url)
+        self.db_exporter = TortoiseExporter(self.db_url)
 
     def _sqlite(self) -> None:
         db_file = self.settings.DB_URL.removeprefix("sqlite:///")  # type: ignore
@@ -41,7 +39,7 @@ class BackupV2(BaseService):
     def _postgres(self) -> None:
         pass
 
-    def backup(self) -> Path:
+    async def backup(self) -> Path:
         # sourcery skip: merge-nested-ifs, reintroduce-else, remove-redundant-continue
         timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y.%m.%d.%H.%M.%S")
         short_hash = self.settings.GIT_COMMIT_HASH[:7]
@@ -55,7 +53,7 @@ class BackupV2(BaseService):
 
         backup_file = self.directories.BACKUP_DIR / backup_name
 
-        database_json = self.db_exporter.dump()
+        database_json = await self.db_exporter.dump()
 
         with ZipFile(backup_file, "w") as zip_file:
             zip_file.writestr("database.json", json.dumps(database_json))
@@ -112,12 +110,6 @@ class BackupV2(BaseService):
                 raise ValueError("Invalid backup file")
 
             database_json = contents.read_tables()
-
-            # ================================
-            # Purge Database
-
-            self.logger.info("dropping all database tables")
-            self.db_exporter.drop_all()
 
             # ================================
             # Restore Database

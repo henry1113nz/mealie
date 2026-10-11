@@ -1,7 +1,7 @@
 import abc
 from datetime import timedelta
 
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.security.tokens import create_access_token
 from mealie.repos.all_repositories import get_repositories

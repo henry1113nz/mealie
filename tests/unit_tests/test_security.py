@@ -15,7 +15,6 @@ from mealie.core.security.providers.credentials_provider import (
     CredentialsRequest,
 )
 from mealie.core.security.providers.ldap_provider import LDAPProvider
-from mealie.db.db_setup import session_context
 from mealie.db.models.users.users import AuthMethod
 from mealie.repos.repository_factory import AllRepositories
 from mealie.routes.utility_routes import download_file
@@ -23,6 +22,7 @@ from mealie.schema.user.auth import CredentialsRequestForm
 from mealie.schema.user.user import PrivateUser
 from tests.utils import random_string
 from tests.utils.async_database import run_async
+from tests.utils.legacy_database import session_context
 
 
 class LdapConnMock:

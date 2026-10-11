@@ -9,8 +9,7 @@ dependencies = [
     "Jinja2==3.1.6",
     "Pillow==12.3.0",
     "PyYAML==6.0.3",
-    "SQLAlchemy==2.0.54",
-    "alembic==1.20.0",
+    "aerich==0.10.1",
     "apprise==1.13.1",
     "bcrypt==5.0.0",
     "extruct==0.18.0",
@@ -52,16 +51,14 @@ dependencies = [
 [project.scripts]
 mealie = "mealie.main:main"
 
-[project.optional-dependencies]
-pgsql = [
-    "psycopg2-binary==2.9.13"
-]
-
 [dependency-groups]
 docs = [
     "zensical==0.0.64",
 ]
 dev = [
+    # Frozen historical backup/migration fixtures only; not application dependencies.
+    "SQLAlchemy==2.0.54",
+    "alembic==1.20.0",
     "coverage==7.16.1",
     "coveragepy-lcov==0.1.2",
     "mypy==2.3.1",
@@ -81,6 +78,10 @@ dev = [
     "httpx2==2.13.1",
     "zensical==0.0.64",
     "pytest-xdist==3.8.0",
+]
+
+dev-postgres = [
+    "psycopg2-binary==2.9.13",
 ]
 
 [build-system]
@@ -154,9 +155,6 @@ exclude = [
   "venv",
 ]
 
-[tool.ruff.lint.isort]
-known-third-party = ["alembic"]
-
 [tool.ruff.lint]
 # Enable Pyflakes `E` and `F` codes by default.
 ignore = ["F403", "TID252", "B008"]
@@ -177,7 +175,7 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "E501"]
-"mealie/alembic/versions/*" = ["E501", "I001"]
+"tests/fixtures/legacy_alembic/versions/*" = ["E501", "I001"]
 "dev/scripts/all_recipes_stress_test.py" = ["E501"]
 "ldap_provider.py" = ["UP032"]
 "tests/conftest.py" = ["E402"]
@@ -193,3 +191,8 @@ add-bounds = "exact"
 # supply-chain attacks (compromised releases are usually caught and yanked
 # within days). Evaluated at resolve time as a rolling window.
 exclude-newer = "5 days"
+
+[tool.aerich]
+tortoise_orm = "mealie.db.aerich_config.TORTOISE_ORM"
+location = "./mealie/migrations"
+src_folder = "./."

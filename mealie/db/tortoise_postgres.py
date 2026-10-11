@@ -6,8 +6,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 import asyncpg
 from tortoise.backends.asyncpg.client import AsyncpgDBClient
 
+from mealie.db.schema_generator import MealiePostgresSchemaGenerator
+
 
 class MealieAsyncpgClient(AsyncpgDBClient):
+    schema_generator = MealiePostgresSchemaGenerator
+
     def __init__(self, *, dsn: str | None = None, **kwargs: Any) -> None:
         # The upstream client logs self.extra inside its connection template.
         # Keep the URL, which may contain a password, out of that template.

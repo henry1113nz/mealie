@@ -6,7 +6,7 @@ from itertools import zip_longest
 from typing import TYPE_CHECKING
 
 from pydantic import UUID4
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 if TYPE_CHECKING:
     from ingredient_parser.dataclasses import IngredientAmount

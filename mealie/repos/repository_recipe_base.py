@@ -14,7 +14,6 @@ from tortoise import Model, fields
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
-from mealie.db.models import _legacy_recipe
 from mealie.db.models.household.household import Household
 from mealie.db.models.recipe.api_extras import IngredientFoodExtras
 from mealie.db.models.recipe.category import Category
@@ -138,7 +137,7 @@ class AsyncRecipeRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposi
         return target.model_validate(data)
 
     async def _query_identifiers(self, pagination: PaginationQuery) -> list[Any]:
-        return await query_identifiers(getattr(_legacy_recipe, self.model.__name__), pagination, group_id=self.group_id)
+        return await query_identifiers(self.model, pagination, group_id=self.group_id)
 
     async def page_all(
         self, pagination: PaginationQuery, override: type[MealieModel] | None = None, search: str | None = None
@@ -146,7 +145,7 @@ class AsyncRecipeRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposi
         paging = pagination.model_copy()
         try:
             identifiers = await query_identifiers(
-                getattr(_legacy_recipe, self.model.__name__),
+                self.model,
                 paging,
                 group_id=self.group_id,
                 search=search,

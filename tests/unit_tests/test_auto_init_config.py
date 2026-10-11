@@ -1,6 +1,6 @@
 from pydantic import ConfigDict
 
-from mealie.db.models._model_utils.auto_init import _get_config
+from tests.fixtures.legacy_models._model_utils.auto_init import _get_config
 
 
 class _NoConfig:

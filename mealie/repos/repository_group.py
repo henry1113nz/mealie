@@ -12,7 +12,6 @@ from tortoise.exceptions import IntegrityError
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
-from mealie.db.models import _legacy_groups
 from mealie.db.models.group import Group, ReportEntryModel, ReportModel
 from mealie.db.models.group.ai_providers import AIProvider, AIProviderHeaders, AIProviderParams, AIProviderSettings
 from mealie.db.models.group.exports import GroupDataExportsModel
@@ -28,7 +27,7 @@ from mealie.schema.response.pagination import PaginationQuery
 from mealie.schema.user.user import GroupInDB
 
 from . import _users_coexistence as bridge
-from .repository_users import AsyncUserRepository, LegacySession
+from .repository_users import AsyncUserRepository, DatabaseSession
 
 
 class AsyncGroupRepository[Schema: MealieModel, DBModel: Model](AsyncUserRepository[Schema, DBModel]):
@@ -46,8 +45,7 @@ class AsyncGroupRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposit
         return query
 
     async def _query_identifiers(self, pagination: PaginationQuery) -> list[Any]:
-        legacy_model = getattr(_legacy_groups, self.model.__name__)
-        return await bridge.query_model_ids(legacy_model, self.group_id, pagination)
+        return await bridge.query_model_ids(self.model, self.group_id, pagination)
 
     async def _serialize(self, entry: Model, schema: type[MealieModel] | None = None) -> Any:
         data = {key: getattr(entry, key) for key in entry._meta.db_fields}
@@ -115,7 +113,7 @@ class AsyncGroupRepository[Schema: MealieModel, DBModel: Model](AsyncUserReposit
 
 class RepositoryGroup(AsyncGroupRepository[GroupInDB, Group]):
     def __init__(
-        self, session: LegacySession, primary_key: str, sql_model: type[Group], schema: type[GroupInDB]
+        self, session: DatabaseSession, primary_key: str, sql_model: type[Group], schema: type[GroupInDB]
     ) -> None:
         super().__init__(session, primary_key, sql_model, schema, group_id=None)
 

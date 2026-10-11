@@ -5,12 +5,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_household import GroupMealPlan
-from mealie.db.models._legacy_recipe import RecipeModel
-from mealie.db.models._legacy_users import User
 from mealie.schema._mealie import MealieModel
 from mealie.schema.recipe.recipe import RecipeSummary
 from mealie.schema.response.pagination import PaginationBase
@@ -63,15 +58,6 @@ class ReadPlanEntry(UpdatePlanEntry):
     household_id: UUID
     recipe: RecipeSummary | None = None
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(GroupMealPlan.recipe).joinedload(RecipeModel.recipe_category),
-            selectinload(GroupMealPlan.recipe).joinedload(RecipeModel.tags),
-            selectinload(GroupMealPlan.recipe).joinedload(RecipeModel.tools),
-            selectinload(GroupMealPlan.user).load_only(User.household_id),
-        ]
 
 
 class PlanEntryPagination(PaginationBase):

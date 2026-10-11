@@ -1,8 +1,5 @@
 from pydantic import UUID4, ConfigDict, field_validator
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_recipe import RecipeModel, Tool
 from mealie.schema._mealie import MealieModel
 
 
@@ -32,25 +29,10 @@ class RecipeToolOut(RecipeToolCreate):
         except AttributeError:
             return v
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(Tool.households_with_tool),
-        ]
-
 
 class RecipeToolResponse(RecipeToolOut):
     recipes: list[RecipeSummary] = []
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(Tool.households_with_tool),
-            selectinload(Tool.recipes).joinedload(RecipeModel.recipe_category),
-            selectinload(Tool.recipes).joinedload(RecipeModel.tags),
-            selectinload(Tool.recipes).joinedload(RecipeModel.tools),
-        ]
 
 
 from .recipe import RecipeSummary  # noqa: E402

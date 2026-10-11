@@ -218,7 +218,6 @@ class BaseMigrator(BaseService):
             except Exception as inst:
                 exception = str(inst)
                 self.logger.exception(inst)
-                self.session.rollback()
 
             if status:
                 message = f"Imported {recipe.name} successfully"

@@ -1,48 +1,40 @@
 from __future__ import annotations
 
+import random
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from math import ceil
 from typing import Any, Self
 from uuid import UUID
 
-import sqlalchemy as sa
 from fastapi import HTTPException
 from pydantic import UUID4, BaseModel
 from slugify import slugify
-from tortoise import Model, connections
+from tortoise import Model
 from tortoise.exceptions import IntegrityError
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
 
 from mealie.core.root_logger import get_logger
-from mealie.db.models._legacy_household import HouseholdToRecipe
-from mealie.db.models._legacy_recipe.category import Category as LegacyCategory
-from mealie.db.models._legacy_recipe.ingredient import RecipeIngredientModel as LegacyIngredient
-from mealie.db.models._legacy_recipe.ingredient import RecipeIngredientSubstitutionModel as LegacySubstitution
-from mealie.db.models._legacy_recipe.recipe import RecipeModel as LegacyRecipe
-from mealie.db.models._legacy_recipe.tag import Tag as LegacyTag
-from mealie.db.models._legacy_recipe.tool import Tool as LegacyTool
-from mealie.db.models._legacy_users import User, UserToRecipe
 from mealie.db.models.household.household import Household
 from mealie.db.models.recipe.category import Category
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.tag import Tag
 from mealie.db.models.recipe.tool import Tool
 from mealie.pkgs import cache
-from mealie.schema._mealie import MealieModel, SearchType
+from mealie.schema._mealie import MealieModel
 from mealie.schema.cookbook.cookbook import ReadCookBook
 from mealie.schema.recipe import Recipe
 from mealie.schema.recipe.recipe import RecipePagination, RecipeSummary, create_recipe_slug
 from mealie.schema.response.pagination import PaginationQuery
-from mealie.schema.response.query_search import SearchFilter
 from mealie.services.query_filter.builder import QueryFilterBuilder
+from mealie.services.query_filter.sql import Expression, NativeQuery, combine, compare
 
 from ._recipe_persistence import recipe_data, replace_recipe_children
-from ._recipe_query import SearchSession, execute_select, query_identifiers
+from ._recipe_query import query_identifiers
 from ._recipe_suggestions import RecipeSuggestionMixin
 from ._utils import NOT_SET, NotSet
-from .repository_users import AsyncUserRepository, LegacySession
+from .repository_users import AsyncUserRepository, DatabaseSession
 
 
 class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, RecipeModel]):
@@ -50,7 +42,7 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
 
     def __init__(
         self,
-        session: LegacySession,
+        session: DatabaseSession,
         primary_key: str,
         sql_model: type[RecipeModel],
         schema: type[Recipe],
@@ -101,46 +93,21 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
         self.user_id = user_id
         return self
 
-    def _get_last_made_col_alias(self) -> sa.ColumnElement | None:
-        """
-        Computed last_made which uses `HouseholdToRecipe.last_made` for the user's household,
-        otherwise an arbitrarily low date
-        """
-
-        user_household_subquery = sa.select(User.household_id).where(User.id == self.user_id).scalar_subquery()
-        last_made_subquery = (
-            sa.select(HouseholdToRecipe.last_made)
-            .where(
-                HouseholdToRecipe.recipe_id == LegacyRecipe.id,
-                HouseholdToRecipe.household_id == user_household_subquery,
-            )
-            .correlate(LegacyRecipe)
-            .scalar_subquery()
+    def _get_last_made_col_alias(self) -> Expression:
+        return Expression(
+            "COALESCE((SELECT households_to_recipes.last_made FROM households_to_recipes "
+            "WHERE households_to_recipes.recipe_id = recipes.id AND households_to_recipes.household_id "
+            "= (SELECT users.household_id FROM users WHERE users.id = ?)), ?)",
+            [self.user_id, datetime(year=1900, month=1, day=1, tzinfo=UTC)],
         )
-        return sa.func.coalesce(last_made_subquery, datetime(year=1900, month=1, day=1, tzinfo=UTC))
 
-    def _get_rating_col_alias(self) -> sa.ColumnElement | None:
-        """Computed rating which uses the user's rating if it exists, otherwise falling back to the recipe's rating"""
-
-        effective_rating = sa.case(
-            (
-                sa.exists().where(
-                    UserToRecipe.recipe_id == LegacyRecipe.id,
-                    UserToRecipe.user_id == self.user_id,
-                    UserToRecipe.rating != None,  # noqa E711
-                    UserToRecipe.rating > 0,
-                ),
-                sa.select(sa.func.max(UserToRecipe.rating))
-                .where(UserToRecipe.recipe_id == LegacyRecipe.id, UserToRecipe.user_id == self.user_id)
-                .correlate(LegacyRecipe)
-                .scalar_subquery(),
-            ),
-            else_=sa.case(
-                (LegacyRecipe.rating == 0, None),
-                else_=LegacyRecipe.rating,
-            ),
+    def _get_rating_col_alias(self) -> Expression:
+        return Expression(
+            "COALESCE((SELECT MAX(users_to_recipes.rating) FROM users_to_recipes "
+            "WHERE users_to_recipes.recipe_id = recipes.id AND users_to_recipes.user_id = ? "
+            "AND users_to_recipes.rating > 0), NULLIF(recipes.rating, 0))",
+            [self.user_id],
         )
-        return sa.cast(effective_rating, sa.Float)
 
     async def create(self, document: Recipe | BaseModel | dict[str, Any]) -> Recipe:
         data = document.copy() if isinstance(document, dict) else document.model_dump()
@@ -281,41 +248,6 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
             ids.extend(await model.filter(slug__in=slugs).values_list("id", flat=True))
         return ids
 
-    async def _search_query(self, query: sa.Select, search: str) -> sa.Select:
-        parser = SearchFilter(SearchSession(), search, self.schema._normalize_search)  # type: ignore[arg-type]
-        if parser.search_type is SearchType.fuzzy:
-            ingredients = sa.select(LegacyIngredient.id).where(
-                sa.or_(
-                    LegacyIngredient.note_normalized.op("%>")(parser.search),
-                    LegacyIngredient.original_text_normalized.op("%>")(parser.search),
-                )
-            )
-            identifiers = [row["id"] for row in await execute_select(ingredients)]
-            await connections.get("default").execute_query(
-                f"SET pg_trgm.word_similarity_threshold = {self.schema._fuzzy_similarity_threshold}"
-            )
-            return query.where(
-                sa.or_(
-                    LegacyRecipe.name_normalized.op("%>")(parser.search),
-                    LegacyRecipe.description_normalized.op("%>")(parser.search),
-                    LegacyRecipe.recipe_ingredient.any(LegacyIngredient.id.in_(identifiers)),
-                )
-            ).order_by(sa.func.least(LegacyRecipe.name_normalized.op("<->>")(parser.search)))
-        ingredients = sa.select(LegacyIngredient.id).where(
-            sa.or_(
-                *[LegacyIngredient.note_normalized.like(f"%{part}%") for part in parser.search_list],
-                *[LegacyIngredient.original_text_normalized.like(f"%{part}%") for part in parser.search_list],
-            )
-        )
-        identifiers = [row["id"] for row in await execute_select(ingredients)]
-        return query.where(
-            sa.or_(
-                *[LegacyRecipe.name_normalized.like(f"%{part}%") for part in parser.search_list],
-                *[LegacyRecipe.description_normalized.like(f"%{part}%") for part in parser.search_list],
-                LegacyRecipe.recipe_ingredient.any(LegacyIngredient.id.in_(identifiers)),
-            )
-        ).order_by(sa.desc(LegacyRecipe.name_normalized.like(f"%{parser.search}%")))
-
     async def page_all(  # type: ignore[override]
         self,
         pagination: PaginationQuery,
@@ -333,11 +265,10 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
         search: str | None = None,
     ) -> RecipePagination:
         paging = pagination.model_copy()
-        query = (
-            sa.select(LegacyRecipe.id)
-            .filter(LegacyRecipe.household_id.is_not(None))
-            .filter_by(**self._filter_builder())
-        )
+        # Preserve creation time as the tie breaker after recipe search relevance.
+        if search and not paging.order_by:
+            paging.order_by = "created_at"
+        query = self._base_query()
         if cookbook:
             paging.query_filter = QueryFilterBuilder.combine_filters(paging.query_filter, cookbook.query_filter_string)
         else:
@@ -354,10 +285,10 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
                     require_all_foods=require_all_foods,
                 )
             )
-        if search:
-            query = await self._search_query(query, search)
         try:
-            identifiers = await query_identifiers(LegacyRecipe, paging, query=query, column_aliases=self.column_aliases)
+            identifiers = await query_identifiers(
+                RecipeModel, paging, query=query, column_aliases=self.column_aliases, search=search, schema=self.schema
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         count = len(identifiers)
@@ -378,25 +309,22 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
             items=[await self._serialize(entries[UUID(str(key))], RecipeSummary) for key in identifiers],
         )
 
+    def _base_query(self) -> NativeQuery:
+        query = NativeQuery(RecipeModel).filter(compare(RecipeModel, "household_id", "IS NOT NULL"))
+        for key, value in self._filter_builder().items():
+            query.filter(compare(RecipeModel, key, "=", value))
+        return query
+
     @staticmethod
-    def _ingredient_uses_food(food: UUID4) -> sa.ColumnElement:
-        """
-        An ingredient counts as using a food when it calls for it, or offers it as a substitute.
-
-        The two are the same thing as far as the recipe is concerned: both are lost if the food
-        goes away, which is what makes this the right question for the food delete warning.
-        """
-
-        return sa.or_(
-            LegacyIngredient.food_id == food,
-            LegacyIngredient.substitutions.any(LegacySubstitution.substitute_food_id == food),
+    def _ingredient_uses_food(food: UUID4) -> Expression:
+        return compare(RecipeModel, "recipe_ingredient.food_id", "=", food) | compare(
+            RecipeModel, "recipe_ingredient.substitutions.substitute_food_id", "=", food
         )
 
     @staticmethod
-    def _ingredient_uses_any_food(foods: list[UUID4]) -> sa.ColumnElement:
-        return sa.or_(
-            LegacyIngredient.food_id.in_(foods),
-            LegacyIngredient.substitutions.any(LegacySubstitution.substitute_food_id.in_(foods)),
+    def _ingredient_uses_any_food(foods: list[UUID4]) -> Expression:
+        return compare(RecipeModel, "recipe_ingredient.food_id", "IN", foods) | compare(
+            RecipeModel, "recipe_ingredient.substitutions.substitute_food_id", "IN", foods
         )
 
     def _build_recipe_filter(
@@ -410,46 +338,34 @@ class RepositoryRecipes(RecipeSuggestionMixin, AsyncUserRepository[Recipe, Recip
         require_all_tags: bool = True,
         require_all_tools: bool = True,
         require_all_foods: bool = True,
-    ) -> list:
-        fltr: list[sa.ColumnElement] = []
-        if self.group_id:
-            fltr.append(LegacyRecipe.group_id == self.group_id)
-        if self.household_id:
-            fltr.append(LegacyRecipe.household_id == self.household_id)
-
-        if categories:
-            if require_all_categories:
-                fltr.extend(LegacyRecipe.recipe_category.any(LegacyCategory.id == cat_id) for cat_id in categories)
-            else:
-                fltr.append(LegacyRecipe.recipe_category.any(LegacyCategory.id.in_(categories)))
-
-        if tags:
-            if require_all_tags:
-                fltr.extend(LegacyRecipe.tags.any(LegacyTag.id == tag_id) for tag_id in tags)
-            else:
-                fltr.append(LegacyRecipe.tags.any(LegacyTag.id.in_(tags)))
-
-        if tools:
-            if require_all_tools:
-                fltr.extend(LegacyRecipe.tools.any(LegacyTool.id == tool_id) for tool_id in tools)
-            else:
-                fltr.append(LegacyRecipe.tools.any(LegacyTool.id.in_(tools)))
+    ) -> list[Expression]:
+        result = []
+        for name, ids, require_all in (
+            ("recipe_category", categories, require_all_categories),
+            ("tags", tags, require_all_tags),
+            ("tools", tools, require_all_tools),
+        ):
+            if ids:
+                result.append(
+                    combine(
+                        [compare(RecipeModel, name + ".id", "=", UUID(str(identifier))) for identifier in ids],
+                        "AND" if require_all else "OR",
+                    )
+                )
         if foods:
-            if require_all_foods:
-                fltr.extend(LegacyRecipe.recipe_ingredient.any(self._ingredient_uses_food(food)) for food in foods)
-            else:
-                fltr.append(LegacyRecipe.recipe_ingredient.any(self._ingredient_uses_any_food(foods)))
+            result.append(
+                combine(
+                    [self._ingredient_uses_food(UUID(str(food))) for food in foods],
+                    "AND" if require_all_foods else "OR",
+                )
+            )
         if households:
-            fltr.append(LegacyRecipe.household_id.in_(households))
-        return fltr
+            result.append(compare(RecipeModel, "household_id", "IN", households))
+        return result
 
     async def get_random(self, limit: int = 1) -> list[Recipe]:
-        query = (
-            sa.select(LegacyRecipe.id)
-            .filter(LegacyRecipe.household_id.is_not(None))
-            .filter_by(**self._filter_builder())
-        )
-        identifiers = [row["id"] for row in await execute_select(query.order_by(sa.func.random()).limit(limit))]
+        identifiers = [row["id"] for row in await self._base_query().execute()]
+        identifiers = random.sample(identifiers, min(limit, len(identifiers)))
         entries = {entry.id: entry for entry in await (await self._query()).filter(id__in=identifiers)}
         return [await self._serialize(entries[UUID(str(key))]) for key in identifiers]
 

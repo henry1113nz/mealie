@@ -57,12 +57,12 @@ class BackupContents:
     def schema_version(self) -> str:
         tables = self.read_tables()
 
-        alembic_version = tables.get("alembic_version", [])
+        versions = tables.get("aerich", [])
 
-        if not alembic_version:
+        if not versions:
             return ""
 
-        return alembic_version[0].get("version_num", "")
+        return versions[-1].get("version", "")
 
     def read_tables(self) -> dict:
         if self._tables is None:

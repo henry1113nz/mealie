@@ -1,8 +1,5 @@
 from pydantic import UUID4, ConfigDict
-from sqlalchemy.orm import joinedload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_household import GroupEventNotifierModel
 from mealie.schema._mealie import MealieModel
 from mealie.schema.response.pagination import PaginationBase
 
@@ -92,10 +89,6 @@ class GroupEventNotifierOut(MealieModel):
     household_id: UUID4
     options: GroupEventNotifierOptionsOut
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(GroupEventNotifierModel.options)]
 
 
 class GroupEventPagination(PaginationBase):

@@ -2,13 +2,13 @@ import datetime
 from enum import StrEnum
 from typing import Annotated
 
-import sqlalchemy as sa
 from pydantic import UUID4, ConfigDict, Field, ValidationInfo, field_validator
 
 from mealie.core.root_logger import get_logger
-from mealie.db.models._legacy_recipe import RecipeModel
+from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.schema._mealie import MealieModel
 from mealie.schema.response.pagination import PaginationBase
+from mealie.services.query_filter import sql as sa
 from mealie.services.query_filter.builder import QueryFilterBuilder, QueryFilterJSON
 
 logger = get_logger()

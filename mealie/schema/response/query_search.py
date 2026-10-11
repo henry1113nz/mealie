@@ -1,10 +1,12 @@
 import re
+from typing import Any
 
-from sqlalchemy import Select
-from sqlalchemy.orm import Session
 from text_unidecode import unidecode
+from tortoise import Model
 
-from ...db.models._model_base import NORMALIZE_PUNCTUATION, SqlAlchemyBase
+from mealie.db.models._tortoise_base import _NORMALIZE_PUNCTUATION as NORMALIZE_PUNCTUATION
+from mealie.services.query_filter.sql import NativeQuery
+
 from .._mealie import MealieModel, SearchType
 
 
@@ -53,8 +55,8 @@ class SearchFilter:
         # remove padding whitespace inside quotes
         return [x.strip() for x in search_list]
 
-    def __init__(self, session: Session, search: str, normalize_characters: bool = False) -> None:
-        if session.get_bind().name != "postgresql" or self.quoted_regex.search(search.strip()):
+    def __init__(self, session: Any, search: str, normalize_characters: bool = False) -> None:
+        if session.capabilities.dialect != "postgres" or self.quoted_regex.search(search.strip()):
             self.search_type = SearchType.tokenized
         else:
             self.search_type = SearchType.fuzzy
@@ -63,5 +65,7 @@ class SearchFilter:
         self.search = self._normalize_search(search, normalize_characters)
         self.search_list = self._build_search_list(self.search)
 
-    def filter_query_by_search(self, query: Select, schema: type[MealieModel], model: type[SqlAlchemyBase]) -> Select:
-        return schema.filter_search_query(model, query, self.session, self.search_type, self.search, self.search_list)
+    def filter_query_by_search(self, query: NativeQuery, schema: type[MealieModel], model: type[Model]) -> NativeQuery:
+        from mealie.repos._recipe_query import apply_search
+
+        return apply_search(query, model, schema, self)

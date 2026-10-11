@@ -8,10 +8,10 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import Depends, FastAPI, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm.session import Session
 from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 from text_unidecode import os
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.config import get_app_settings
 from mealie.core.dependencies.dependencies import try_get_current_user

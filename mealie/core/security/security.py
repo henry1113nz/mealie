@@ -2,7 +2,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings

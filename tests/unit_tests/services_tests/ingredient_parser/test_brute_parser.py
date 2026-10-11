@@ -1,7 +1,6 @@
 import pytest
 from pydantic import UUID4
 
-from mealie.db.db_setup import session_context
 from mealie.lang.providers import get_locale_provider
 from mealie.schema.recipe.recipe_ingredient import (
     CreateIngredientFood,
@@ -13,6 +12,7 @@ from mealie.schema.recipe.recipe_ingredient import (
 )
 from mealie.services.parser_services import RegisteredParser, get_parser
 from tests.utils.async_database import run_async
+from tests.utils.legacy_database import session_context
 
 
 def build_parsed_ing(food: str | None, unit: str | None) -> ParsedIngredient:

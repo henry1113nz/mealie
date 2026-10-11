@@ -3,7 +3,7 @@ from logging import Logger
 
 from fastapi import Depends, HTTPException
 from pydantic import UUID4, ConfigDict
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.config import get_app_dirs, get_app_settings
 from mealie.core.dependencies.dependencies import (

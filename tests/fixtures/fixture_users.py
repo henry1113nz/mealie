@@ -6,12 +6,12 @@ from pytest import fixture
 from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
-from mealie.db.db_setup import session_context
 from mealie.db.models.users.users import AuthMethod
 from tests import utils
 from tests.utils import api_routes
 from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_string
+from tests.utils.legacy_database import session_context
 
 
 def build_unique_user(session: Session, group: str, api_client: TestClient) -> utils.TestUser:

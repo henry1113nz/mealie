@@ -1,20 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
 from pydantic import UUID4, ConfigDict, Field
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.schema._mealie import MealieModel
 
-from ...db.models._legacy_recipe import (
-    IngredientFoodModel,
-    IngredientFoodSubstitutionModel,
-    RecipeIngredientModel,
-    RecipeIngredientSubstitutionModel,
-    RecipeInstruction,
-    RecipeModel,
-    RecipeShareTokenModel,
-)
 from .recipe import Recipe
 
 
@@ -44,35 +33,3 @@ class RecipeShareTokenSummary(RecipeShareTokenSave):
 class RecipeShareToken(RecipeShareTokenSummary):
     recipe: Recipe
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.recipe_category),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.tags),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.tools),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.nutrition),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.settings),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.assets),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.notes),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.extras),
-            selectinload(RecipeShareTokenModel.recipe).joinedload(RecipeModel.comments),
-            selectinload(RecipeShareTokenModel.recipe)
-            .joinedload(RecipeModel.recipe_instructions)
-            .joinedload(RecipeInstruction.ingredient_references),
-            selectinload(RecipeShareTokenModel.recipe)
-            .joinedload(RecipeModel.recipe_ingredient)
-            .joinedload(RecipeIngredientModel.unit),
-            selectinload(RecipeShareTokenModel.recipe)
-            .joinedload(RecipeModel.recipe_ingredient)
-            .joinedload(RecipeIngredientModel.food),
-            selectinload(RecipeShareTokenModel.recipe)
-            .joinedload(RecipeModel.recipe_ingredient)
-            .joinedload(RecipeIngredientModel.food)
-            .selectinload(IngredientFoodModel.substitutions)
-            .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            selectinload(RecipeShareTokenModel.recipe)
-            .joinedload(RecipeModel.recipe_ingredient)
-            .selectinload(RecipeIngredientModel.substitutions)
-            .joinedload(RecipeIngredientSubstitutionModel.substitute_food),
-        ]

@@ -2,7 +2,6 @@ from uuid import UUID
 
 import sqlalchemy as sa
 
-from mealie.db.models._legacy_recipe.ingredient import IngredientFoodSubstitutionModel
 from mealie.schema.household.group_shopping_list import ShoppingListItemCreate, ShoppingListSave
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import (
@@ -12,6 +11,7 @@ from mealie.schema.recipe.recipe_ingredient import (
     RecipeIngredientSubstitution,
     SaveIngredientFood,
 )
+from tests.fixtures.legacy_models.recipe.ingredient import IngredientFoodSubstitutionModel
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 

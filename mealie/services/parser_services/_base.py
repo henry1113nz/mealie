@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 from pydantic import UUID4, BaseModel
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUnitModel
 from mealie.lang.providers import Translator

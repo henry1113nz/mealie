@@ -8,18 +8,22 @@ import pytest
 from sqlalchemy import Engine, insert
 from tortoise.transactions import in_transaction
 
-from mealie.db.models._legacy_household.cookbook import CookBook
-from mealie.db.models._legacy_household.household_to_recipe import HouseholdToRecipe
-from mealie.db.models._legacy_household.mealplan import GroupMealPlan
-from mealie.db.models._legacy_household.shopping_list import (
+from mealie.db.models.group import Group
+from mealie.db.models.users.users import User
+from mealie.repos import _users_coexistence as bridge
+from mealie.repos.all_repositories import AllRepositories
+from tests.fixtures.legacy_models.household.cookbook import CookBook
+from tests.fixtures.legacy_models.household.household_to_recipe import HouseholdToRecipe
+from tests.fixtures.legacy_models.household.mealplan import GroupMealPlan
+from tests.fixtures.legacy_models.household.shopping_list import (
     ShoppingList,
     ShoppingListItem,
     ShoppingListItemRecipeReference,
     ShoppingListMultiPurposeLabel,
     ShoppingListRecipeReference,
 )
-from mealie.db.models._legacy_recipe.category import Category, cookbooks_to_categories, recipes_to_categories
-from mealie.db.models._legacy_recipe.ingredient import (
+from tests.fixtures.legacy_models.recipe.category import Category, cookbooks_to_categories, recipes_to_categories
+from tests.fixtures.legacy_models.recipe.ingredient import (
     IngredientFoodModel,
     IngredientFoodSubstitutionModel,
     IngredientUnitModel,
@@ -27,14 +31,10 @@ from mealie.db.models._legacy_recipe.ingredient import (
     RecipeIngredientSubstitutionModel,
     households_to_ingredient_foods,
 )
-from mealie.db.models._legacy_recipe.labels import MultiPurposeLabel
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
-from mealie.db.models._legacy_recipe.tag import Tag, cookbooks_to_tags, recipes_to_tags
-from mealie.db.models._legacy_recipe.tool import Tool, cookbooks_to_tools, households_to_tools, recipes_to_tools
-from mealie.db.models.group import Group
-from mealie.db.models.users.users import User
-from mealie.repos import _users_coexistence as bridge
-from mealie.repos.all_repositories import AllRepositories
+from tests.fixtures.legacy_models.recipe.labels import MultiPurposeLabel
+from tests.fixtures.legacy_models.recipe.recipe import RecipeModel
+from tests.fixtures.legacy_models.recipe.tag import Tag, cookbooks_to_tags, recipes_to_tags
+from tests.fixtures.legacy_models.recipe.tool import Tool, cookbooks_to_tools, households_to_tools, recipes_to_tools
 from tests.unit_tests.test_tortoise_server import migrated_server_database as migrated_server_database
 from tests.unit_tests.test_tortoise_server import server_engine as server_engine
 from tests.unit_tests.test_tortoise_server import server_settings as server_settings

@@ -48,8 +48,7 @@ class UnboundedCharField(fields.TextField):
 class UTCDateTimeField(fields.DatetimeField):
     """Store naive UTC timestamps and expose aware UTC datetimes to the API.
 
-    Keeping the existing PostgreSQL column type also allows migrated domains to
-    coexist with domains that still use SQLAlchemy during the rewrite.
+    Keep the established PostgreSQL column type and database backup format.
     """
 
     class _db_postgres:
@@ -76,7 +75,7 @@ class UTCDateTimeField(fields.DatetimeField):
 
 
 class CalendarDateField(fields.DateField):
-    """Preserve SQLAlchemy DATE coercion when callers supply a datetime."""
+    """Preserve date coercion when callers supply a datetime."""
 
     skip_to_python_if_native = False
 

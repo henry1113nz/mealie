@@ -1,19 +1,14 @@
-import asyncio
-import os
-from collections.abc import Callable
-from pathlib import Path
-from time import sleep
+"""Aerich migration and default-data initialization on the owning async loop."""
 
-from alembic import command, config, script
-from alembic.config import Config
-from alembic.runtime import migration
-from sqlalchemy import engine, orm, text
+import asyncio
+from pathlib import Path
+
+from tortoise import BaseDBAsyncClient
+from tortoise.context import get_current_context
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings
-from mealie.db.db_setup import session_context
-from mealie.db.fixes.fix_group_with_no_name import fix_group_with_no_name
-from mealie.db.fixes.fix_migration_data import fix_migration_data
+from mealie.db.tortoise_config import get_tortoise_config
 from mealie.db.tortoise_setup import database_context
 from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
@@ -23,17 +18,14 @@ from mealie.schema.user.user import GroupBase, GroupInDB
 from mealie.services.group_services.group_service import GroupService
 from mealie.services.household_services.household_service import HouseholdService
 
-ALEMBIC_DIR = Path(__file__).parent.parent / "alembic"
-
+MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
 logger = root_logger.get_logger()
 
 
-async def init_db(session: orm.Session) -> None:
+async def init_db(session: BaseDBAsyncClient) -> None:
     settings = get_app_settings()
-
     instance_repos = get_repositories(session)
     default_group = await default_group_init(instance_repos, settings.DEFAULT_GROUP)
-
     group_repos = get_repositories(session, group_id=default_group.id, household_id=None)
     default_household = await group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
     if default_household is None:
@@ -52,100 +44,55 @@ async def default_household_init(repos: AllRepositories, name: str) -> Household
     return await HouseholdService.create_household(repos, HouseholdCreate(name=name))
 
 
-# Adapted from https://alembic.sqlalchemy.org/en/latest/cookbook.html#test-current-database-revision-is-at-head-s
-def db_is_at_head(alembic_cfg: config.Config) -> bool:
-    settings = get_app_settings()
-    url = settings.DB_URL
+async def prepare_database() -> bool:
+    """Apply checked-in Aerich migrations using the active database context.
 
-    if not url:
-        raise ValueError("No database url found")
+    Aerich's init reuses the initialized Tortoise context. Do not enter Command
+    as a context manager here: the application, script, or test owns connections.
+    The initial migration supports fresh databases; old Alembic upgrades are not
+    part of this schema history.
+    """
+    from aerich import Command
 
-    connectable = engine.create_engine(url)
-    try:
-        directory = script.ScriptDirectory.from_config(alembic_cfg)
-        with connectable.begin() as connection:
-            context = migration.MigrationContext.configure(connection)
-            return set(context.get_current_heads()) == set(directory.get_heads())
-    finally:
-        # Returning from inside the `with` only returns the connection to the pool;
-        # without this the underlying DBAPI connection stays open until GC.
-        connectable.dispose()
-
-
-def safe_try(func: Callable):
-    try:
-        func()
-    except Exception:
-        logger.exception(f"Error calling '{func.__name__}'")
-
-
-def connect(session: orm.Session) -> bool:
-    try:
-        session.execute(text("SELECT 1"))
-        return True
-    except Exception:
-        logger.exception("Error connecting to database")
-        return False
-
-
-def prepare_database() -> bool:
-    # Wait for database to connect
-    max_retry = 10
-    wait_seconds = 1
-
-    with session_context() as session:
-        while True:
-            if connect(session):
-                logger.info("Database connection established.")
-                break
-
-            logger.error(f"Database connection failed. Retrying in {wait_seconds} seconds...")
-            max_retry -= 1
-
-            sleep(wait_seconds)
-
-            if max_retry == 0:
-                raise ConnectionError("Database connection failed - exiting application.")
-
-        alembic_cfg_path = os.getenv("ALEMBIC_CONFIG_FILE", default=str(ALEMBIC_DIR / "alembic.ini"))
-
-        if not os.path.isfile(alembic_cfg_path):
-            raise Exception("Provided alembic config path doesn't exist")
-
-        run_fixes = False
-        alembic_cfg = Config(alembic_cfg_path)
-        if db_is_at_head(alembic_cfg):
-            logger.debug("Migration not needed.")
-        else:
-            logger.info("Migration needed. Performing migration...")
-            command.upgrade(alembic_cfg, "head")
-            run_fixes = True
-
-        if session.get_bind().name == "postgresql":  # needed for fuzzy search and fast GIN text indices
-            session.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm;"))
-
-        session.commit()
-        return run_fixes
+    connection = get_current_context().db()
+    if connection.capabilities.dialect == "sqlite":
+        legacy = await connection.execute_query_dict(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'alembic_version'"
+        )
+    else:
+        legacy = await connection.execute_query_dict(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = 'alembic_version'"
+        )
+    if legacy:
+        raise RuntimeError(
+            "This database uses the old Alembic schema. Upgrading it to the Aerich schema is unsupported."
+        )
+    command = Command(tortoise_config=get_tortoise_config(), app="models", location=str(MIGRATIONS_DIR))
+    await command.init()
+    migrated = await command.upgrade()
+    if migrated:
+        logger.info("Applied database migrations: %s", ", ".join(migrated))
+    else:
+        logger.debug("Database migrations are current.")
+    return bool(migrated)
 
 
 async def initialize_data(run_fixes: bool = False) -> None:
-    """Initialize user data after the async connection context has started."""
-    with session_context() as session:
-        db = get_repositories(session, group_id=None, household_id=None)
-        if await db.users.get_all():
-            logger.debug("Database exists")
-            if run_fixes:
-                safe_try(lambda: fix_migration_data(session))
-                safe_try(lambda: fix_group_with_no_name(session))
-        else:
-            logger.info("Database contains no users, initializing...")
-            await init_db(session)
+    """Seed a fresh database after migrations, within its existing context."""
+    session = get_current_context().db()
+    db = get_repositories(session, group_id=None, household_id=None)
+    if await db.users.get_all():
+        logger.debug("Database exists")
+    else:
+        logger.info("Database contains no users, initializing...")
+        await init_db(session)
 
 
 async def main() -> None:
-    run_fixes = prepare_database()
     async with database_context():
-        await initialize_data(run_fixes)
+        await prepare_database()
+        await initialize_data()
 
 
 if __name__ == "__main__":

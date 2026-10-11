@@ -11,8 +11,8 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.connection import get_connection
 from tortoise.context import TortoiseContext
 
-from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.db.models._tortoise_base import TortoiseBase, UTCDateTimeField, UUIDField
+from tests.fixtures.legacy_models._model_base import SqlAlchemyBase
 
 
 class FoundationRecord(TortoiseBase):

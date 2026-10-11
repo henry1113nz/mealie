@@ -4,17 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import UUID4, ConfigDict, field_validator, model_validator
-from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_household import (
-    ShoppingList,
-    ShoppingListItem,
-    ShoppingListMultiPurposeLabel,
-    ShoppingListRecipeReference,
-)
-from mealie.db.models._legacy_recipe import IngredientFoodModel, IngredientFoodSubstitutionModel, RecipeModel
-from mealie.db.models._legacy_users import User
 from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema._mealie.types import NoneFloat
@@ -128,23 +118,6 @@ class ShoppingListItemOut(ShoppingListItemBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(ShoppingListItem.extras),
-            selectinload(ShoppingListItem.food).joinedload(IngredientFoodModel.extras),
-            selectinload(ShoppingListItem.food).joinedload(IngredientFoodModel.label),
-            selectinload(ShoppingListItem.food)
-            .selectinload(IngredientFoodModel.substitutions)
-            .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            joinedload(ShoppingListItem.label),
-            joinedload(ShoppingListItem.unit),
-            selectinload(ShoppingListItem.recipe_references),
-            joinedload(ShoppingListItem.shopping_list)
-            .joinedload(ShoppingList.user)
-            .load_only(User.household_id, User.group_id),
-        ]
-
 
 class ShoppingListItemsCollectionOut(MealieModel):
     """Container for bulk shopping list item changes"""
@@ -167,10 +140,6 @@ class ShoppingListMultiPurposeLabelUpdate(ShoppingListMultiPurposeLabelCreate):
 class ShoppingListMultiPurposeLabelOut(ShoppingListMultiPurposeLabelUpdate):
     label: MultiPurposeLabelSummary
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(ShoppingListMultiPurposeLabel.label)]
 
 
 class ShoppingListItemPagination(PaginationBase):
@@ -202,14 +171,6 @@ class ShoppingListRecipeRefOut(MealieModel):
     recipe: RecipeSummary
     model_config = ConfigDict(from_attributes=True)
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(ShoppingListRecipeReference.recipe).joinedload(RecipeModel.recipe_category),
-            selectinload(ShoppingListRecipeReference.recipe).joinedload(RecipeModel.tags),
-            selectinload(ShoppingListRecipeReference.recipe).joinedload(RecipeModel.tools),
-        ]
-
 
 class ShoppingListSave(ShoppingListCreate):
     group_id: UUID4
@@ -222,23 +183,6 @@ class ShoppingListSummary(ShoppingListSave):
     recipe_references: list[ShoppingListRecipeRefOut]
     label_settings: list[ShoppingListMultiPurposeLabelOut]
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(ShoppingList.extras),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.recipe_category),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tags),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tools),
-            selectinload(ShoppingList.label_settings).joinedload(ShoppingListMultiPurposeLabel.label),
-            joinedload(ShoppingList.user).load_only(User.household_id, User.group_id),
-        ]
 
 
 class ShoppingListPagination(PaginationBase):
@@ -259,37 +203,6 @@ class ShoppingListOut(ShoppingListUpdate):
     @field_validator("recipe_references", "label_settings", mode="before")
     def default_none_to_empty_list(cls, v):
         return v or []
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(ShoppingList.extras),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.extras),
-            selectinload(ShoppingList.list_items)
-            .joinedload(ShoppingListItem.food)
-            .joinedload(IngredientFoodModel.extras),
-            selectinload(ShoppingList.list_items)
-            .joinedload(ShoppingListItem.food)
-            .joinedload(IngredientFoodModel.label),
-            selectinload(ShoppingList.list_items)
-            .joinedload(ShoppingListItem.food)
-            .selectinload(IngredientFoodModel.substitutions)
-            .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.label),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.unit),
-            selectinload(ShoppingList.list_items).joinedload(ShoppingListItem.recipe_references),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.recipe_category),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tags),
-            selectinload(ShoppingList.recipe_references)
-            .joinedload(ShoppingListRecipeReference.recipe)
-            .joinedload(RecipeModel.tools),
-            selectinload(ShoppingList.label_settings).joinedload(ShoppingListMultiPurposeLabel.label),
-            joinedload(ShoppingList.user).load_only(User.household_id, User.group_id),
-        ]
 
 
 class ShoppingListAddRecipeParams(MealieModel):

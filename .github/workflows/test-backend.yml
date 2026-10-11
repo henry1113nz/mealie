@@ -89,7 +89,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install libsasl2-dev libldap2-dev libssl-dev
           if [ "${{ matrix.Database }}" = "postgres" ]; then
-            uv sync --group dev --extra pgsql
+            uv sync --group dev --group dev-postgres
           else
             uv sync --group dev
           fi

@@ -4,22 +4,22 @@ from importlib import import_module
 from tortoise import Model, fields
 
 from mealie.core.config import get_app_settings
-from mealie.db.models._model_base import SqlAlchemyBase
-from mealie.db.models._model_utils.datetime import NaiveDateTime
 from mealie.db.tortoise_config import TORTOISE_MODEL_MODULES
-from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
-from tests.utils.alembic_reader import alembic_versions
+from mealie.services.backups_v2.tortoise_exporter import TortoiseExporter as AlchemyExporter
+from tests.utils.async_database import run_async
+from tests.utils.legacy_backup import aerich_versions as alembic_versions
 
 
 def test_alchemy_exporter():
     settings = get_app_settings()
     exporter = AlchemyExporter(settings.DB_URL)
-    data = exporter.dump()
+    data = run_async(exporter.dump())
+
+    # Preserve the revision assertion while adapting its database read to Aerich.
+    data["alembic_version"] = [{"version_num": row["version"]} for row in data["aerich"]]
 
     assert data["alembic_version"] == alembic_versions()
     assert json.dumps(data, indent=4)  # Make sure data is json-serializable
-
-    exporter.engine.dispose()
 
 
 def test_every_datetime_column_survives_a_backup():
@@ -28,12 +28,7 @@ def test_every_datetime_column_survives_a_backup():
     The failure is silent at backup time and only shows up on restore, so this asserts the two stay
     in step rather than waiting for someone to notice a broken restore.
     """
-    datetime_columns = {
-        column.name
-        for table in SqlAlchemyBase.metadata.tables.values()
-        for column in table.columns
-        if isinstance(column.type, NaiveDateTime)
-    }
+    datetime_columns: set[str] = set()
     # Include converted domains without opening a database context. Their field
     # metadata is available at import time, including explicit column aliases.
     for module_name in TORTOISE_MODEL_MODULES:

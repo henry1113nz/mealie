@@ -1,8 +1,5 @@
 from pydantic import UUID4, ConfigDict
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_recipe import RecipeModel, Tag
 from mealie.schema._mealie import MealieModel
 
 
@@ -63,13 +60,7 @@ class TagMerge(MealieModel):
 
 
 class RecipeTagResponse(RecipeCategoryResponse):
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(Tag.recipes).joinedload(RecipeModel.recipe_category),
-            selectinload(Tag.recipes).joinedload(RecipeModel.tags),
-            selectinload(Tag.recipes).joinedload(RecipeModel.tools),
-        ]
+    pass
 
 
 from mealie.schema.recipe.recipe import RecipeSummary  # noqa: E402

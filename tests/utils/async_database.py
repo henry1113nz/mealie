@@ -45,6 +45,16 @@ def run_async[T](awaitable: Awaitable[T]) -> T:
     return _portal.call(_await_result, awaitable)
 
 
+async def _await_repository_result[T](awaitable: Awaitable[T], session: Any) -> T:
+    try:
+        return await awaitable
+    finally:
+        # The production repository no longer knows about the test-only legacy
+        # identity map. Refresh its database reads after native writes instead.
+        if isinstance(session, Session):
+            session.expire_all()
+
+
 class SynchronousRepository:
     def __init__(self, repository: Any) -> None:
         self.repository = repository
@@ -68,7 +78,8 @@ class SynchronousRepository:
                     on_database_loop = asyncio.get_running_loop() is _portal_loop
                 except RuntimeError:
                     on_database_loop = False
-                return result if on_database_loop else run_async(result)
+                adapted = _await_repository_result(result, self.repository.session)
+                return adapted if on_database_loop else run_async(adapted)
             if isinstance(result, type(self.repository)):
                 return SynchronousRepository(result)
             return result

@@ -2,11 +2,7 @@ from datetime import datetime
 from typing import Annotated
 
 from pydantic import UUID4, ConfigDict, StringConstraints, field_validator
-from sqlalchemy.orm import joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_household import Household, HouseholdToRecipe
-from mealie.db.models._legacy_users import User
 from mealie.schema._mealie.mealie_model import MealieModel
 from mealie.schema.household.webhook import ReadWebhook
 from mealie.schema.response.pagination import PaginationBase
@@ -34,12 +30,6 @@ class HouseholdRecipeUpdate(HouseholdRecipeBase): ...
 class HouseholdRecipeOut(HouseholdRecipeCreate):
     id: UUID4
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(HouseholdToRecipe.household),
-        ]
 
 
 class HouseholdCreate(MealieModel):
@@ -78,16 +68,6 @@ class HouseholdInDB(HouseholdSummary):
     users: list[HouseholdUserSummary] | None = None
     webhooks: list[ReadWebhook] = []
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(Household.group),
-            joinedload(Household.webhooks),
-            joinedload(Household.preferences),
-            selectinload(Household.users).joinedload(User.group),
-            selectinload(Household.users).joinedload(User.tokens),
-        ]
 
     @field_validator("group", mode="before")
     def convert_group_to_name(cls, v):

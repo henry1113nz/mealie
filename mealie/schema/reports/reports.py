@@ -3,11 +3,8 @@ import enum
 
 from pydantic import ConfigDict, Field
 from pydantic.types import UUID4
-from sqlalchemy.orm import joinedload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_groups import ReportModel
-from mealie.db.models._model_utils.datetime import get_utc_now
+from mealie.db.models.recipe._base import utc_now as get_utc_now
 from mealie.schema._mealie import MealieModel
 
 
@@ -53,7 +50,3 @@ class ReportSummary(ReportCreate):
 class ReportOut(ReportSummary):
     entries: list[ReportEntryOut] = []
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [joinedload(ReportModel.entries)]

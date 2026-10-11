@@ -1,15 +1,35 @@
 # Development: Database Changes
 
-This document is open to improvement; please share any insights you have/develop.
+Database models live under `mealie/db/models/` and use Tortoise ORM. Register new
+model modules explicitly in `TORTOISE_MODEL_MODULES` in
+`mealie/db/tortoise_config.py`. Both the application and Aerich use this
+configuration and the database selected by the normal Mealie settings.
 
-## Overview
+## Generate and apply a migration
 
-When modifying the database, you will most likely need to change the files under `/mealie/db/models/`.
-How exactly you need to modify it is of course highly contextual to the change you're making.
+Run `task py:migrate -- "add_creation_tag"` to generate an Aerich migration in
+`mealie/migrations/models/`. Review the generated SQL and test the migration on
+both SQLite and PostgreSQL. Start the backend, or run
+`uv run aerich --app models upgrade`, to apply pending migrations.
 
-## Using Alembic to generate upgrade script
+The initial migration contains separate, checked-in SQL for each supported
+backend. Later migrations must also handle both dialects when their DDL differs.
+Do not regenerate the initial migration after changing models: generate a new
+migration so existing Aerich databases can upgrade.
 
-In your dev container you can run something like (change the message) `task py:migrate -- "Add creation tag to group preferences"` to have Alembic generate an upgrade script for you.
+## Constraints and indexes
 
-Alembic's script migration isn't perfect, so you will need to review which changes are generated. You will also need to make sure any custom operations work on both SQLite and Postgres.
-There are some known limitations with our migrations and Alembic's auto-generation, which is accounted for in `/alembic/env.py`. If any of your migrations overlap with the columns in `include_object`, you may need to manually adjust the migration.
+`mealie/db/schema_generator.py` preserves details outside Tortoise's model API:
+substitution CHECK constraints, single-column indexes on both columns of join
+tables, their existing nullable join columns, and PostgreSQL normalized-text GIN
+indexes. PostgreSQL creates ordinary
+foreign keys after tables so the recipe/user and AI provider/settings cycles
+remain enforced; SQLite supports those forward references inline. The initial
+PostgreSQL migration also enables `pg_trgm`.
+
+Review changes involving those objects manually, since Aerich's model-state diff
+does not describe all of them. Migration scripts must preserve foreign keys;
+disabling them is not a solution for cyclic DDL.
+
+This branch starts a new Aerich schema history. Upgrading existing databases
+from the previous Alembic history is outside the scope of this rewrite.

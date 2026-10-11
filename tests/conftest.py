@@ -45,24 +45,13 @@ from fastapi.testclient import TestClient
 
 from mealie.app import app
 from mealie.core import config
-from mealie.db.db_setup import SessionLocal, generate_session
 from tests import data as test_data
 from tests.fixtures import *  # noqa: F403 F401
 from tests.utils.async_database import use_database_portal
 
 
-def override_get_db():
-    try:
-        db = SessionLocal()
-        yield db
-    finally:
-        db.close()
-
-
 @fixture(scope="session")
 def api_client():
-    app.dependency_overrides[generate_session] = override_get_db
-
     with TestClient(app) as client:
         assert client.portal is not None
         with use_database_portal(client.portal):

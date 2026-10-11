@@ -8,7 +8,6 @@ import pytest
 from pydantic import UUID4
 from sqlalchemy.orm import Session
 
-from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.repos._utils import NOT_SET, NotSet
 from mealie.repos.repository_generic import GroupRepositoryGeneric, HouseholdRepositoryGeneric, RepositoryGeneric
 from mealie.repos.repository_group import RepositoryGroup
@@ -23,6 +22,7 @@ from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import SaveIngredientFood
 from mealie.schema.response.pagination import PaginationQuery
 from mealie.services.household_services.shopping_lists import ShoppingListService
+from tests.fixtures.legacy_models._model_base import SqlAlchemyBase
 from tests.utils.async_database import get_repositories, run_async
 from tests.utils.factories import random_email, random_string
 

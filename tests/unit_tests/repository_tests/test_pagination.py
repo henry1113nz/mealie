@@ -13,7 +13,6 @@ from freezegun import freeze_time
 from humps import camelize
 from pydantic import UUID4
 
-from mealie.db.models._legacy_recipe.ingredient import IngredientUnitModel
 from mealie.repos.repository_factory import AllRepositories
 from mealie.repos.repository_units import RepositoryUnit
 from mealie.schema.household.group_shopping_list import (
@@ -40,6 +39,7 @@ from mealie.schema.response.pagination import (
 from mealie.schema.user.user import UserRatingUpdate
 from mealie.services.query_filter.builder import PlaceholderKeyword
 from mealie.services.seeder.seeder_service import SeederService
+from tests.fixtures.legacy_models.recipe.ingredient import IngredientUnitModel
 from tests.utils import api_routes
 from tests.utils.async_database import run_async
 from tests.utils.factories import random_int, random_string

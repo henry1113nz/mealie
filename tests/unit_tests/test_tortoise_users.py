@@ -12,12 +12,6 @@ from tortoise.exceptions import DoesNotExist, IntegrityError
 from tortoise.transactions import in_transaction
 
 from mealie.core.settings import AppSettings
-from mealie.db.models._legacy_household.mealplan import GroupMealPlan
-from mealie.db.models._legacy_household.shopping_list import ShoppingList, ShoppingListItem
-from mealie.db.models._legacy_recipe.api_extras import ShoppingListExtras, ShoppingListItemExtras
-from mealie.db.models._legacy_recipe.comment import RecipeComment
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
-from mealie.db.models._legacy_recipe.recipe_timeline import RecipeTimelineEvent
 from mealie.db.models.server.task import ServerTaskModel
 from mealie.db.models.users.password_reset import PasswordResetModel
 from mealie.db.models.users.user_to_recipe import UserToRecipe
@@ -28,6 +22,12 @@ from mealie.repos import _users_coexistence as bridge
 from mealie.repos.all_repositories import AllRepositories, get_repositories
 from mealie.schema.response.pagination import OrderByNullPosition, OrderDirection, PaginationQuery
 from mealie.schema.user.user import PrivateUser
+from tests.fixtures.legacy_models.household.mealplan import GroupMealPlan
+from tests.fixtures.legacy_models.household.shopping_list import ShoppingList, ShoppingListItem
+from tests.fixtures.legacy_models.recipe.api_extras import ShoppingListExtras, ShoppingListItemExtras
+from tests.fixtures.legacy_models.recipe.comment import RecipeComment
+from tests.fixtures.legacy_models.recipe.recipe import RecipeModel
+from tests.fixtures.legacy_models.recipe.recipe_timeline import RecipeTimelineEvent
 from tests.unit_tests.test_tortoise_server import (
     create_group,
 )

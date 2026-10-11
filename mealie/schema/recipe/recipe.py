@@ -9,26 +9,13 @@ from uuid import uuid4
 from pydantic import UUID4, BaseModel, ConfigDict, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 from slugify import slugify
-from sqlalchemy import Select, desc, func, or_, select, text
-from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.config import get_app_dirs
 from mealie.core.exceptions import SlugError
-from mealie.db.models._legacy_users import User
-from mealie.schema._mealie import MealieModel, SearchType
+from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema.response.pagination import PaginationBase
 
-from ...db.models._legacy_recipe import (
-    IngredientFoodModel,
-    IngredientFoodSubstitutionModel,
-    RecipeComment,
-    RecipeIngredientModel,
-    RecipeIngredientSubstitutionModel,
-    RecipeInstruction,
-    RecipeModel,
-)
 from .recipe_asset import RecipeAsset
 from .recipe_comments import RecipeCommentOut
 from .recipe_notes import RecipeNote
@@ -226,15 +213,6 @@ class RecipeSummary(MealieModel):
         number = f"{quantity:g}" if quantity else ""
         return f"{number} {self.recipe_yield or ''}".strip()
 
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(RecipeModel.recipe_category),
-            joinedload(RecipeModel.tags),
-            joinedload(RecipeModel.tools),
-            joinedload(RecipeModel.user).load_only(User.household_id),
-        ]
-
 
 class RecipePagination(PaginationBase):
     items: list[RecipeSummary]
@@ -362,100 +340,6 @@ class Recipe(RecipeSummary):
     @field_validator("nutrition", mode="before")
     def validate_nutrition(cls, v):
         return v or None
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            selectinload(RecipeModel.assets),
-            selectinload(RecipeModel.comments).joinedload(RecipeComment.user),
-            selectinload(RecipeModel.extras),
-            joinedload(RecipeModel.recipe_category),
-            selectinload(RecipeModel.tags),
-            selectinload(RecipeModel.tools),
-            selectinload(RecipeModel.recipe_ingredient).joinedload(RecipeIngredientModel.unit),
-            selectinload(RecipeModel.recipe_ingredient)
-            .joinedload(RecipeIngredientModel.food)
-            .joinedload(IngredientFoodModel.extras),
-            selectinload(RecipeModel.recipe_ingredient)
-            .joinedload(RecipeIngredientModel.food)
-            .joinedload(IngredientFoodModel.label),
-            selectinload(RecipeModel.recipe_ingredient)
-            .joinedload(RecipeIngredientModel.food)
-            .selectinload(IngredientFoodModel.substitutions)
-            .joinedload(IngredientFoodSubstitutionModel.substitute_food),
-            selectinload(RecipeModel.recipe_ingredient)
-            .selectinload(RecipeIngredientModel.substitutions)
-            .joinedload(RecipeIngredientSubstitutionModel.substitute_food),
-            selectinload(RecipeModel.recipe_instructions).joinedload(RecipeInstruction.ingredient_references),
-            selectinload(RecipeModel.recipe_instructions).joinedload(RecipeInstruction.note_references),
-            joinedload(RecipeModel.nutrition),
-            joinedload(RecipeModel.settings),
-            # for whatever reason, joinedload can mess up the order here, so use selectinload just this once
-            selectinload(RecipeModel.notes),
-        ]
-
-    @classmethod
-    def filter_search_query(
-        cls, db_model, query: Select, session: Session, search_type: SearchType, search: str, search_list: list[str]
-    ) -> Select:
-        """
-        1. token search looks for any individual exact hit in name, description, and ingredients
-        2. fuzzy search looks for trigram hits in name, description, and ingredients
-        3. Sort order is determined by closeness to the recipe name
-        Should search also look at tags?
-        """
-
-        if search_type is SearchType.fuzzy:
-            # I would prefer to just do this in the recipe_ingredient.any part of the main query,
-            # but it turns out that at least sqlite wont use indexes for that correctly anymore and
-            # takes a big hit, so prefiltering it is
-            ingredient_ids = (
-                session.execute(
-                    select(RecipeIngredientModel.id).filter(
-                        or_(
-                            RecipeIngredientModel.note_normalized.op("%>")(search),
-                            RecipeIngredientModel.original_text_normalized.op("%>")(search),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-
-            session.execute(text(f"set pg_trgm.word_similarity_threshold = {cls._fuzzy_similarity_threshold};"))
-            return query.filter(
-                or_(
-                    RecipeModel.name_normalized.op("%>")(search),
-                    RecipeModel.description_normalized.op("%>")(search),
-                    RecipeModel.recipe_ingredient.any(RecipeIngredientModel.id.in_(ingredient_ids)),
-                )
-            ).order_by(  # trigram ordering could be too slow on million record db, but is fine with thousands.
-                func.least(
-                    RecipeModel.name_normalized.op("<->>")(search),
-                )
-            )
-
-        else:
-            ingredient_ids = (
-                session.execute(
-                    select(RecipeIngredientModel.id).filter(
-                        or_(
-                            *[RecipeIngredientModel.note_normalized.like(f"%{ns}%") for ns in search_list],
-                            *[RecipeIngredientModel.original_text_normalized.like(f"%{ns}%") for ns in search_list],
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-
-            return query.filter(
-                or_(
-                    *[RecipeModel.name_normalized.like(f"%{ns}%") for ns in search_list],
-                    *[RecipeModel.description_normalized.like(f"%{ns}%") for ns in search_list],
-                    RecipeModel.recipe_ingredient.any(RecipeIngredientModel.id.in_(ingredient_ids)),
-                )
-            ).order_by(desc(RecipeModel.name_normalized.like(f"%{search}%")))
 
 
 class RecipeIn(Recipe):

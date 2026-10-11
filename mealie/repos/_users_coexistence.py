@@ -1,24 +1,16 @@
-"""Temporary SQL bridges to domains that have not migrated to Tortoise yet.
-
-All execution uses the current Tortoise connection/transaction. SQLAlchemy is
-only used to compile the existing public query language against the remaining
-relationship metadata; no synchronous session performs converted database access.
-Group repositories reuse this compiler until the public relationship/filter
-metadata moves in the remaining household and recipe conversions.
-"""
+"""Native async query helpers, rating recalculation and user ownership cleanup."""
 
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException
-from sqlalchemy import Select, nulls_first, nulls_last, select
-from sqlalchemy.dialects import postgresql, sqlite
 from tortoise import connections
 
-from mealie.db.models._legacy_users import LongLiveToken, PasswordResetModel, User, UserToRecipe
-from mealie.schema.response.pagination import OrderByNullPosition, OrderDirection, PaginationQuery
-from mealie.services.query_filter.builder import NonFilterableValueError, QueryFilterBuilder
+from mealie.db.models.users import LongLiveToken, User, UserToRecipe
+from mealie.db.models.users.password_reset import PasswordResetModel
+from mealie.schema.response.pagination import PaginationQuery
+
+from ._recipe_query import query_identifiers
 
 
 async def execute(sql: str, values: list[Any] | None = None) -> list[dict[str, Any]]:
@@ -60,64 +52,7 @@ async def query_ids(model_name: str, group_id: UUID | None, pagination: Paginati
 async def query_model_ids(
     model: Any, group_id: UUID | None, pagination: PaginationQuery, *, household_id: UUID | None = None
 ) -> list[Any]:
-    query: Select = select(model.id)
-    if group_id:
-        # Password reset ownership is derived through its user as well.
-        if model.__name__ == "ReportEntryModel":
-            query = query.where(model.report.has(group_id=group_id))
-        elif model is PasswordResetModel:
-            query = query.where(model.user.has(User.group_id == group_id))
-        else:
-            query = query.filter_by(group_id=group_id)
-    if household_id:
-        query = query.filter_by(household_id=household_id)
-    if pagination.query_filter:
-        query = QueryFilterBuilder(pagination.query_filter).filter_query(query, model=model)
-    ordering = pagination.order_by or "created_at"
-    if ordering != "random":
-        for order in ordering.split(","):
-            order = order.strip()
-            try:
-                if ":" in order:
-                    attribute, direction_value = order.split(":")
-                    direction = OrderDirection(direction_value)
-                else:
-                    attribute, direction = order, pagination.order_direction
-                attr = QueryFilterBuilder.get_order_attr(attribute, model, descending=direction is OrderDirection.desc)
-                attr = attr.desc() if direction is OrderDirection.desc else attr.asc()
-                if pagination.order_by_null_position is OrderByNullPosition.first:
-                    attr = nulls_first(attr)
-                elif pagination.order_by_null_position is OrderByNullPosition.last:
-                    attr = nulls_last(attr)
-                query = query.order_by(attr)
-            except NonFilterableValueError as exc:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f'Invalid order_by statement "{pagination.order_by}": {exc.message}',
-                ) from exc
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f'Invalid order_by statement "{pagination.order_by}": "{order}" is invalid',
-                ) from exc
-
-    connection = connections.get("default")
-    dialect = (
-        postgresql.dialect(paramstyle="numeric_dollar")
-        if connection.capabilities.dialect == "postgres"
-        else sqlite.dialect()
-    )
-    compiled = query.compile(dialect=dialect)
-    expanded = compiled.construct_expanded_state()
-    # Expanding IN parameters have individual names after compilation. Apply
-    # their processors too, particularly UUIDs stored as SQLite hex strings.
-    processors = compiled._bind_processors | expanded.processors
-    parameters = [
-        processors[key](expanded.parameters[key]) if key in processors else expanded.parameters[key]
-        for key in expanded.positiontup or []
-    ]
-    rows = await connection.execute_query_dict(expanded.statement, parameters)
-    return [row["id"] for row in rows]
+    return await query_identifiers(model, pagination, group_id=group_id, household_id=household_id, randomize=False)
 
 
 async def refresh_recipe_rating(recipe_id: UUID) -> None:

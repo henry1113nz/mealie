@@ -1,4 +1,4 @@
-"""Configuration shared by the async application and future Aerich migrations."""
+"""Configuration shared by the async application and Aerich migrations."""
 
 from typing import Any
 
@@ -6,7 +6,7 @@ from mealie.core.config import get_app_settings
 from mealie.core.settings import AppSettings
 from mealie.core.settings.db_providers import PostgresProvider, SQLiteProvider
 
-# Register every runtime model explicitly; legacy metadata remains only for C7.
+# Register domain models explicitly, separately from Aerich's migration ledger.
 TORTOISE_MODEL_MODULES: tuple[str, ...] = (
     "mealie.db.models.server.task",
     "mealie.db.models.users.users",
@@ -44,6 +44,7 @@ TORTOISE_MODEL_MODULES: tuple[str, ...] = (
     "mealie.db.models.recipe.tool",
 )
 DEFAULT_CONNECTION = "default"
+MIGRATION_MODEL_MODULES: tuple[str, ...] = ("aerich.models",)
 
 
 def get_tortoise_config(settings: AppSettings | None = None) -> dict[str, Any]:
@@ -76,11 +77,14 @@ def get_tortoise_config(settings: AppSettings | None = None) -> dict[str, Any]:
     else:
         raise ValueError("Tortoise requires a SQLite or PostgreSQL database provider")
 
+    apps: dict[str, Any] = {
+        "models": {"models": list(TORTOISE_MODEL_MODULES), "default_connection": DEFAULT_CONNECTION},
+    }
+    if MIGRATION_MODEL_MODULES:
+        apps["migrations"] = {"models": list(MIGRATION_MODEL_MODULES), "default_connection": DEFAULT_CONNECTION}
     return {
         "connections": {DEFAULT_CONNECTION: connection},
-        "apps": {
-            "models": {"models": list(TORTOISE_MODEL_MODULES), "default_connection": DEFAULT_CONNECTION},
-        },
+        "apps": apps,
         "use_tz": True,
         "timezone": "UTC",
     }

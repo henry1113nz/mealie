@@ -1,11 +1,7 @@
 from datetime import datetime
 
 from pydantic import UUID4, ConfigDict, field_validator
-from sqlalchemy.orm import joinedload
-from sqlalchemy.orm.interfaces import LoaderOption
 
-from mealie.db.models._legacy_recipe import RecipeComment
-from mealie.db.models._legacy_recipe.recipe import RecipeModel
 from mealie.schema._mealie import MealieModel
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema.response.pagination import PaginationBase
@@ -53,13 +49,6 @@ class RecipeCommentOut(MealieModel):
     user_id: UUID4
     user: UserBase
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def loader_options(cls) -> list[LoaderOption]:
-        return [
-            joinedload(RecipeComment.user),
-            joinedload(RecipeComment.recipe).joinedload(RecipeModel.user),
-        ]
 
 
 class RecipeCommentPagination(PaginationBase):

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from slugify import slugify
-from sqlalchemy.orm import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.repos.all_repositories import AllRepositories
 from mealie.schema.recipe import RecipeCategory

@@ -256,6 +256,8 @@ section at the start of every session and update it at the end.
 - Tortoise configuration lives in `mealie/db/tortoise_config.py`, derived from
   `get_app_settings()`. Register converted model modules explicitly in
   `TORTOISE_MODEL_MODULES` under the `models` app, using the `default` connection.
+  Aerich owns the separate `migrations` app on that same connection, configured
+  by `MIGRATION_MODEL_MODULES`; the domain registry remains 56 models.
 - `database_context()` owns async connections on one event loop and closes them
   on normal exit, exceptions, and failed startup. Only the FastAPI lifespan enables
   its global fallback for sibling ASGI request tasks. Scripts/tests use isolated
@@ -272,7 +274,8 @@ section at the start of every session and update it at the end.
   requests MEMORY); test databases use synchronous=OFF. PostgreSQL uses asyncpg,
   with explicit credentials normally and a DSN-aware backend for URL overrides.
 - New async tests use isolated contexts and disposable databases; schema generation
-  is explicit in tests only. Existing tests/fixtures remain on SQLAlchemy in C1.
+  is explicit in tests only. Production schema changes use checked-in Aerich
+  migrations; runtime model registration never generates production tables.
 - Do not overlap separate pytest runs: non-xdist fixture cleanup removes all of
   `tests/.temp`, including databases used by active xdist workers.
 - All runtime models and cross-domain relations are native Tortoise models.
@@ -280,35 +283,49 @@ section at the start of every session and update it at the end.
   groups with users. Group, household and recipe cascades are native in
   `_groups_coexistence.py`, `_household_coexistence.py` and `_recipes_coexistence.py`.
   Clear nullable references and remove association rows while preserving referring
-  objects in other groups. Existing Alembic foreign keys remain restrictive, so
-  use model deletion for ownership cascades rather than an unqualified bulk delete.
-- During coexistence, inspect both ORM model registries when checking backup
-  datetime coverage. Production table creation remains on the existing Alembic
-  history until C7; registering a converted model does not generate its schema.
+  objects in other groups. Ownership cascades use model deletion rather than
+  an unqualified bulk delete, preserving restrictive native foreign keys.
+- Historical SQLAlchemy metadata and Alembic migrations live only in
+  `tests/fixtures/legacy_models` and `tests/fixtures/legacy_alembic`. They retain
+  historical regression coverage and database setup/inspection; production must
+  never import them. SQLAlchemy/Alembic are dev-only dependencies; the optional
+  `dev-postgres` group supplies psycopg2 for PostgreSQL test oracles.
 - C3 user repositories (`users`, `user_ratings`, `api_tokens`, `tokens_pw_reset`)
   are async. Await them and their service/authentication/import call chains on
   the owning database loop. Script entry points may call `asyncio.run(main())`
   once around an isolated `database_context()`; no per-call async adapters.
-- `_legacy_users.py`, `_legacy_groups/`, `_legacy_household/` and `_legacy_recipe/`
-  now provide only SQLAlchemy query metadata, schema loader options and legacy
-  migration/backup access until C7. Never use them for application CRUD or hydration.
-  `_users_coexistence.py` and `_recipe_query.py` compile the public filter/order/search
-  language against this metadata and execute through the active Tortoise connection
-  or transaction. Apply bind processors to expanded `IN` parameters and scalar
-  parameters. Preserve search/suggestion priority before seeded random tie-breaking.
+- Public filters and ordering use native Tortoise metadata through
+  `services/query_filter/sql.py`. `metadata.py` preserves the existing explicit
+  filterable-field permissions and relationship aliases. Bind values separately,
+  alias repeated tables, and preserve search/suggestion priority before seeded
+  random tie-breaking. PostgreSQL fuzzy searches set their threshold with
+  `SET LOCAL` inside the same native transaction as all query execution.
 - All seven group repositories (`groups`, `group_preferences`, `group_exports`,
   `group_reports`, `group_report_entries`, `group_ai_provider_settings`,
   `group_ai_providers`) are async. Await their routes/services/scheduler callers.
   OpenAI service construction has no database access; await `load_providers()`
   before inspecting provider settings or selecting a provider. Migrators resolve
   their group at the start of async `migrate()`.
-- AI provider settings and providers retain their cyclic foreign keys. C4 still
-  uses the Alembic schema; C7 must handle cyclic DDL explicitly when introducing
-  Aerich. Do not disable these constraints to accommodate Tortoise's topological
-  schema generator. Export expiry remains text and is parsed as UTC for cleanup.
-- Startup runs synchronous `prepare_database()` (legacy Alembic) before opening
-  the async context, then awaits `initialize_data()` inside it. Backup restore
-  likewise awaits initialization in its existing database context.
+- AI provider settings/providers and recipe/user ownership retain their cyclic
+  foreign keys. `schema_generator.py` emits forward references on SQLite and
+  adds PostgreSQL foreign keys after table creation. Keep substitution CHECKs,
+  both indexes and nullable columns on all 12 join tables, and PostgreSQL GIN
+  indexes. Initial Aerich SQL and MODELS_STATE are immutable checked-in snapshots.
+  Export expiry remains text and is parsed as UTC for cleanup.
+- Startup enters `database_context()` before awaiting `prepare_database()` and
+  `initialize_data()`. Aerich reuses the owning async context. Old Alembic database
+  upgrades are unsupported and rejected before schema mutation. SQLite migration
+  scripts execute statements within the active transaction, avoiding the implicit
+  commit performed by sqlite3.executescript.
+- `db_setup.session_context()` only borrows the current async connection; it
+  neither opens a pool nor starts/commits a transaction. `generate_session()` is
+  async. Native repositories own atomic writes using `in_transaction`.
+- Backups use `TortoiseExporter` on the active async context and record the actual
+  Aerich ledger. Restore requires matching schema versions/table sets and replaces
+  rows atomically with constraints enabled. Defer only nullable references that
+  break cycles; clearing all nullable references violates substitution CHECKs.
+  Historical backup ZIP conversion is test-only, preserving original fixtures
+  and assertions while exercising the native restore path.
 - Synchronous HTTP tests use one persistent TestClient lifespan/portal per worker.
   `tests/utils/async_database.py` adapts only test setup/access onto that loop;
   production repositories stay async. Isolated foundation tests temporarily
@@ -472,6 +489,19 @@ section at the start of every session and update it at the end.
   11 recipe join tables (plus `plan_rules_to_households`), substitution CHECK
   constraints and PostgreSQL normalized-text GIN indexes. Handle the recipe/user
   ownership cycle as well as the existing AI settings/provider cycles in final DDL.
+
+- 2026-10-12 C7: Removed all SQLAlchemy/Alembic imports and legacy model metadata
+  from `mealie/`, replaced query compilation and backup I/O, and switched startup
+  and migration tooling to Aerich 0.10.1. SQLAlchemy/Alembic and archived models/
+  migrations remain solely as development test oracles. No frontend or generated
+  type changes; Pydantic fields, validators, serializers and configuration remain
+  unchanged. ORM-only schema loader/search methods were removed.
+- 2026-10-12 C7: Native initial migrations preserve cyclic foreign keys, all
+  substitution CHECKs, both indexes and historical nullable columns on 12 join
+  tables, and four PostgreSQL normalized-text GIN indexes. SQLite script execution
+  preserves transaction rollback. Backup restore keeps constraints enabled and
+  defers only actual cycle edges. PostgreSQL fuzzy queries pin their threshold
+  and query to one transaction with SET LOCAL.
 
 ### C1 validation and remaining work (2026-10-11)
 - Reported gate before this follow-up: 3217 passed, 1 failed, 0 errors,
@@ -654,6 +684,52 @@ section at the start of every session and update it at the end.
   Aerich with the recorded cyclic foreign keys, CHECK constraints, association
   indexes and PostgreSQL GIN indexes. No push, remote or git-configuration change.
 
+### C7 validation and remaining work (2026-10-12)
+- Implementation is present but C7 is **not complete**. `aerich==0.10.1` and its
+  transitive package files are unavailable in this sandbox. PyPI downloads fail
+  DNS resolution; offline installation reports missing wheels. `uv lock --offline`
+  successfully regenerated `uv.lock` from cached package metadata. Install the
+  locked dependencies outside the sandbox, then run the complete gate below.
+- Required `uv run pytest -n 4 --dist loadfile` was attempted; normal dependency
+  synchronization fails downloading Aerich dependency `dictdiffer==0.10.0` due
+  to DNS resolution. Without syncing,
+  application setup cannot import Aerich; the broad run was stopped rather than
+  repeating the same setup error. The focused server run confirms
+  `ModuleNotFoundError: No module named 'aerich'` during collection. These attempts
+  are not a passing test measurement and do not establish C7 behavioral parity.
+- `UV_NO_SYNC=1 task py:mypy`: zero errors across 420 source files.
+  `UV_NO_SYNC=1 task py:lint` passes. Changed/new Python files pass Ruff and
+  formatting checks; static scanning finds zero SQLAlchemy/Alembic imports under
+  `mealie/`. Pydantic field/validator/serializer ASTs are unchanged. Generated
+  OpenAPI documents before and after C7 compare exactly equal.
+- Standalone SQLite probes exercise the committed initial SQL, foreign-key cycles,
+  CHECK rejection, 12 join-table index pairs/nullability and migration DDL rollback.
+  Native backup I/O separately passes exact snapshot restore with both cycles and
+  substitute-only rows, failed-FK rollback and schema-mismatch preservation; only
+  migration/seed boundaries were mocked in that probe. Native repeated-relation
+  query filtering/ordering also executes successfully. A separate native SQLite
+  HTTP probe passes 146 original query-builder, search, pagination and recipe
+  suggestion cases, including substitutions and cross-household ranking, with
+  the original assertion functions and migration invocation replaced only in the
+  standalone harness. These probes do not replace
+  the missing Aerich integration/full pytest gate. All nine original historical
+  backup ZIPs also pass their eight unchanged migration assertion functions after
+  test-only fixture conversion and native restore in disposable SQLite contexts.
+  Live PostgreSQL is unverified;
+  PostgreSQL DDL and native field/compiler checks are static or mocked.
+- All 1228 pre-existing test functions and 4387 assertions are retained. Four
+  query-builder identity assertions now reference equivalent native field metadata;
+  their comparisons and expected identities are preserved. Other assertion ASTs
+  are unchanged after normalizing async database access. Existing skip/xfail
+  constructs are unchanged (12). C7 adds 9 regression functions and 47 assertions,
+  totaling 1237 functions and 4434 assertions, covering migrations, native query
+  aliases/transaction scope and constrained backup restore.
+- Next: install Aerich and locked dependencies; run
+  `uv run pytest -n 4 --dist loadfile` without overlapping runs; resolve failures
+  without deleting/skipping/weakening tests, then rerun the necessary type/lint
+  checks and update this section and progress row with measured results.
+  No push, git remote change or git-configuration change was performed.
+
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
@@ -663,4 +739,4 @@ section at the start of every session and update it at the end.
 | C4 | group | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3241 passed, 5 sandbox socket failures, 18 existing skips |
 | C5 | household | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3256 passed, 5 sandbox socket failures, 18 existing skips |
 | C6 | recipe | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3269 passed, 5 sandbox socket failures, 18 existing skips |
-| C7 | Remove SQLAlchemy and Alembic, add Aerich | not started | | |
+| C7 | Remove SQLAlchemy and Alembic, add Aerich | implemented; dependency installation and integration validation pending | 2026-10-12 | test startup/collection blocked by missing Aerich; no passing full measurement |

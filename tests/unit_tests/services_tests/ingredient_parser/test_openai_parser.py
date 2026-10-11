@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import UUID4
 
-from mealie.db.db_setup import session_context
 from mealie.lang.providers import get_locale_provider
 from mealie.schema.openai.recipe_ingredient import OpenAIIngredient, OpenAIIngredients
 from mealie.schema.recipe.recipe import Recipe
@@ -24,6 +23,7 @@ from mealie.services.parser_services import RegisteredParser, get_parser
 from tests.utils.async_database import run_async
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
+from tests.utils.legacy_database import session_context
 
 
 def test_openai_parser(

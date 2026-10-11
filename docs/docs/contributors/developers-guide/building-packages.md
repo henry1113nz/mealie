@@ -13,10 +13,10 @@ popd
 rm -r mealie/frontend
 cp -a frontend/dist mealie/frontend
 uv build --out-dir dist
-uv export --no-editable --no-emit-project --extra pgsql --format requirements-txt --output-file dist/dependencies.txt
+uv export --no-editable --no-emit-project --format requirements-txt --output-file dist/dependencies.txt
 cp dist/dependencies.txt dist/requirements.txt
 MEALIE_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-echo "mealie[pgsql]==${MEALIE_VERSION} \\" >> dist/requirements.txt
+echo "mealie==${MEALIE_VERSION} \\" >> dist/requirements.txt
 pip hash dist/mealie-${MEALIE_VERSION}-py3-none-any.whl | tail -n1 | tr -d '\n' >> dist/requirements.txt
 echo " \\" >> dist/requirements.txt
 pip hash dist/mealie-${MEALIE_VERSION}.tar.gz | tail -n1 >> dist/requirements.txt

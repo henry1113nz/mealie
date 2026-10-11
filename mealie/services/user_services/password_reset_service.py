@@ -1,5 +1,5 @@
 from fastapi import HTTPException, status
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core.security import hash_password, url_safe_token
 from mealie.db.models.users.users import AuthMethod

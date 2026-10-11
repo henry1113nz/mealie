@@ -7,7 +7,6 @@ from pydantic import UUID4
 from rapidfuzz import fuzz
 from text_unidecode import unidecode
 
-from mealie.db.db_setup import session_context
 from mealie.lang.providers import get_locale_provider
 from mealie.schema.recipe.recipe_ingredient import (
     CreateIngredientFood,
@@ -19,6 +18,7 @@ from mealie.schema.recipe.recipe_ingredient import (
 from mealie.services.parser_services import RegisteredParser, get_parser
 from mealie.services.parser_services.ingredient_parser import NLPParser
 from tests.utils.async_database import run_async
+from tests.utils.legacy_database import session_context
 
 
 @dataclass

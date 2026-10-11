@@ -10,7 +10,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import PyJWTError
-from sqlalchemy.orm.session import Session
+from tortoise.backends.base.client import BaseDBAsyncClient as Session
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_dirs, get_app_settings
@@ -122,9 +122,6 @@ async def get_current_user(
 
     user = await repos.users.get_one(token_data.user_id, "id", any_case=False)
 
-    # If we don't commit here, lazy-loads from user relationships will leave some table lock in postgres
-    # which can cause quite a bit of pain further down the line
-    session.commit()
     if user is None:
         raise credentials_exception
 
@@ -163,15 +160,8 @@ async def validate_long_live_token(session: Session, client_token: str, user_id:
 
     try:
         user = token[0].user
-        # Match get_current_user(): end the read transaction opened during auth
-        # immediately, otherwise long-lived/API-token auth can hold a DB
-        # connection idle-in-transaction until request teardown. Browsers/PWAs
-        # and automation issuing many concurrent requests can then exhaust
-        # SQLAlchemy's connection pool.
-        session.commit()
         return user
     except IndexError as e:
-        session.rollback()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED) from e
 
 
