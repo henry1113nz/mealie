@@ -32,5 +32,9 @@ async def database_context(
                 config=config if config is not None else get_tortoise_config(),
                 _enable_global_fallback=global_fallback,
             )
-        await context.db().execute_query("SELECT 1")
+        # Open before the health query so startup connection errors retain the
+        # driver's exception instead of being translated into query errors.
+        client = context.db()
+        await client.create_connection(with_db=True)
+        await client.execute_query("SELECT 1")
         yield context

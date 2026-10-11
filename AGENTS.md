@@ -273,38 +273,44 @@ section at the start of every session and update it at the end.
   with explicit credentials normally and a DSN-aware backend for URL overrides.
 - New async tests use isolated contexts and disposable databases; schema generation
   is explicit in tests only. Existing tests/fixtures remain on SQLAlchemy in C1.
+- Do not overlap separate pytest runs: non-xdist fixture cleanup removes all of
+  `tests/.temp`, including databases used by active xdist workers.
 
 ### Decisions log
 - 2026-10-11 C1: Foundation is additive dependencies/configuration/lifecycle/model primitives/tests; domain conversions remain C2–C6 and Alembic replacement remains C7.
-- 2026-10-11 C1: Declare `tortoise-orm[asyncpg]==1.1.7` so both database drivers are available; dependency resolution/install and lockfile generation remain blocked by unavailable PyPI access (no local wheels supplied).
+- 2026-10-11 C1: Declare `tortoise-orm[asyncpg]==1.1.7` so both database drivers are available. Initial PyPI access blocked installation; dependencies are now installed and recorded in `uv.lock` by commit `b7825c633`.
 - 2026-10-11 C1: Keep legacy bootstrap before async connection startup; C1 neither generates production schemas nor changes HTTP/Pydantic schemas.
 - 2026-10-11 C1: Register only the abstract base until C2 because Tortoise requires a nonempty module list; suppress only its specific no-concrete-model warning. Remove that entry and warning exception when registering C2 models.
 - 2026-10-11 C1: Preserve UUID and timestamp storage while both ORMs coexist; this supports the staged rewrite, not upgrades from old Alembic databases.
 - 2026-10-11 C1: Preserve PostgreSQL override URI parsing through asyncpg, including sockets, TLS and escaped credentials; translate libpq `connect_timeout` into asyncpg's overall connection timeout.
+- 2026-10-11 C1 follow-up: Explicitly open the connection before the startup health query. This preserves the driver's connection exception (including `sqlite3.OperationalError`) while retaining the health query and context cleanup on failure.
 
 ### C1 validation and remaining work (2026-10-11)
-- Baseline `uv run pytest -n 4 --dist loadfile`: 3172 passed, 18 existing skips,
-  5 failures in `tests/unit_tests/pkgs/safehttp/test_transport.py`, all from
-  sandbox-denied local socket binding (`PermissionError: [Errno 1]`).
-- Final requested command was run again but stopped before pytest: `uv` could not
-  reach PyPI to resolve dependencies. Offline resolution also failed because the
-  required package metadata/artifacts were not cached. `uv.lock` is unchanged and
-  does not yet contain the new dependency; C1 is not complete.
-- Diagnostic `uv run --no-sync pytest -n 4 --dist loadfile`: 3182 passed,
-  18 existing skips, the same 5 socket-binding failures, and 3 collection errors
-  in the new model/setup/PostgreSQL tests because `tortoise`/`asyncpg` are absent.
-  The 10 new configuration tests pass. No existing tests/assertions were changed.
-- Ruff lint/format and static mypy checks pass for the new modules (mypy is
-  configured to ignore missing imports; this does not validate uninstalled APIs).
-  Live PostgreSQL and the new async runtime tests remain unverified.
-- Before completing C1 or starting C2: resolve and install dependencies, generate
-  `uv.lock` with `uv lock`, execute the new runtime tests, and rerun the required
-  full suite in an environment with the needed packages and local socket access.
+- Reported gate before this follow-up: 3217 passed, 1 failed, 0 errors,
+  18 skipped. Reproduced the C1 failure in
+  `test_context_cleans_up_when_connection_fails`: the lazy connection attempt
+  inside `execute_query` translated the expected SQLite connection exception
+  into `tortoise.exceptions.OperationalError`. Fixed in production setup code;
+  no test files or expectations changed.
+- All 41 C1 configuration/model/PostgreSQL-adapter/lifecycle tests pass with
+  `uv run pytest -n 4 --dist loadfile` targeting the four Tortoise test files.
+- Final full `uv run pytest -n 4 --dist loadfile`: 3213 passed, 5 failed,
+  0 errors, 18 existing skips. All five failures are in
+  `tests/unit_tests/pkgs/safehttp/test_transport.py`, caused by sandbox-denied
+  local socket binding (`PermissionError: [Errno 1]`), as in the original
+  baseline. The reported C1 failure is fixed.
+- `task py:mypy`: 0 errors across 469 source files. `task py:lint` and Ruff
+  formatting check of the changed Python module pass.
+- Test inventory in `tests/**/test_*.py` remains 1180 test functions,
+  3914 assertions, and 12 skip markers. HTTP/Pydantic schemas are unchanged.
+- C1 is not marked complete: rerun the required full suite with local socket
+  access before starting C2. Live PostgreSQL remains unverified; its adapter
+  tests exercise driver parsing and mocked pool creation.
 
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
-| C1 | Foundation | in progress; dependency installation/validation blocked | 2026-10-11 | Required final run blocked by PyPI; no-sync: 5 baseline failures + 3 missing-dependency collection errors |
+| C1 | Foundation | in progress; code failure fixed, sandbox blocks full gate | 2026-10-11 | 3213 passed, 5 baseline socket-binding failures, 0 errors, 18 skipped |
 | C2 | server | not started | | |
 | C3 | users | not started | | |
 | C4 | group | not started | | |
