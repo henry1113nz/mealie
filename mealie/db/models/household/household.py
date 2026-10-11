@@ -13,9 +13,9 @@ from ..recipe.tool import households_to_tools
 from .household_to_recipe import HouseholdToRecipe
 
 if TYPE_CHECKING:
+    from .._legacy_users import User
     from ..group import Group
     from ..recipe import IngredientFoodModel, RecipeModel, Tool
-    from ..users import User
     from . import (
         CookBook,
         GroupEventNotifierModel,

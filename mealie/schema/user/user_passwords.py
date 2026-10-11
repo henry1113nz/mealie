@@ -4,7 +4,7 @@ from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.schema._mealie import MealieModel
 
-from ...db.models.users import PasswordResetModel, User
+from ...db.models._legacy_users import PasswordResetModel, User
 from .user import PrivateUser
 
 

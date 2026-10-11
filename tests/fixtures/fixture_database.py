@@ -1,14 +1,16 @@
 from collections.abc import Generator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from mealie.db.db_setup import SessionLocal
-from mealie.repos.all_repositories import AllRepositories, get_repositories
+from mealie.repos.all_repositories import AllRepositories
+from tests.utils.async_database import get_repositories
 
 
 @pytest.fixture(scope="module")
-def session() -> Generator[sessionmaker[Session]]:
+def session(api_client: TestClient) -> Generator[sessionmaker[Session]]:
     try:
         sess = SessionLocal()
         yield sess

@@ -4,12 +4,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from mealie.db.models._model_base import SqlAlchemyBase
-from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.recipe.recipe_ingredient import IngredientUnit, SaveIngredientUnit
 from mealie.schema.response.pagination import OrderDirection, PaginationQuery
 from mealie.schema.response.query_search import SearchFilter
 from mealie.schema.user.user import GroupBase
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_int, random_string
 
 

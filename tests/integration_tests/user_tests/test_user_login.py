@@ -9,6 +9,7 @@ from mealie.core.config import get_app_settings
 from mealie.core.security import ALGORITHM
 from mealie.services.user_services.user_service import UserService
 from tests.utils import api_routes
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -257,7 +258,7 @@ def test_user_lockout_after_bad_attemps(api_client: TestClient, unique_user: Tes
     # Cleanup
     user_service = UserService(database)
     user = database.users.get_one(unique_user.user_id)
-    user_service.unlock_user(user)
+    run_async(user_service.unlock_user(user))
 
 
 @pytest.mark.skipif(not os.environ.get("GITHUB_ACTIONS", False), reason="requires ldap service in github actions")

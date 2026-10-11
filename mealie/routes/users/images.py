@@ -17,7 +17,7 @@ router = UserAPIRouter(prefix="", tags=["Users: Images"])
 @controller(router)
 class UserImageController(BaseUserController):
     @router.post("/{id}/image")
-    def update_user_image(
+    async def update_user_image(
         self,
         id: UUID4,
         profile: UploadFile = File(...),
@@ -38,7 +38,7 @@ class UserImageController(BaseUserController):
 
             shutil.copyfile(image, dest)
 
-        self.repos.users.patch(id, {"cache_key": cache.new_key()})
+        await self.repos.users.patch(id, {"cache_key": cache.new_key()})
 
         if not dest.is_file():
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR)

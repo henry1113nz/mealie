@@ -5,8 +5,8 @@ from pydantic import UUID4, ConfigDict, StringConstraints, field_validator
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
 
+from mealie.db.models._legacy_users import User
 from mealie.db.models.household import Household, HouseholdToRecipe
-from mealie.db.models.users.users import User
 from mealie.schema._mealie.mealie_model import MealieModel
 from mealie.schema.household.webhook import ReadWebhook
 from mealie.schema.response.pagination import PaginationBase

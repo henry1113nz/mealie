@@ -102,7 +102,7 @@ class AdminBackupController(BaseAdminController):
         return SuccessResponse.respond("Upload successful")
 
     @router.post("/{file_name}/restore", response_model=SuccessResponse)
-    def import_one(self, file_name: str):
+    async def import_one(self, file_name: str):
         from mealie.services.backups_v2.backup_v2 import BackupSchemaMismatch, BackupV2
 
         backup = BackupV2()
@@ -110,7 +110,7 @@ class AdminBackupController(BaseAdminController):
         file = self._backup_path(file_name)
 
         try:
-            backup.restore(file)
+            await backup.restore(file)
         except BackupSchemaMismatch as e:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

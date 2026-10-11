@@ -2,7 +2,6 @@ from functools import cached_property
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import UUID4
-from sqlalchemy import func, select
 
 from mealie.db.models.users.users import User
 from mealie.schema.household.household import (
@@ -77,11 +76,10 @@ class AdminHouseholdManagementRoutes(BaseAdminController):
         return household
 
     @router.delete("/{item_id}", response_model=HouseholdInDB)
-    def delete_one(self, item_id: UUID4):
+    async def delete_one(self, item_id: UUID4):
         item = self.repo.get_one(item_id)
         if item:
-            stmt = select(func.count(User.id)).filter_by(group_id=item.group_id, household_id=item_id)
-            user_count = self.session.scalar(stmt)
+            user_count = await User.filter(group_id=item.group_id, household_id=item_id).count()
             if user_count:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

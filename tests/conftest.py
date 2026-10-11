@@ -3,7 +3,7 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
-from pytest import MonkeyPatch, fixture
+from pytest import FixtureRequest, MonkeyPatch, fixture
 
 # Under pytest-xdist each worker (gw0, gw1, ...) gets its own data dir, so workers
 # don't share one SQLite file.
@@ -46,11 +46,9 @@ from fastapi.testclient import TestClient
 from mealie.app import app
 from mealie.core import config
 from mealie.db.db_setup import SessionLocal, generate_session
-from mealie.db.init_db import main
 from tests import data as test_data
 from tests.fixtures import *  # noqa: F403 F401
-
-main()
+from tests.utils.async_database import use_database_portal
 
 
 def override_get_db():
@@ -65,7 +63,10 @@ def override_get_db():
 def api_client():
     app.dependency_overrides[generate_session] = override_get_db
 
-    yield TestClient(app)
+    with TestClient(app) as client:
+        assert client.portal is not None
+        with use_database_portal(client.portal):
+            yield client
 
     with contextlib.suppress(Exception):
         settings = config.get_app_settings()
@@ -87,6 +88,19 @@ def isolate_session_cookies(api_client: TestClient):
     api_client.cookies.clear()
     yield
     api_client.cookies.clear()
+
+
+@fixture(autouse=True)
+def isolate_foundation_database_context(
+    request: FixtureRequest, monkeypatch: MonkeyPatch, api_client: TestClient
+) -> None:
+    """Foundation tests exercise independent startup, including the global fallback.
+
+    Temporarily detach the application fallback while those isolated contexts run;
+    the session client and its connections still belong to its own portal loop.
+    """
+    if request.path.name.startswith("test_tortoise_"):
+        monkeypatch.setattr("tortoise.context._global_context", None)
 
 
 @fixture(scope="session")

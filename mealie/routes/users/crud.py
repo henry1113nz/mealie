@@ -21,12 +21,12 @@ class UserController(BaseUserController):
         return self.user
 
     @user_router.get("/self/ratings", response_model=UserRatings[UserRatingSummary])
-    def get_logged_in_user_ratings(self):
-        return UserRatings(ratings=self.repos.user_ratings.get_by_user(self.user.id))
+    async def get_logged_in_user_ratings(self):
+        return UserRatings(ratings=await self.repos.user_ratings.get_by_user(self.user.id))
 
     @user_router.get("/self/ratings/{recipe_id}", response_model=UserRatingSummary)
-    def get_logged_in_user_rating_for_recipe(self, recipe_id: UUID4):
-        user_rating = self.repos.user_ratings.get_by_user_and_recipe(self.user.id, recipe_id)
+    async def get_logged_in_user_rating_for_recipe(self, recipe_id: UUID4):
+        user_rating = await self.repos.user_ratings.get_by_user_and_recipe(self.user.id, recipe_id)
         if user_rating:
             return user_rating
         else:
@@ -36,11 +36,11 @@ class UserController(BaseUserController):
             )
 
     @user_router.get("/self/favorites", response_model=UserRatings[UserRatingSummary])
-    def get_logged_in_user_favorites(self):
-        return UserRatings(ratings=self.repos.user_ratings.get_by_user(self.user.id, favorites_only=True))
+    async def get_logged_in_user_favorites(self):
+        return UserRatings(ratings=await self.repos.user_ratings.get_by_user(self.user.id, favorites_only=True))
 
     @user_router.put("/password")
-    def update_password(self, password_change: ChangePassword):
+    async def update_password(self, password_change: ChangePassword):
         """Resets the User Password"""
         if self.user.auth_method == AuthMethod.LDAP:
             raise HTTPException(
@@ -53,7 +53,7 @@ class UserController(BaseUserController):
 
         self.user.password = hash_password(password_change.new_password)
         try:
-            self.repos.users.update_password(self.user.id, self.user.password)
+            await self.repos.users.update_password(self.user.id, self.user.password)
         except Exception as e:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -63,11 +63,11 @@ class UserController(BaseUserController):
         return SuccessResponse.respond(self.t("user.password-updated"))
 
     @user_router.put("/{item_id}")
-    def update_user(self, item_id: UUID4, new_data: UserBase):
+    async def update_user(self, item_id: UUID4, new_data: UserBase):
         assert_user_change_allowed(item_id, self.user, new_data)
 
         try:
-            self.repos.users.update(item_id, new_data.model_dump())
+            await self.repos.users.update(item_id, new_data.model_dump())
         except Exception as e:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

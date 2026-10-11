@@ -199,7 +199,7 @@ class AlchemyExporter(BaseService):
 
         return jsonable_encoder(result)
 
-    def restore(self, db_dump: dict) -> None:
+    async def restore(self, db_dump: dict) -> None:
         # setup alembic to run migrations up the version of the backup
         alembic_data = db_dump["alembic_version"]
         alembic_version = alembic_data[0]["version_num"]
@@ -253,11 +253,12 @@ class AlchemyExporter(BaseService):
                     connection.execute(text(dedent(sql)))
 
         # Dispose this exporter's engine to release connections back to the database.
-        # This prevents connection pool exhaustion when init_db.main() needs connections.
+        # This releases the legacy pool before database initialization needs connections.
         self.engine.dispose()
 
         # Re-init database to finish migrations
-        init_db.main()
+        run_fixes = init_db.prepare_database()
+        await init_db.initialize_data(run_fixes)
 
     def drop_all(self) -> None:
         """Drops all data from the database"""

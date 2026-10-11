@@ -57,7 +57,7 @@ class AIRecipeService(RecipeService):
                 on_progress=on_progress,
             )
 
-            recipe = self.create_one(recipe_data)
+            recipe = await self.create_one(recipe_data)
             if local_images:
                 with open(local_images[0], "rb") as f:
                     RecipeDataService(recipe.id).write_image(f.read(), "webp")

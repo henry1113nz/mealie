@@ -28,7 +28,7 @@ class RegistrationService:
         self.repos = db
         self.t = translator.t
 
-    def _create_new_user(self, group: GroupInDB, household: HouseholdInDB, new_group: bool) -> PrivateUser:
+    async def _create_new_user(self, group: GroupInDB, household: HouseholdInDB, new_group: bool) -> PrivateUser:
         new_user = UserIn(
             email=self.registration.email,
             username=self.registration.username,
@@ -44,7 +44,7 @@ class RegistrationService:
         )
 
         # TODO: problem with repository type, not type here
-        return self.repos.users.create(new_user)  # type: ignore
+        return await self.repos.users.create(new_user)  # type: ignore
 
     def _register_new_group(self) -> GroupInDB:
         group_data = GroupBase(name=self.registration.group)
@@ -77,12 +77,12 @@ class RegistrationService:
         )
         return HouseholdService.create_household(group_repos, household_data, household_preferences)
 
-    def register_user(self, registration: CreateUserRegistration) -> PrivateUser:
+    async def register_user(self, registration: CreateUserRegistration) -> PrivateUser:
         self.registration = registration
 
-        if self.repos.users.get_by_username(registration.username):
+        if await self.repos.users.get_by_username(registration.username):
             raise HTTPException(status.HTTP_409_CONFLICT, {"message": self.t("exceptions.username-conflict-error")})
-        elif self.repos.users.get_one(registration.email, "email"):
+        elif await self.repos.users.get_one(registration.email, "email"):
             raise HTTPException(status.HTTP_409_CONFLICT, {"message": self.t("exceptions.email-conflict-error")})
 
         token_entry = None
@@ -110,7 +110,7 @@ class RegistrationService:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Missing group"})
 
         self.logger.info(f"Registering user {registration.username}")
-        user = self._create_new_user(group, household, new_group)
+        user = await self._create_new_user(group, household, new_group)
 
         if new_group and registration.seed_data:
             group_repos = get_repositories(self.repos.session, group_id=group.id)

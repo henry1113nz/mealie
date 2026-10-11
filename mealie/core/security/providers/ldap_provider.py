@@ -4,6 +4,7 @@ import ldap
 import ldap.filter
 from ldap.ldapobject import LDAPObject
 from sqlalchemy.orm.session import Session
+from starlette.concurrency import run_in_threadpool
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings
@@ -23,19 +24,19 @@ class LDAPProvider(CredentialsProvider):
         super().__init__(session, data)
         self.conn = None
 
-    def authenticate(self) -> tuple[str, timedelta] | None:
+    async def authenticate(self) -> tuple[str, timedelta] | None:
         """Attempt to authenticate a user given a username and password against an LDAP provider"""
         # When LDAP is enabled, we need to still also support authentication with Mealie backend
         # First we look to see if we have a user. If we don't we'll attempt to create one with LDAP
         # If we do find a user, we will check if their auth method is LDAP and attempt to authenticate
         # Otherwise, we will proceed with Mealie authentication
-        user = self.try_get_user(self.data.username)
+        user = await self.try_get_user(self.data.username)
         if not user or user.auth_method == AuthMethod.LDAP:
-            user = self.get_user()
+            user = await self.get_user()
             if user:
                 return self.get_access_token(user, self.data.remember_me)
 
-        return super().authenticate()
+        return await super().authenticate()
 
     def search_user(self, conn: LDAPObject) -> list[tuple[str, dict[str, list[bytes]]]] | None:
         """
@@ -98,7 +99,7 @@ class LDAPProvider(CredentialsProvider):
 
         return user_entry
 
-    def get_user(self) -> PrivateUser | None:
+    async def get_user(self) -> PrivateUser | None:
         """Given a username and password, tries to authenticate by BINDing to an
         LDAP server
 
@@ -132,16 +133,16 @@ class LDAPProvider(CredentialsProvider):
             conn.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
 
         if settings.LDAP_ENABLE_STARTTLS:
-            conn.start_tls_s()
+            await run_in_threadpool(conn.start_tls_s)
 
         try:
-            conn.simple_bind_s(settings.LDAP_QUERY_BIND, settings.LDAP_QUERY_PASSWORD)
+            await run_in_threadpool(conn.simple_bind_s, settings.LDAP_QUERY_BIND, settings.LDAP_QUERY_PASSWORD)
         except ldap.INVALID_CREDENTIALS, ldap.NO_SUCH_OBJECT:
             self._logger.error("[LDAP] Unable to bind to with provided user/password")
-            conn.unbind_s()
+            await run_in_threadpool(conn.unbind_s)
             return None
 
-        user_entry = self.search_user(conn)
+        user_entry = await run_in_threadpool(self.search_user, conn)
         if not user_entry:
             return None
         user_dn, user_attr = user_entry[0]
@@ -149,13 +150,13 @@ class LDAPProvider(CredentialsProvider):
         # Check the credentials of the user
         try:
             self._logger.debug(f"[LDAP] Attempting to bind with '{user_dn}' using the provided password")
-            conn.simple_bind_s(user_dn, data.password)
+            await run_in_threadpool(conn.simple_bind_s, user_dn, data.password)
         except ldap.INVALID_CREDENTIALS, ldap.NO_SUCH_OBJECT:
             self._logger.error("[LDAP] Bind failed")
-            conn.unbind_s()
+            await run_in_threadpool(conn.unbind_s)
             return None
 
-        user = self.try_get_user(data.username)
+        user = await self.try_get_user(data.username)
 
         if user is None:
             self._logger.debug("[LDAP] User is not in Mealie. Creating a new account")
@@ -172,11 +173,11 @@ class LDAPProvider(CredentialsProvider):
                         f"[LDAP] Unable to create user due to missing '{attribute_name}' ('{attribute_key}') attribute"
                     )
                     self._logger.debug(f"[LDAP] User has the following attributes: {user_attr}")
-                    conn.unbind_s()
+                    await run_in_threadpool(conn.unbind_s)
                     return None
                 attributes[attribute_key] = user_attr[attribute_key][0].decode("utf-8")
 
-            user = db.users.create(
+            user = await db.users.create(
                 {
                     "username": attributes[settings.LDAP_ID_ATTRIBUTE],
                     "password": "LDAP",
@@ -189,7 +190,12 @@ class LDAPProvider(CredentialsProvider):
 
         if settings.LDAP_ADMIN_FILTER:
             try:
-                should_be_admin = len(conn.search_s(user_dn, ldap.SCOPE_BASE, settings.LDAP_ADMIN_FILTER, [])) > 0
+                should_be_admin = (
+                    len(
+                        await run_in_threadpool(conn.search_s, user_dn, ldap.SCOPE_BASE, settings.LDAP_ADMIN_FILTER, [])
+                    )
+                    > 0
+                )
             except (ldap.FILTER_ERROR, ldap.NO_SUCH_OBJECT) as e:
                 self._logger.warning(
                     "Unable to determine if LDAP user should be an admin, defaulting to False. "
@@ -201,7 +207,7 @@ class LDAPProvider(CredentialsProvider):
             if user.admin != should_be_admin:
                 self._logger.debug(f"[LDAP] {'Setting' if should_be_admin else 'Removing'} user as admin")
                 user.admin = should_be_admin
-                db.users.update(user.id, user)
+                await db.users.update(user.id, user)
 
-        conn.unbind_s()
+        await run_in_threadpool(conn.unbind_s)
         return user

@@ -108,7 +108,7 @@ class RecipeBulkScraperService(BaseService):
                 recipe.recipe_category = b.categories
 
             try:
-                self.service.create_one(recipe)
+                await self.service.create_one(recipe)
             except Exception as e:
                 self.service.logger.error(f"Failed to save recipe to database during bulk url import {b.url}")
                 self.service.logger.exception(e)

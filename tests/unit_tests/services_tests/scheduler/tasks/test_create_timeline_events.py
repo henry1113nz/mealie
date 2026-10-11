@@ -10,13 +10,14 @@ from mealie.schema.meal_plan.new_meal import CreatePlanEntry
 from mealie.schema.recipe.recipe import RecipeLastMade, RecipeSummary
 from mealie.services.scheduler.tasks.create_timeline_events import create_mealplan_timeline_events
 from tests.utils import api_routes
+from tests.utils.async_database import run_async
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
 
 def test_no_mealplans():
     # make sure this task runs successfully even if it doesn't do anything
-    create_mealplan_timeline_events()
+    run_async(create_mealplan_timeline_events())
 
 
 def test_new_mealplan_event(api_client: TestClient, unique_user: TestUser, h2_user: TestUser):
@@ -46,7 +47,7 @@ def test_new_mealplan_event(api_client: TestClient, unique_user: TestUser, h2_us
     assert response.status_code == 201
 
     # run the task and check to make sure a new event was created from the mealplan
-    create_mealplan_timeline_events()
+    run_async(create_mealplan_timeline_events())
 
     params = {
         "page": "1",
@@ -127,7 +128,7 @@ def test_new_mealplan_event_duplicates(api_client: TestClient, unique_user: Test
 
     # run the task multiple times and make sure we only create one event
     for _ in range(3):
-        create_mealplan_timeline_events()
+        run_async(create_mealplan_timeline_events())
 
     params = {
         "page": "1",
@@ -173,7 +174,7 @@ def test_new_mealplan_events_with_multiple_recipes(api_client: TestClient, uniqu
             mealplan_count_by_recipe_id[recipe.id] += 1  # type: ignore
 
     # run the task once and make sure the event counts are correct
-    create_mealplan_timeline_events()
+    run_async(create_mealplan_timeline_events())
 
     for recipe in recipes:
         target_count = initial_event_count + mealplan_count_by_recipe_id[recipe.id]  # type: ignore
@@ -190,7 +191,7 @@ def test_new_mealplan_events_with_multiple_recipes(api_client: TestClient, uniqu
 
     # run the task a few more times and confirm the counts are the same
     for _ in range(3):
-        create_mealplan_timeline_events()
+        run_async(create_mealplan_timeline_events())
 
     for recipe in recipes:
         target_count = initial_event_count + mealplan_count_by_recipe_id[recipe.id]  # type: ignore
@@ -242,7 +243,7 @@ def test_preserve_future_made_date(api_client: TestClient, unique_user: TestUser
     assert response.status_code == 201
 
     # run the task and make sure the recipe's last made date was not updated for either user
-    create_mealplan_timeline_events()
+    run_async(create_mealplan_timeline_events())
 
     response = api_client.get(api_routes.households_self_recipes_recipe_slug(recipe.slug), headers=unique_user.token)
     assert response.status_code == 200

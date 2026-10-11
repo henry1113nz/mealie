@@ -342,11 +342,13 @@ class RecipeController(BaseRecipeController):
                 include_tags=req.include_tags,
                 include_categories=req.include_categories,
             )
-            return self._finish_recipe_from_web(req, recipe, extras)
+            return await self._finish_recipe_from_web(req, recipe, extras)
 
         return self._stream_recipe_creation(create)
 
-    def _finish_recipe_from_web(self, req: ScrapeRecipe | ScrapeRecipeData, recipe: Recipe, extras: object) -> str:
+    async def _finish_recipe_from_web(
+        self, req: ScrapeRecipe | ScrapeRecipeData, recipe: Recipe, extras: object
+    ) -> str:
         if req.include_tags:
             ctx = ScraperContext(self.repos)
             recipe.tags = extras.use_tags(ctx)  # type: ignore
@@ -355,7 +357,7 @@ class RecipeController(BaseRecipeController):
             ctx = ScraperContext(self.repos)
             recipe.recipe_category = extras.use_categories(ctx)  # type: ignore
 
-        new_recipe = self.service.create_one(recipe)
+        new_recipe = await self.service.create_one(recipe)
         self._publish_recipe_created(new_recipe)
         return new_recipe.slug
 
@@ -469,10 +471,10 @@ class RecipeController(BaseRecipeController):
     # Other Create Operations
 
     @router.post("/create/zip", status_code=201)
-    def create_recipe_from_zip(self, archive: UploadFile = File(...)):
+    async def create_recipe_from_zip(self, archive: UploadFile = File(...)):
         """Create recipe from archive"""
         with get_temporary_zip_path() as temp_path:
-            recipe = self.service.create_from_zip(archive, temp_path)
+            recipe = await self.service.create_from_zip(archive, temp_path)
             self.publish_event(
                 event_type=EventTypes.recipe_created,
                 document_data=EventRecipeData(operation=EventOperation.create, recipe_slug=recipe.slug),
@@ -593,10 +595,10 @@ class RecipeController(BaseRecipeController):
         return recipe
 
     @router.post("", status_code=201, response_model=str)
-    def create_one(self, data: CreateRecipe) -> str | None:
+    async def create_one(self, data: CreateRecipe) -> str | None:
         """Takes in a JSON string and loads data into the database as a new entry"""
         try:
-            new_recipe = self.service.create_one(data)
+            new_recipe = await self.service.create_one(data)
         except Exception as e:
             self.handle_exceptions(e)
             return None

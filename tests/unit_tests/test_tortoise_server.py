@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -78,7 +79,11 @@ def create_group(engine: Engine) -> UUID:
 
 
 @pytest.mark.asyncio
-async def test_server_model_is_registered_with_the_default_connection(server_settings: AppSettings) -> None:
+async def test_server_model_is_registered_with_the_default_connection(
+    server_settings: AppSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Retain the original C2 registry setup; C3 covers the expanded registry.
+    monkeypatch.setattr("mealie.db.tortoise_config.TORTOISE_MODEL_MODULES", ("mealie.db.models.server.task",))
     config = get_tortoise_config(server_settings)
     assert config["apps"] == {"models": {"models": ["mealie.db.models.server.task"], "default_connection": "default"}}
     config["apps"]["models"]["models"].append("unused.module")
@@ -200,8 +205,9 @@ async def test_server_tasks_survive_the_legacy_backup_restore(
         # The restore's migration environment and bootstrap must stay isolated
         # from the worker's shared application database.
         monkeypatch.setattr("mealie.core.config.get_app_settings", lambda: server_settings)
-        monkeypatch.setattr("mealie.db.init_db.main", lambda: None)
-        exporter.restore(backup)
+        monkeypatch.setattr("mealie.db.init_db.prepare_database", lambda: False)
+        monkeypatch.setattr("mealie.db.init_db.initialize_data", AsyncMock())
+        await exporter.restore(backup)
     finally:
         exporter.engine.dispose()
 

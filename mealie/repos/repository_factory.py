@@ -80,7 +80,7 @@ from .repository_group import RepositoryGroup
 from .repository_meals import RepositoryMeals
 from .repository_recipes import RepositoryRecipes
 from .repository_shopping_list import RepositoryShoppingList
-from .repository_users import RepositoryUserRatings, RepositoryUsers
+from .repository_users import AsyncUserRepository, RepositoryUserRatings, RepositoryUsers
 
 PK_ID = "id"
 PK_SLUG = "slug"
@@ -254,12 +254,12 @@ class AllRepositories:
         return RepositoryUserRatings(self.session, PK_ID, UserToRecipe, UserRatingOut, group_id=self.group_id)
 
     @cached_property
-    def api_tokens(self) -> GroupRepositoryGeneric[LongLiveTokenInDB, LongLiveToken]:
-        return GroupRepositoryGeneric(self.session, PK_ID, LongLiveToken, LongLiveTokenInDB, group_id=self.group_id)
+    def api_tokens(self) -> AsyncUserRepository[LongLiveTokenInDB, LongLiveToken]:
+        return AsyncUserRepository(self.session, PK_ID, LongLiveToken, LongLiveTokenInDB, group_id=self.group_id)
 
     @cached_property
-    def tokens_pw_reset(self) -> GroupRepositoryGeneric[PrivatePasswordResetToken, PasswordResetModel]:
-        return GroupRepositoryGeneric(
+    def tokens_pw_reset(self) -> AsyncUserRepository[PrivatePasswordResetToken, PasswordResetModel]:
+        return AsyncUserRepository(
             self.session, PK_TOKEN, PasswordResetModel, PrivatePasswordResetToken, group_id=self.group_id
         )
 

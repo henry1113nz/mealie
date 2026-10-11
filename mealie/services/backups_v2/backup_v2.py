@@ -92,7 +92,7 @@ class BackupV2(BaseService):
         get_app_settings.cache_clear()
         self.settings = get_app_settings()
 
-    def restore(self, backup_path: Path) -> None:
+    async def restore(self, backup_path: Path) -> None:
         self.logger.info("initializing backup restore")
 
         backup = BackupFile(backup_path)
@@ -123,7 +123,7 @@ class BackupV2(BaseService):
             # Restore Database
 
             self.logger.info("importing database tables")
-            self.db_exporter.restore(database_json)
+            await self.db_exporter.restore(database_json)
 
             self.logger.info("database tables imported successfully")
 

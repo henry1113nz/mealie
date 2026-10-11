@@ -12,7 +12,7 @@ from .._model_utils.auto_init import auto_init
 from .._model_utils.guid import GUID
 
 if TYPE_CHECKING:
-    from ..users import User
+    from .._legacy_users import User
     from . import RecipeModel
 
 

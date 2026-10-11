@@ -12,18 +12,18 @@ router = APIRouter()
 
 
 @router.get("/user/name", response_model=ValidationResponse)
-def validate_user(name: str, session: Session = Depends(generate_session)):
+async def validate_user(name: str, session: Session = Depends(generate_session)):
     """Checks if a user with the given name exists"""
     db = get_repositories(session, group_id=None, household_id=None)
-    existing_element = db.users.get_one(name, "username", any_case=True)
+    existing_element = await db.users.get_one(name, "username", any_case=True)
     return ValidationResponse(valid=existing_element is None)
 
 
 @router.get("/user/email", response_model=ValidationResponse)
-def validate_user_email(email: str, session: Session = Depends(generate_session)):
+async def validate_user_email(email: str, session: Session = Depends(generate_session)):
     """Checks if a user with the given name exists"""
     db = get_repositories(session, group_id=None, household_id=None)
-    existing_element = db.users.get_one(email, "email", any_case=True)
+    existing_element = await db.users.get_one(email, "email", any_case=True)
     return ValidationResponse(valid=existing_element is None)
 
 

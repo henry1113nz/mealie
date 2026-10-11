@@ -3,11 +3,12 @@ from uuid import UUID
 import pytest
 from sqlalchemy.orm import Session
 
-from mealie.repos.all_repositories import AllRepositories, get_repositories
+from mealie.repos.all_repositories import AllRepositories
 from mealie.schema.household.group_shopping_list import ShoppingListItemCreate, ShoppingListSave
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import RecipeIngredient, SaveIngredientUnit
 from mealie.schema.user.user import GroupBase
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 

@@ -63,7 +63,7 @@ class NextcloudMigrator(BaseMigrator):
         else:
             return potential_path
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         # Unzip File into temp directory
 
         # get potential recipe dirs
@@ -91,7 +91,7 @@ class NextcloudMigrator(BaseMigrator):
                         )
                     )
 
-            all_statuses = self.import_recipes_to_database(all_recipes)
+            all_statuses = await self.import_recipes_to_database(all_recipes)
 
             for slug, recipe_id, status in all_statuses:
                 if status:

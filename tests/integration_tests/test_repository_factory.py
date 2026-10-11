@@ -1,6 +1,7 @@
 import inspect
 import time
 from functools import cached_property
+from typing import get_origin
 from uuid import uuid4
 
 import pytest
@@ -9,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.repos._utils import NOT_SET, NotSet
-from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_generic import GroupRepositoryGeneric, HouseholdRepositoryGeneric, RepositoryGeneric
+from mealie.repos.repository_users import AsyncUserRepository
 from mealie.schema._mealie.mealie_model import MealieModel
 from mealie.schema.household.group_shopping_list import ShoppingListCreate
 from mealie.schema.household.webhook import SaveWebhook
@@ -18,6 +19,7 @@ from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_ingredient import SaveIngredientFood
 from mealie.schema.response.pagination import PaginationQuery
 from mealie.services.household_services.shopping_lists import ShoppingListService
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_email, random_string
 
 
@@ -84,9 +86,9 @@ def test_all_repositories_constructors(session: Session, use_group_id: bool, use
         if not isinstance(member, cached_property):
             continue
         signature = inspect.signature(member.func)
-        repo_type = signature.return_annotation
+        repo_type = get_origin(signature.return_annotation) or signature.return_annotation
         try:
-            if not issubclass(repo_type, RepositoryGeneric):
+            if not issubclass(repo_type, (RepositoryGeneric, AsyncUserRepository)):
                 continue
         except TypeError:
             continue
@@ -99,7 +101,7 @@ def test_all_repositories_constructors(session: Session, use_group_id: bool, use
                 repo = getattr(repositories, name)
                 assert repo.group_id == kwargs["group_id"]
                 assert repo.household_id == kwargs["household_id"]
-        elif issubclass(repo_type, GroupRepositoryGeneric):
+        elif issubclass(repo_type, (GroupRepositoryGeneric, AsyncUserRepository)):
             if not use_group_id:
                 with pytest.raises(ValueError):
                     getattr(repositories, name)

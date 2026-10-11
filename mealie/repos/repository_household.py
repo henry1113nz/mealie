@@ -7,13 +7,13 @@ from slugify import slugify
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from mealie.db.models._legacy_users import User
 from mealie.db.models._model_base import SqlAlchemyBase
 from mealie.db.models.household import Household, HouseholdToRecipe
 from mealie.db.models.recipe.category import Category
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.tag import Tag
 from mealie.db.models.recipe.tool import Tool
-from mealie.db.models.users.users import User
 from mealie.repos.repository_generic import GroupRepositoryGeneric, HouseholdRepositoryGeneric
 from mealie.schema.household import (
     HouseholdCreate,

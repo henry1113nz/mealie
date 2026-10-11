@@ -22,7 +22,7 @@ from mealie.services.event_bus_service.event_types import (
 from mealie.services.household_services.household_service import HouseholdService
 
 
-def _create_mealplan_timeline_events_for_household(
+async def _create_mealplan_timeline_events_for_household(
     event_time: datetime, session: Session, group_id: UUID4, household_id: UUID4
 ) -> None:
     repos = get_repositories(session, group_id=group_id, household_id=household_id)
@@ -39,7 +39,7 @@ def _create_mealplan_timeline_events_for_household(
         if not (mealplan.recipe and mealplan.user_id):
             continue
 
-        user = repos.users.get_one(mealplan.user_id)
+        user = await repos.users.get_one(mealplan.user_id)
         if not user:
             continue
 
@@ -114,15 +114,15 @@ def _create_mealplan_timeline_events_for_household(
         )
 
 
-def _create_mealplan_timeline_events_for_group(event_time: datetime, session: Session, group_id: UUID4) -> None:
+async def _create_mealplan_timeline_events_for_group(event_time: datetime, session: Session, group_id: UUID4) -> None:
     repos = get_repositories(session, group_id=group_id)
     households_data = repos.households.page_all(PaginationQuery(page=1, per_page=-1))
     household_ids = [household.id for household in households_data.items]
     for household_id in household_ids:
-        _create_mealplan_timeline_events_for_household(event_time, session, group_id, household_id)
+        await _create_mealplan_timeline_events_for_household(event_time, session, group_id, household_id)
 
 
-def create_mealplan_timeline_events() -> None:
+async def create_mealplan_timeline_events() -> None:
     event_time = datetime.now(UTC)
 
     with session_context() as session:
@@ -131,4 +131,4 @@ def create_mealplan_timeline_events() -> None:
         group_ids = [group.id for group in groups_data.items]
 
         for group_id in group_ids:
-            _create_mealplan_timeline_events_for_group(event_time, session, group_id)
+            await _create_mealplan_timeline_events_for_group(event_time, session, group_id)

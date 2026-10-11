@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 from authlib.oidc.core import UserInfo
 from pydantic import UUID4
 from sqlalchemy.orm.session import Session
+from starlette.concurrency import run_in_threadpool
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings
@@ -42,7 +43,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
         super().__init__(session, data)
         self.use_default_groups = use_default_groups
 
-    def authenticate(self) -> tuple[str, timedelta] | None:
+    async def authenticate(self) -> tuple[str, timedelta] | None:
         """Attempt to authenticate a user given a username and password"""
 
         settings = get_app_settings()
@@ -105,7 +106,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                 )
                 return None
 
-        user = self.try_get_user(claims.get(settings.OIDC_USER_CLAIM))
+        user = await self.try_get_user(claims.get(settings.OIDC_USER_CLAIM))
         if not user:
             if not settings.OIDC_SIGNUP_ENABLED:
                 self._logger.debug("[OIDC] No user found. Not creating a new user - new user creation is disabled.")
@@ -119,7 +120,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                 username = claims.get(
                     "preferred_username", claims.get("username", claims.get(settings.OIDC_USER_CLAIM))
                 )
-                user = repos.users.create(
+                user = await repos.users.create(
                     {
                         "username": username,
                         "password": "OIDC",
@@ -130,7 +131,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                     }
                 )
                 self.session.commit()
-                self._update_profile_image_from_claim(user.id, claims)
+                await self._update_profile_image_from_claim(user.id, claims)
 
             except Exception as e:
                 self._logger.error("[OIDC] Exception while creating user: %s", e)
@@ -144,8 +145,8 @@ class OpenIDProvider(AuthProvider[UserInfo]):
         if settings.OIDC_ADMIN_GROUP and user.admin != is_admin:
             self._logger.debug("[OIDC] %s user as admin", "Setting" if is_admin else "Removing")
             user.admin = is_admin
-            repos.users.update(user.id, user)
-        self._update_profile_image_from_claim(user.id, claims)
+            await repos.users.update(user.id, user)
+        await self._update_profile_image_from_claim(user.id, claims)
         return self.get_access_token(user, settings.OIDC_REMEMBER_ME)
 
     @property
@@ -260,7 +261,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                 raise ValueError(f"profile image exceeds {MAX_PICTURE_BYTES} bytes")
         return bytes(content)
 
-    def _update_profile_image_from_claim(self, user_id: UUID4, claims: UserInfo) -> None:
+    async def _update_profile_image_from_claim(self, user_id: UUID4, claims: UserInfo) -> None:
         picture = claims.get("picture")
         if not picture or not isinstance(picture, str):
             return
@@ -272,7 +273,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                 return
 
             repos = get_repositories(self.session, group_id=None, household_id=None)
-            user = repos.users.get_one(user_id)
+            user = await repos.users.get_one(user_id)
             if user is None:
                 return
 
@@ -281,7 +282,7 @@ class OpenIDProvider(AuthProvider[UserInfo]):
             if user.external_avatar_hash == picture_hash:
                 return
 
-            content = self._fetch_picture(picture)
+            content = await run_in_threadpool(self._fetch_picture, picture)
 
             with get_temporary_path() as temp_path:
                 temp_img = Path(temp_path).joinpath(str(uuid4()))
@@ -291,6 +292,6 @@ class OpenIDProvider(AuthProvider[UserInfo]):
                 dest = PrivateUser.get_directory(user_id) / "profile.webp"
                 shutil.move(image, dest)
 
-            repos.users.patch(user_id, {"cache_key": cache.new_key(), "external_avatar_hash": picture_hash})
+            await repos.users.patch(user_id, {"cache_key": cache.new_key(), "external_avatar_hash": picture_hash})
         except Exception as e:
             self._logger.debug("[OIDC] Could not update profile image from picture claim: %s", e)

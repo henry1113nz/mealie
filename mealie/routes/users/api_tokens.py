@@ -19,7 +19,7 @@ router = UserAPIRouter(prefix="/users", tags=["Users: Tokens"])
 @controller(router)
 class UserApiTokensController(BaseUserController):
     @router.post("/api-tokens", status_code=status.HTTP_201_CREATED, response_model=LongLiveTokenCreateResponse)
-    def create_api_token(
+    async def create_api_token(
         self,
         token_params: LongLiveTokenIn,
     ):
@@ -41,15 +41,15 @@ class UserApiTokensController(BaseUserController):
             user_id=self.user.id,
         )
 
-        new_token_in_db = self.repos.api_tokens.create(token_model)
+        new_token_in_db = await self.repos.api_tokens.create(token_model)
 
         if new_token_in_db:
             return new_token_in_db
 
     @router.delete("/api-tokens/{token_id}", response_model=DeleteTokenResponse)
-    def delete_api_token(self, token_id: int):
+    async def delete_api_token(self, token_id: int):
         """Delete api_token from the Database"""
-        token: LongLiveTokenInDB = self.repos.api_tokens.get_one(token_id)
+        token: LongLiveTokenInDB = await self.repos.api_tokens.get_one(token_id)
 
         if not token:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Could not locate token with id '{token_id}' in database")
@@ -57,7 +57,7 @@ class UserApiTokensController(BaseUserController):
         # Ownership is by user id. Comparing emails happened to work since they're unique, but it
         # keys authorization on a mutable field and loads the user relationship to do it.
         if token.user_id == self.user.id:
-            deleted_token = self.repos.api_tokens.delete(token_id)
+            deleted_token = await self.repos.api_tokens.delete(token_id)
             return DeleteTokenResponse(token_delete=deleted_token.name)
         else:
             raise HTTPException(status.HTTP_403_FORBIDDEN)

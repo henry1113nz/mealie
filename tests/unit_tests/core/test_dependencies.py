@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from mealie.core.dependencies.dependencies import get_auth_token, validate_long_live_token
+from tests.utils.async_database import run_async
 
 
 def build_request(cookie: str | None = None) -> Request:
@@ -66,7 +67,7 @@ class FakeApiTokenRepo:
         self.tokens = tokens
         self.query = None
 
-    def multi_query(self, query):
+    async def multi_query(self, query):
         self.query = query
         return self.tokens
 
@@ -81,7 +82,7 @@ def test_validate_long_live_token_commits_after_successful_lookup(monkeypatch):
         lambda session, group_id, household_id: SimpleNamespace(api_tokens=api_tokens),
     )
 
-    assert validate_long_live_token(session, "client-token", "user-id") is user
+    assert run_async(validate_long_live_token(session, "client-token", "user-id")) is user
     assert api_tokens.query == {"token": "client-token", "user_id": "user-id"}
     assert session.committed is True
     assert session.rolled_back is False
@@ -97,7 +98,7 @@ def test_validate_long_live_token_rolls_back_after_failed_lookup(monkeypatch):
     )
 
     with pytest.raises(HTTPException):
-        validate_long_live_token(session, "client-token", "user-id")
+        run_async(validate_long_live_token(session, "client-token", "user-id"))
 
     assert session.committed is False
     assert session.rolled_back is True

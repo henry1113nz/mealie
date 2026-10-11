@@ -19,12 +19,12 @@ from .ai_providers import AIProviderSettings
 from .preferences import GroupPreferencesModel
 
 if TYPE_CHECKING:
+    from .._legacy_users import User
     from ..household import Household
     from ..household.events import GroupEventNotifierModel
     from ..household.recipe_action import GroupRecipeAction
     from ..household.shopping_list import ShoppingList
     from ..recipe import IngredientFoodModel, IngredientUnitModel, RecipeModel, Tag, Tool
-    from ..users import User
     from .exports import GroupDataExportsModel
     from .report import ReportModel
 

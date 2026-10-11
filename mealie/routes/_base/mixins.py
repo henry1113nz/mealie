@@ -1,10 +1,12 @@
 import sqlite3
 from collections.abc import Callable
 from logging import Logger
+from typing import Any, Never
 
 import sqlalchemy.exc
 from fastapi import HTTPException, status
 from pydantic import UUID4, BaseModel
+from tortoise.exceptions import DoesNotExist, IntegrityError
 
 from mealie.core.config import get_app_settings
 from mealie.repos.repository_generic import RepositoryGeneric
@@ -155,3 +157,68 @@ class HttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
             self.handle_exception(ex)
 
         return item
+
+
+class AsyncHttpRepo[C: BaseModel, R: BaseModel, U: BaseModel]:
+    """HTTP error handling for repositories whose database operations are async."""
+
+    def __init__(
+        self,
+        repo: Any,
+        logger: Logger,
+        exception_msgs: Callable[[type[Exception]], str] | None = None,
+    ) -> None:
+        self.repo = repo
+        self.logger = logger
+        self.exception_msgs = exception_msgs
+
+    def handle_exception(self, ex: Exception) -> Never:
+        self.logger.exception(ex)
+        # Unconverted relationships can still open a legacy read transaction.
+        self.repo.session.rollback()
+        message = self.exception_msgs(type(ex)) if self.exception_msgs else "An unexpected error occurred."
+        if isinstance(ex, (DoesNotExist, sqlalchemy.exc.NoResultFound)):
+            status_code = status.HTTP_404_NOT_FOUND
+        elif isinstance(ex, (IntegrityError, sqlalchemy.exc.IntegrityError)):
+            status_code = status.HTTP_409_CONFLICT
+            if "unique" in str(ex).lower() or (
+                isinstance(ex, sqlalchemy.exc.IntegrityError) and is_unique_violation(ex)
+            ):
+                message = "This item already exists."
+        else:
+            status_code = status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code, detail=ErrorResponse.respond(message=message, exception=str(ex)))
+
+    async def create_one(self, data: C) -> R:
+        try:
+            return await self.repo.create(data)
+        except Exception as ex:
+            self.handle_exception(ex)
+
+    async def get_one(self, item_id: int | str | UUID4, key: str | None = None) -> R:
+        item = await self.repo.get_one(item_id, key)
+        if item is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=ErrorResponse.respond(message="Not found."))
+        return item
+
+    async def update_one(self, data: U, item_id: int | str | UUID4) -> R:
+        await self.get_one(item_id)
+        try:
+            return await self.repo.update(item_id, data)
+        except Exception as ex:
+            self.handle_exception(ex)
+
+    async def patch_one(self, data: U, item_id: int | str | UUID4) -> R:
+        await self.get_one(item_id)
+        try:
+            return await self.repo.patch(item_id, data.model_dump(exclude_unset=True, exclude_defaults=True))
+        except Exception as ex:
+            self.handle_exception(ex)
+
+    async def delete_one(self, item_id: int | str | UUID4) -> R:
+        try:
+            item = await self.repo.delete(item_id)
+            self.logger.info(f"Deleting item with id {item_id}")
+            return item
+        except Exception as ex:
+            self.handle_exception(ex)

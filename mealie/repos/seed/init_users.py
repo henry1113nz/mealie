@@ -48,7 +48,7 @@ def dev_users() -> list[dict]:
     ]
 
 
-def default_user_init(db: AllRepositories):
+async def default_user_init(db: AllRepositories):
     default_user = {
         "full_name": "Change Me",
         "username": "admin",
@@ -60,8 +60,8 @@ def default_user_init(db: AllRepositories):
     }
 
     logger.info("Generating Default User")
-    db.users.create(default_user)
+    await db.users.create(default_user)
 
     if not settings.PRODUCTION:
         for user in dev_users():
-            db.users.create(user)
+            await db.users.create(user)

@@ -7,6 +7,7 @@ from pydantic import UUID4
 from sqlalchemy import orm
 from sqlalchemy.orm.interfaces import LoaderOption
 
+from mealie.db.models._legacy_users import User
 from mealie.db.models.recipe.ingredient import (
     IngredientFoodModel,
     IngredientFoodSubstitutionModel,
@@ -17,7 +18,6 @@ from mealie.db.models.recipe.ingredient import (
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.settings import RecipeSettings
 from mealie.db.models.recipe.tool import Tool, households_to_tools, recipes_to_tools
-from mealie.db.models.users.users import User
 from mealie.schema.recipe.recipe import RecipeSummary
 from mealie.schema.recipe.recipe_ingredient import IngredientFood, IngredientFoodSummary
 from mealie.schema.recipe.recipe_suggestion import (

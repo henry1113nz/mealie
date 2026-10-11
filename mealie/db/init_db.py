@@ -1,3 +1,4 @@
+import asyncio
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -13,6 +14,7 @@ from mealie.core.config import get_app_settings
 from mealie.db.db_setup import session_context
 from mealie.db.fixes.fix_group_with_no_name import fix_group_with_no_name
 from mealie.db.fixes.fix_migration_data import fix_migration_data
+from mealie.db.tortoise_setup import database_context
 from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.repos.seed.init_users import default_user_init
@@ -26,7 +28,7 @@ ALEMBIC_DIR = Path(__file__).parent.parent / "alembic"
 logger = root_logger.get_logger()
 
 
-def init_db(session: orm.Session) -> None:
+async def init_db(session: orm.Session) -> None:
     settings = get_app_settings()
 
     instance_repos = get_repositories(session)
@@ -37,7 +39,7 @@ def init_db(session: orm.Session) -> None:
     if default_household is None:
         default_household = default_household_init(group_repos, settings.DEFAULT_HOUSEHOLD)
     household_repos = get_repositories(session, group_id=default_group.id, household_id=default_household.id)
-    default_user_init(household_repos)
+    await default_user_init(household_repos)
 
 
 def default_group_init(repos: AllRepositories, name: str) -> GroupInDB:
@@ -86,7 +88,7 @@ def connect(session: orm.Session) -> bool:
         return False
 
 
-def main():
+def prepare_database() -> bool:
     # Wait for database to connect
     max_retry = 10
     wait_seconds = 1
@@ -122,18 +124,29 @@ def main():
         if session.get_bind().name == "postgresql":  # needed for fuzzy search and fast GIN text indices
             session.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm;"))
 
-        db = get_repositories(session, group_id=None, household_id=None)
+        session.commit()
+        return run_fixes
 
-        if db.users.get_all():
+
+async def initialize_data(run_fixes: bool = False) -> None:
+    """Initialize user data after the async connection context has started."""
+    with session_context() as session:
+        db = get_repositories(session, group_id=None, household_id=None)
+        if await db.users.get_all():
             logger.debug("Database exists")
             if run_fixes:
                 safe_try(lambda: fix_migration_data(session))
                 safe_try(lambda: fix_group_with_no_name(session))
-
         else:
             logger.info("Database contains no users, initializing...")
-            init_db(session)
+            await init_db(session)
+
+
+async def main() -> None:
+    run_fixes = prepare_database()
+    async with database_context():
+        await initialize_data(run_fixes)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

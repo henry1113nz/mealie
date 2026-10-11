@@ -66,10 +66,10 @@ class PaprikaMigrator(BaseMigrator):
             ),
         ]
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         recipes = [r for r in paprika_recipes(self.archive) if "name" in r]
         recipe_models = [self.clean_recipe_dictionary(r) for r in recipes]
-        results = self.import_recipes_to_database(recipe_models)
+        results = await self.import_recipes_to_database(recipe_models)
 
         for (slug, recipe_id, status), recipe in zip(results, recipes, strict=True):
             if not status:

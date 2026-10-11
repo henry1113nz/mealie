@@ -8,14 +8,13 @@ import sqlalchemy as sa
 from pydantic import UUID4
 from sqlalchemy.exc import IntegrityError
 
+from mealie.db.models._legacy_users import User, UserToRecipe
 from mealie.db.models.household import Household, HouseholdToRecipe
 from mealie.db.models.recipe.category import Category
 from mealie.db.models.recipe.ingredient import RecipeIngredientModel, RecipeIngredientSubstitutionModel
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.tag import Tag
 from mealie.db.models.recipe.tool import Tool
-from mealie.db.models.users.user_to_recipe import UserToRecipe
-from mealie.db.models.users.users import User
 from mealie.pkgs import cache
 from mealie.schema.cookbook.cookbook import ReadCookBook
 from mealie.schema.recipe import Recipe

@@ -1,6 +1,7 @@
 from mealie.core.security.providers.credentials_provider import CredentialsProvider
 from mealie.db.models.users.users import AuthMethod
 from mealie.schema.user.auth import CredentialsRequest
+from tests.utils.async_database import run_async
 from tests.utils.fixture_schemas import TestUser
 
 
@@ -8,7 +9,7 @@ def test_login(unique_user: TestUser):
     data = {"username": unique_user.username, "password": unique_user.password}
     auth_provider = CredentialsProvider(unique_user.repos.session, CredentialsRequest(**data))
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
 
 def test_login_incorrect_auth_method(unique_user: TestUser):
@@ -20,4 +21,4 @@ def test_login_incorrect_auth_method(unique_user: TestUser):
     data = {"username": unique_user.username, "password": unique_user.password}
     auth_provider = CredentialsProvider(db.session, CredentialsRequest(**data))
 
-    assert auth_provider.authenticate() is None
+    assert run_async(auth_provider.authenticate()) is None

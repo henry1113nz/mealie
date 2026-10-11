@@ -2,7 +2,6 @@ import pytest
 from pydantic import UUID4
 from sqlalchemy.orm import Session
 
-from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.recipe.recipe_ingredient import (
     CreateIngredientFoodAlias,
@@ -13,6 +12,7 @@ from mealie.schema.recipe.recipe_ingredient import (
     SaveIngredientUnit,
 )
 from mealie.schema.user.user import GroupBase
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_int, random_string
 
 

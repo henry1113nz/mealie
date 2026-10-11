@@ -7,7 +7,12 @@ from mealie.core.settings import AppSettings
 from mealie.core.settings.db_providers import PostgresProvider, SQLiteProvider
 
 # Register only converted domains; the remaining models still use SQLAlchemy.
-TORTOISE_MODEL_MODULES: tuple[str, ...] = ("mealie.db.models.server.task",)
+TORTOISE_MODEL_MODULES: tuple[str, ...] = (
+    "mealie.db.models.server.task",
+    "mealie.db.models.users.users",
+    "mealie.db.models.users.password_reset",
+    "mealie.db.models.users.user_to_recipe",
+)
 DEFAULT_CONNECTION = "default"
 
 

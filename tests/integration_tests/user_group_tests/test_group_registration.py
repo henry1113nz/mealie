@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.response.pagination import PaginationQuery
 from tests.utils import api_routes
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import user_registration_factory
 from tests.utils.seed_data import seeded_food_names, seeded_unit_names
 

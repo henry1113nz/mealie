@@ -132,7 +132,7 @@ class MealieAuthToken(BaseModel):
 
 
 @public_router.post("/token")
-def get_token(
+async def get_token(
     request: Request,
     response: Response,
     data: CredentialsRequestForm = Depends(),
@@ -148,7 +148,7 @@ def get_token(
 
     try:
         auth_provider = get_auth_provider(session, data)
-        auth = auth_provider.authenticate()
+        auth = await auth_provider.authenticate()
     except UserLockedOut as e:
         logger.error(f"User is locked out from {ip}")
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="User is locked out") from e
@@ -204,13 +204,13 @@ async def oauth_callback(request: Request, response: Response, session: Session 
     auth = None
     try:
         auth_provider = OpenIDProvider(session, token["userinfo"])
-        auth = auth_provider.authenticate()
+        auth = await auth_provider.authenticate()
     except MissingClaimException:
         try:
             logger.debug("[OIDC] Claims not present in the ID token, pulling user info")
             userinfo = await client.userinfo(token=token)
             auth_provider = OpenIDProvider(session, userinfo, use_default_groups=True)
-            auth = auth_provider.authenticate()
+            auth = await auth_provider.authenticate()
         except MissingClaimException:
             logger.error("[OIDC] Required claims not present in ID token or userinfo endpoint")
             auth = None
@@ -279,13 +279,13 @@ async def oauth_native_token(
     auth = None
     try:
         auth_provider = OpenIDProvider(session, userinfo)
-        auth = auth_provider.authenticate()
+        auth = await auth_provider.authenticate()
     except MissingClaimException:
         try:
             logger.debug("[OIDC] Claims not present in the id_token, pulling user info")
             userinfo = await client.userinfo(token=token)
             auth_provider = OpenIDProvider(session, userinfo, use_default_groups=True)
-            auth = auth_provider.authenticate()
+            auth = await auth_provider.authenticate()
         except MissingClaimException:
             logger.error("[OIDC] Required claims not present in ID token or userinfo endpoint")
             auth = None

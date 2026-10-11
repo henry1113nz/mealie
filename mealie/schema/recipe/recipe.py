@@ -15,7 +15,7 @@ from sqlalchemy.orm.interfaces import LoaderOption
 
 from mealie.core.config import get_app_dirs
 from mealie.core.exceptions import SlugError
-from mealie.db.models.users.users import User
+from mealie.db.models._legacy_users import User
 from mealie.schema._mealie import MealieModel, SearchType
 from mealie.schema._mealie.mealie_model import UpdatedAtField
 from mealie.schema.response.pagination import PaginationBase

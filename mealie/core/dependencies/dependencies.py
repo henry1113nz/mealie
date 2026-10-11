@@ -52,7 +52,7 @@ async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=De
 
         if long_token is not None:
             try:
-                if validate_long_live_token(session, token, payload.get("id")):
+                if await validate_long_live_token(session, token, payload.get("id")):
                     return True
             except Exception:
                 return False
@@ -109,7 +109,7 @@ async def get_current_user(
         long_token: str | None = payload.get("long_token")
 
         if long_token is not None:
-            return validate_long_live_token(session, token, payload.get("id"))
+            return await validate_long_live_token(session, token, payload.get("id"))
 
         if user_id is None:
             raise credentials_exception
@@ -120,7 +120,7 @@ async def get_current_user(
 
     repos = get_repositories(session, group_id=None, household_id=None)
 
-    user = repos.users.get_one(token_data.user_id, "id", any_case=False)
+    user = await repos.users.get_one(token_data.user_id, "id", any_case=False)
 
     # If we don't commit here, lazy-loads from user relationships will leave some table lock in postgres
     # which can cause quite a bit of pain further down the line
@@ -156,10 +156,10 @@ async def get_admin_user(current_user: PrivateUser = Depends(get_current_user)) 
     return current_user
 
 
-def validate_long_live_token(session: Session, client_token: str, user_id: str) -> PrivateUser:
+async def validate_long_live_token(session: Session, client_token: str, user_id: str) -> PrivateUser:
     repos = get_repositories(session, group_id=None, household_id=None)
 
-    token = repos.api_tokens.multi_query({"token": client_token, "user_id": user_id})
+    token = await repos.api_tokens.multi_query({"token": client_token, "user_id": user_id})
 
     try:
         user = token[0].user

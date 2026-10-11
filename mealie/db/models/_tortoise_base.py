@@ -29,6 +29,20 @@ class UUIDField(fields.UUIDField):
         return str(identifier)
 
 
+class UnboundedCharField(fields.TextField):
+    """Preserve unbounded, indexed strings on SQLite and PostgreSQL.
+
+    Both supported databases permit indexes on unbounded strings. Tortoise's
+    standard TextField disallows them for portability to other backends.
+    """
+
+    SQL_TYPE = "VARCHAR"
+    indexable = True
+
+    def __init__(self, **kwargs: Any) -> None:
+        fields.Field.__init__(self, **kwargs)
+
+
 class UTCDateTimeField(fields.DatetimeField):
     """Store naive UTC timestamps and expose aware UTC datetimes to the API.
 

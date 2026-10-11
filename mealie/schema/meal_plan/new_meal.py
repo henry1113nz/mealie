@@ -8,9 +8,9 @@ from pydantic_core.core_schema import ValidationInfo
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
 
+from mealie.db.models._legacy_users import User
 from mealie.db.models.household import GroupMealPlan
 from mealie.db.models.recipe import RecipeModel
-from mealie.db.models.users.users import User
 from mealie.schema._mealie import MealieModel
 from mealie.schema.recipe.recipe import RecipeSummary
 from mealie.schema.response.pagination import PaginationBase

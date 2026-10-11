@@ -8,9 +8,9 @@ from starlette.testclient import TestClient
 
 from mealie.db.db_setup import session_context
 from mealie.db.models.users.users import AuthMethod
-from mealie.repos.all_repositories import get_repositories
 from tests import utils
 from tests.utils import api_routes
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_string
 
 
@@ -329,7 +329,7 @@ def user_token(admin_token, api_client: TestClient):
 
 
 @fixture(scope="module")
-def ldap_user():
+def ldap_user(api_client: TestClient):
     # Create an LDAP user directly instead of using TestClient since we don't have
     # a LDAP service set up
     with session_context() as session:

@@ -282,6 +282,23 @@ section at the start of every session and update it at the end.
 - During coexistence, inspect both ORM model registries when checking backup
   datetime coverage. Production table creation remains on the existing Alembic
   history until C7; registering a converted model does not generate its schema.
+- C3 user repositories (`users`, `user_ratings`, `api_tokens`, `tokens_pw_reset`)
+  are async. Await them and their service/authentication/import call chains on
+  the owning database loop. Script entry points may call `asyncio.run(main())`
+  once around an isolated `database_context()`; no per-call async adapters.
+- Until C4-C6 convert the related domains, `_legacy_users.py` provides SQLAlchemy
+  relationship projections for those domains and their schema loader options.
+  Do not use these projections for application user CRUD. `_users_coexistence.py`
+  compiles the existing public filter/order language against legacy relationship
+  metadata, but executes it and cross-domain SQL through the active Tortoise
+  connection/transaction. Remove these bridges as their domains are converted.
+- Startup runs synchronous `prepare_database()` (legacy Alembic) before opening
+  the async context, then awaits `initialize_data()` inside it. Backup restore
+  likewise awaits initialization in its existing database context.
+- Synchronous HTTP tests use one persistent TestClient lifespan/portal per worker.
+  `tests/utils/async_database.py` adapts only test setup/access onto that loop;
+  production repositories stay async. Isolated foundation tests temporarily
+  detach the application global fallback and restore it afterward.
 
 ### Decisions log
 - 2026-10-11 C1: Foundation is additive dependencies/configuration/lifecycle/model primitives/tests; domain conversions remain C2–C6 and Alembic replacement remains C7.
@@ -307,6 +324,36 @@ section at the start of every session and update it at the end.
   unmocked C2 test checks the production registry, default connection and returned
   configuration-copy isolation. Extend the backup test's database inspection to
   include Tortoise datetime fields, retaining its original assertion.
+- 2026-10-11 C3: Convert User, LongLiveToken, PasswordResetModel and UserToRecipe,
+  register all three users modules explicitly, and replace all four user
+  repositories with native async Tortoise persistence. Preserve existing column
+  names/nullability, UUID and UTC storage, indexed unbounded strings, permission
+  defaults and the stored auth enum names (`MEALIE`, `LDAP`, `OIDC`).
+- 2026-10-11 C3: User group/household/owned-recipe references and rating recipe
+  references remain scalar UUIDs until C4-C6; existing database foreign keys
+  enforce them. Token/reset/rating user references are native Tortoise relations.
+  Tortoise uses the rating UUID as its operational primary key and retains the
+  user/recipe unique constraint; the existing Alembic table still has its original
+  composite primary key until C7 creates the final schema.
+- 2026-10-11 C3: Keep legacy projections for unconverted relationships, cascades
+  and query-language metadata. Seven schema files change only ORM imports;
+  Pydantic fields, validators, configuration and HTTP request/response models are
+  unchanged. No generated types or frontend files change.
+- 2026-10-11 C3: Recalculate recipe ratings explicitly after rating mutations in
+  the same async transaction. User deletion explicitly removes dependent tokens,
+  resets, ratings, comments, timeline events, meal plans and nested shopping-list
+  rows. Clear the nullable recipe owner reference while retaining the recipe:
+  legacy SQLite deletion left dangling owners, which active foreign-key checks
+  correctly reject. This also permits subsequent group deletion.
+- 2026-10-11 C3: Preserve token-list replacement through user updates: supplied
+  owned token metadata is updated and omitted tokens are revoked transactionally.
+  Reject foreign token IDs instead of allowing relationship reassignment across
+  users. Preserve explicit group/household ID updates when the named relationship
+  is unchanged, demo-user protection and whole-second password token watermarks.
+- 2026-10-11 C3: Propagate async calls through authentication, user/admin routes,
+  services, recipe rating/import callers, migrations, scheduler, backup restore
+  and scripts. Blocking password checks and LDAP/OIDC network work remain in
+  threadpool workers. Scheduler callbacks support both sync and async functions.
 
 ### C1 validation and remaining work (2026-10-11)
 - Reported gate before this follow-up: 3217 passed, 1 failed, 0 errors,
@@ -359,12 +406,41 @@ section at the start of every session and update it at the end.
   and legacy deletion hook; C7 still replaces Alembic and the reflected backup
   implementation. No other rewrite step was started.
 
+### C3 validation and remaining work (2026-10-11)
+- Final full `uv run pytest -n 4 --dist loadfile`: 3226 passed, 5 failed,
+  0 errors, 18 existing skips. All five failures remain confined to
+  `tests/unit_tests/pkgs/safehttp/test_transport.py`, where local socket binding
+  raises sandbox `PermissionError: [Errno 1] Operation not permitted`. No new
+  failures remain. Commands used `UV_FROZEN=1` to preserve the committed lockfile.
+- Seven new native C3 tests use isolated disposable SQLite databases built from
+  the actual Alembic history. They cover registry/config isolation, UUID/enum/UTC
+  and nullable/unbounded storage, relations/constraints, transaction rollback,
+  repository scoping/hydration, filtering/null ordering, rating recalculation,
+  nested deletion cascades and token replacement/ownership. Existing repository
+  constructor tests now also exercise all four async repositories.
+- The focused user/admin/repository run passed 105 tests with 9 existing skips;
+  the subsequent full run also includes the seventh native token regression.
+  `task py:mypy`: 0 errors across 471 source files. `task py:lint`, Ruff checks
+  of changed tests, formatting checks on all changed Python files and
+  `git diff --check` pass.
+- All 1185 pre-existing test functions and 3963 assertion expressions are
+  retained. Assertion ASTs are unchanged after removing only explicit async
+  invocation adapters. C3 adds 7 functions and 80 assertions, totaling 1192
+  functions and 4043 assertions; all 12 skip-related constructs are unchanged.
+  No tests, assertions or expected values were removed, skipped, marked xfail
+  or weakened. The added-test count is documented rather than called baseline.
+- Live PostgreSQL remains unverified. Existing PostgreSQL adapter/storage tests
+  pass, and scoped/nested SQL compilation was checked for PostgreSQL as well as
+  SQLite. C4-C6 must replace scalar cross-domain references and legacy projections;
+  C7 still removes SQLAlchemy/query metadata/Alembic and adds Aerich. No other
+  domain conversion was started. No push, remote or git-configuration change.
+
 ### Progress
 | Step | Module | Status | Session | Failing tests after |
 |---|---|---|---|---|
 | C1 | Foundation | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3218 passed, 0 failures in external measurement, 18 skipped |
 | C2 | server | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3219 passed, 5 sandbox socket failures, 18 existing skips |
-| C3 | users | not started | | |
+| C3 | users | complete with documented added-test count; sandbox socket limit | 2026-10-11 | 3226 passed, 5 sandbox socket failures, 18 existing skips |
 | C4 | group | not started | | |
 | C5 | household | not started | | |
 | C6 | recipe | not started | | |

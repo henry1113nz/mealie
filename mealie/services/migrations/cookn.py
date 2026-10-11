@@ -351,7 +351,7 @@ class CooknMigrator(BaseMigrator):
 
         return recipe_data
 
-    def _process_cookbook(self, path: Path) -> None:
+    async def _process_cookbook(self, path: Path) -> None:
         """Processes contents of a zip file."""
         source_dir = self.get_zip_base_path(path)
         db = DSVParser(source_dir)
@@ -388,7 +388,7 @@ class CooknMigrator(BaseMigrator):
             recipes.append(r)
 
         # add recipes and images to database
-        results = self.import_recipes_to_database(recipes)
+        results = await self.import_recipes_to_database(recipes)
         recipe_lookup = {r.slug: r for r in recipes}
         for slug, recipe_id, status in results:
             if status:
@@ -406,7 +406,7 @@ class CooknMigrator(BaseMigrator):
                     else:
                         self.logger.warning("Failed to lookup recipe! (%s)", slug)
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         """Migrates recipes from Cook'n cookboop .zip. Also will handle a .zip folder of .zip folders"""
         with tempfile.TemporaryDirectory() as tmpdir:
             with zipfile.ZipFile(self.archive) as zip_file:
@@ -414,7 +414,7 @@ class CooknMigrator(BaseMigrator):
 
                 # Process single zipped cookbook
                 if Path(f"{tmpdir}/temp_recipe.dsv").exists():
-                    self._process_cookbook(Path(tmpdir))
+                    await self._process_cookbook(Path(tmpdir))
 
                 # Process a zip folder of zipped cookbooks
                 for file in Path(tmpdir).glob("*.zip"):
@@ -422,4 +422,4 @@ class CooknMigrator(BaseMigrator):
                         with zipfile.ZipFile(file) as zip_file2:
                             zip_file2.extractall(tmpdir2)
 
-                        self._process_cookbook(Path(tmpdir2))
+                        await self._process_cookbook(Path(tmpdir2))

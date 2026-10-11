@@ -28,14 +28,14 @@ class GroupSelfServiceController(BaseUserController):
         return self.group.cast(GroupSummary)
 
     @router.get("/members", response_model=PaginationBase[UserSummary])
-    def get_group_members(self, q: PaginationQuery = Depends()):
+    async def get_group_members(self, q: PaginationQuery = Depends()):
         """Returns all users belonging to the current group"""
-        response = self.repos.users.page_all(q, override=UserSummary)
+        response = await self.repos.users.page_all(q, override=UserSummary)
         response.set_pagination_guides(router.url_path_for("get_group_members"), q.model_dump())
         return response
 
     @router.get("/members/{username_or_id}", response_model=UserSummary)
-    def get_group_member(self, username_or_id: str | UUID4):
+    async def get_group_member(self, username_or_id: str | UUID4):
         """Returns a single user belonging to the current group"""
 
         try:
@@ -44,7 +44,7 @@ class GroupSelfServiceController(BaseUserController):
         except ValueError:
             key = "username"
 
-        private_user = self.repos.users.get_one(username_or_id, key)
+        private_user = await self.repos.users.get_one(username_or_id, key)
         if not private_user:
             raise HTTPException(status_code=404, detail="User Not Found")
 

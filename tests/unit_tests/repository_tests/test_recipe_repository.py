@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from mealie.repos.all_repositories import get_repositories
 from mealie.repos.repository_factory import AllRepositories
 from mealie.schema.household.household import HouseholdCreate, HouseholdRecipeCreate
 from mealie.schema.recipe import RecipeIngredient, SaveIngredientFood
@@ -13,6 +12,7 @@ from mealie.schema.recipe.recipe_category import CategorySave, TagSave
 from mealie.schema.recipe.recipe_tool import RecipeToolSave
 from mealie.schema.response import OrderDirection, PaginationQuery
 from mealie.schema.user.user import GroupBase, UserRatingCreate
+from tests.utils.async_database import get_repositories
 from tests.utils.factories import random_email, random_string
 from tests.utils.fixture_schemas import TestUser
 

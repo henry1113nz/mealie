@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from sqlalchemy.orm.session import Session
+from starlette.concurrency import run_in_threadpool
 
 from mealie.core import root_logger
 from mealie.core.config import get_app_settings
@@ -21,18 +22,18 @@ class CredentialsProvider(AuthProvider[CredentialsRequest]):
     def __init__(self, session: Session, data: CredentialsRequest) -> None:
         super().__init__(session, data)
 
-    def authenticate(self) -> tuple[str, timedelta] | None:
+    async def authenticate(self) -> tuple[str, timedelta] | None:
         """Attempt to authenticate a user given a username and password"""
         settings = get_app_settings()
         db = get_repositories(self.session, group_id=None, household_id=None)
-        user = self.try_get_user(self.data.username)
+        user = await self.try_get_user(self.data.username)
 
         if not user:
-            self.verify_fake_password()
+            await run_in_threadpool(self.verify_fake_password)
             return None
 
         if user.auth_method != AuthMethod.MEALIE:
-            self.verify_fake_password()
+            await run_in_threadpool(self.verify_fake_password)
             self._logger.warning(
                 "Found user but their auth method is not 'Mealie'. Unable to continue with credentials login"
             )
@@ -41,18 +42,18 @@ class CredentialsProvider(AuthProvider[CredentialsRequest]):
         if user.login_attemps >= settings.SECURITY_MAX_LOGIN_ATTEMPTS or user.is_locked:
             raise UserLockedOut()
 
-        if not CredentialsProvider.verify_password(self.data.password, user.password):
+        if not await run_in_threadpool(CredentialsProvider.verify_password, self.data.password, user.password):
             user.login_attemps += 1
-            db.users.update(user.id, user)
+            await db.users.update(user.id, user)
 
             if user.login_attemps >= settings.SECURITY_MAX_LOGIN_ATTEMPTS:
                 user_service = UserService(db)
-                user_service.lock_user(user)
+                await user_service.lock_user(user)
 
             return None
 
         user.login_attemps = 0
-        user = db.users.update(user.id, user)
+        user = await db.users.update(user.id, user)
         return self.get_access_token(user, self.data.remember_me)  # type: ignore
 
     def verify_fake_password(self):

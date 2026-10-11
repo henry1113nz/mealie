@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 import tests.data as test_data
 from mealie.core.config import get_app_settings
 from mealie.db.db_setup import session_context
+from mealie.db.models._legacy_users import User, UserToRecipe
 from mealie.db.models._model_utils.guid import GUID
 from mealie.db.models.group import Group
 from mealie.db.models.household.cookbook import CookBook
@@ -17,11 +18,10 @@ from mealie.db.models.recipe.ingredient import IngredientFoodModel, IngredientUn
 from mealie.db.models.recipe.labels import MultiPurposeLabel
 from mealie.db.models.recipe.recipe import RecipeModel
 from mealie.db.models.recipe.tool import Tool
-from mealie.db.models.users.user_to_recipe import UserToRecipe
-from mealie.db.models.users.users import User
 from mealie.services.backups_v2.alchemy_exporter import AlchemyExporter
 from mealie.services.backups_v2.backup_file import BackupFile
 from mealie.services.backups_v2.backup_v2 import BackupV2
+from tests.utils.async_database import run_async
 
 
 def dict_sorter(d: dict) -> Any:
@@ -57,7 +57,7 @@ def test_database_restore():
     path_to_backup = backup_v2.backup()
 
     assert path_to_backup.exists()
-    backup_v2.restore(path_to_backup)
+    run_async(backup_v2.restore(path_to_backup))
 
     new_exporter = AlchemyExporter(settings.DB_URL)
     snapshop_2 = new_exporter.dump()
@@ -265,7 +265,7 @@ def test_database_restore_data():
     try:
         for backup_path in backup_paths:
             assert backup_path.exists()
-            backup_v2.restore(backup_path)
+            run_async(backup_v2.restore(backup_path))
 
             with session_context() as session:
                 for migration_func in migration_funcs:
@@ -278,4 +278,4 @@ def test_database_restore_data():
                         ) from e
 
     finally:
-        backup_v2.restore(original_data_backup)
+        run_async(backup_v2.restore(original_data_backup))

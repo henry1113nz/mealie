@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
 from mealie.core.config import get_app_settings
-from mealie.repos.all_repositories import get_repositories
 from tests import utils
 from tests.utils import api_routes
+from tests.utils.async_database import get_repositories
 
 
 @fixture(scope="session")

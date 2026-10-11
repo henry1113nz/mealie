@@ -19,6 +19,7 @@ from mealie.schema.reports.reports import (
     ReportSummary,
     ReportSummaryStatus,
 )
+from mealie.schema.user.user import PrivateUser
 from mealie.services.recipe.recipe_service import RecipeService
 from mealie.services.scraper import cleaner
 
@@ -47,6 +48,7 @@ class BaseMigrator(BaseService):
         group_id: UUID4,
         add_migration_tag: bool,
         translator: Translator,
+        user: PrivateUser,
     ):
         self.archive = archive
         self.db = db
@@ -54,8 +56,7 @@ class BaseMigrator(BaseService):
         self.add_migration_tag = add_migration_tag
         self.translator = translator
 
-        user = db.users.get_one(user_id)
-        if not user:
+        if user.id != user_id:
             raise UnexpectedNone(f"Cannot find user {user_id}")
 
         household = db.households.get_one(household_id)
@@ -103,7 +104,7 @@ class BaseMigrator(BaseService):
         else:
             return path
 
-    def _migrate(self) -> None:
+    async def _migrate(self) -> None:
         raise NotImplementedError
 
     def _create_report(self, report_name: str) -> None:
@@ -143,9 +144,9 @@ class BaseMigrator(BaseService):
         self.report.entries = new_entries
         self.db.group_reports.update(self.report.id, self.report)
 
-    def migrate(self, report_name: str) -> ReportSummary:
+    async def migrate(self, report_name: str) -> ReportSummary:
         self._create_report(report_name)
-        self._migrate()
+        await self._migrate()
         self._save_all_entries()
 
         result = self.db.group_reports.get_one(self.report_id)
@@ -155,7 +156,7 @@ class BaseMigrator(BaseService):
 
         return result
 
-    def import_recipes_to_database(self, validated_recipes: list[Recipe]) -> list[tuple[str, UUID4, bool]]:
+    async def import_recipes_to_database(self, validated_recipes: list[Recipe]) -> list[tuple[str, UUID4, bool]]:
         """
         Used as a single access point to process a list of Recipe objects into the
         database in a predictable way. If an error occurs the session is rolled back
@@ -206,7 +207,7 @@ class BaseMigrator(BaseService):
                 # locate the file, so it is dropped from the persisted copy only. The key is
                 # recorded by `import_image`/`scrape_image` once a file actually lands, so a
                 # recipe never claims an image the media route cannot serve.
-                recipe = self.recipe_service.create_one(recipe.model_copy(update={"image": None}))
+                recipe = await self.recipe_service.create_one(recipe.model_copy(update={"image": None}))
                 status = True
 
             except Exception as inst:

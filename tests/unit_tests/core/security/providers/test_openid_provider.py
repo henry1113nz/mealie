@@ -14,8 +14,8 @@ from mealie.core.exceptions import MissingClaimException
 from mealie.core.security.providers import openid_provider
 from mealie.core.security.providers.openid_provider import OpenIDProvider
 from mealie.pkgs.safehttp import transport as safehttp_transport
-from mealie.repos.all_repositories import get_repositories
 from mealie.schema.user import PrivateUser
+from tests.utils.async_database import get_repositories, run_async
 from tests.utils.factories import random_email, random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -24,14 +24,14 @@ def test_no_claims():
     auth_provider = OpenIDProvider(None, None)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_empty_claims():
     auth_provider = OpenIDProvider(None, {})
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_empty_required_claims():
@@ -44,7 +44,7 @@ def test_empty_required_claims():
     auth_provider = OpenIDProvider(None, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_missing_claims():
@@ -52,7 +52,7 @@ def test_missing_claims():
     auth_provider = OpenIDProvider(None, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_missing_groups_claim(monkeypatch: MonkeyPatch):
@@ -68,7 +68,7 @@ def test_missing_groups_claim(monkeypatch: MonkeyPatch):
     auth_provider = OpenIDProvider(None, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_missing_groups_claim_admin(monkeypatch: MonkeyPatch):
@@ -84,7 +84,7 @@ def test_missing_groups_claim_admin(monkeypatch: MonkeyPatch):
     auth_provider = OpenIDProvider(None, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_missing_groups_claim_with_default(monkeypatch: MonkeyPatch):
@@ -99,7 +99,7 @@ def test_missing_groups_claim_with_default(monkeypatch: MonkeyPatch):
     }
     auth_provider = OpenIDProvider(None, data, True)
 
-    assert auth_provider.authenticate() is None
+    assert run_async(auth_provider.authenticate()) is None
 
 
 def test_missing_groups_claim_admin_group_with_default(monkeypatch: MonkeyPatch, unique_user: TestUser):
@@ -114,7 +114,7 @@ def test_missing_groups_claim_admin_group_with_default(monkeypatch: MonkeyPatch,
     }
     auth_provider = OpenIDProvider(unique_user.repos.session, data, True)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
 
 def test_missing_user_group(monkeypatch: MonkeyPatch):
@@ -130,7 +130,7 @@ def test_missing_user_group(monkeypatch: MonkeyPatch):
     }
     auth_provider = OpenIDProvider(None, data)
 
-    assert auth_provider.authenticate() is None
+    assert run_async(auth_provider.authenticate()) is None
 
 
 def test_has_user_group_existing_user(monkeypatch: MonkeyPatch, unique_user: TestUser):
@@ -146,7 +146,7 @@ def test_has_user_group_existing_user(monkeypatch: MonkeyPatch, unique_user: Tes
     }
     auth_provider = OpenIDProvider(unique_user.repos.session, data)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
 
 def test_has_admin_group_existing_user(monkeypatch: MonkeyPatch, unique_user: TestUser):
@@ -163,7 +163,7 @@ def test_has_admin_group_existing_user(monkeypatch: MonkeyPatch, unique_user: Te
     }
     auth_provider = OpenIDProvider(unique_user.repos.session, data)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
 
 def test_has_user_group_new_user(monkeypatch: MonkeyPatch, session: Session):
@@ -180,7 +180,7 @@ def test_has_user_group_new_user(monkeypatch: MonkeyPatch, session: Session):
     }
     auth_provider = OpenIDProvider(session, data)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
     db = get_repositories(session, group_id=None, household_id=None)
     user = db.users.get_one("dude1", "username")
@@ -202,7 +202,7 @@ def test_has_admin_group_new_user(monkeypatch: MonkeyPatch, session: Session):
     }
     auth_provider = OpenIDProvider(session, data)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
     db = get_repositories(session, group_id=None, household_id=None)
     user = db.users.get_one("dude2", "username")
@@ -233,9 +233,9 @@ def test_ldap_user_creation_invalid_group_or_household(
     auth_provider = OpenIDProvider(session, data)
 
     if valid_group and valid_household:
-        assert auth_provider.authenticate() is not None
+        assert run_async(auth_provider.authenticate()) is not None
     else:
-        assert auth_provider.authenticate() is None
+        assert run_async(auth_provider.authenticate()) is None
 
     db = get_repositories(session, group_id=None, household_id=None)
     user = db.users.get_one(data["preferred_username"], "username")
@@ -259,7 +259,7 @@ def test_rejects_unverified_email(monkeypatch: MonkeyPatch, session: Session):
     auth_provider = OpenIDProvider(session, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_rejects_missing_email_verified(monkeypatch: MonkeyPatch, session: Session):
@@ -274,7 +274,7 @@ def test_rejects_missing_email_verified(monkeypatch: MonkeyPatch, session: Sessi
     auth_provider = OpenIDProvider(session, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_does_not_adopt_existing_account_with_unverified_email(monkeypatch: MonkeyPatch, unique_user: TestUser):
@@ -291,7 +291,7 @@ def test_does_not_adopt_existing_account_with_unverified_email(monkeypatch: Monk
     auth_provider = OpenIDProvider(unique_user.repos.session, data)
 
     with pytest.raises(MissingClaimException):
-        auth_provider.authenticate()
+        run_async(auth_provider.authenticate())
 
 
 def test_adopts_existing_account_with_verified_email(monkeypatch: MonkeyPatch, unique_user: TestUser):
@@ -307,7 +307,7 @@ def test_adopts_existing_account_with_verified_email(monkeypatch: MonkeyPatch, u
     }
     auth_provider = OpenIDProvider(unique_user.repos.session, data)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
 
 def test_allows_unverified_email_when_verification_disabled(monkeypatch: MonkeyPatch, session: Session):
@@ -321,7 +321,7 @@ def test_allows_unverified_email_when_verification_disabled(monkeypatch: MonkeyP
     }
     auth_provider = OpenIDProvider(session, data)
 
-    assert auth_provider.authenticate() is not None
+    assert run_async(auth_provider.authenticate()) is not None
 
 
 def test_claims_logging(monkeypatch: MonkeyPatch, caplog, session: Session):
@@ -336,7 +336,7 @@ def test_claims_logging(monkeypatch: MonkeyPatch, caplog, session: Session):
         "groups": ["mealie_user"],
     }
     auth_provider = OpenIDProvider(session, data)
-    auth_provider.authenticate()
+    run_async(auth_provider.authenticate())
 
     # Verify that all claims are logged
     for key, value in data.items():
@@ -435,7 +435,7 @@ def test_stores_picture_and_rotates_cache_key(_oidc_env, monkeypatch: MonkeyPatc
 
     data = _picture_claims(url)
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     assert requested == [url]
     after = unique_user.repos.users.get_one(unique_user.user_id)
@@ -457,7 +457,7 @@ def test_unchanged_picture_claim_skips_download(_oidc_env, monkeypatch: MonkeyPa
 
     data = _picture_claims(url)
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     assert requested == []
 
@@ -466,7 +466,7 @@ def test_unchanged_picture_claim_skips_download(_oidc_env, monkeypatch: MonkeyPa
 def test_absent_or_non_string_picture_claim(_oidc_env, monkeypatch: MonkeyPatch, session: Session, picture):
     requested = _patch_network(monkeypatch, [])
 
-    assert OpenIDProvider(session, _picture_claims(picture)).authenticate() is not None
+    assert run_async(OpenIDProvider(session, _picture_claims(picture)).authenticate()) is not None
     assert requested == []
 
 
@@ -483,7 +483,7 @@ def test_rejects_urls_that_are_not_https(_oidc_env, monkeypatch: MonkeyPatch, se
     _resolve_to(monkeypatch, "93.184.216.34")
     requested = _patch_network(monkeypatch, [])
 
-    assert OpenIDProvider(session, _picture_claims(url)).authenticate() is not None
+    assert run_async(OpenIDProvider(session, _picture_claims(url)).authenticate()) is not None
     assert requested == []
 
 
@@ -505,7 +505,9 @@ def test_rejects_non_public_addresses(_oidc_env, monkeypatch: MonkeyPatch, sessi
     _resolve_to(monkeypatch, address)
     requested = _patch_network(monkeypatch, [])
 
-    assert OpenIDProvider(session, _picture_claims("https://cdn.example.com/a.png")).authenticate() is not None
+    assert (
+        run_async(OpenIDProvider(session, _picture_claims("https://cdn.example.com/a.png")).authenticate()) is not None
+    )
     assert requested == []
 
 
@@ -516,7 +518,9 @@ def test_unresolvable_host_is_rejected(_oidc_env, monkeypatch: MonkeyPatch, sess
     monkeypatch.setattr(safehttp_transport.socket, "getaddrinfo", _boom)
     requested = _patch_network(monkeypatch, [])
 
-    assert OpenIDProvider(session, _picture_claims("https://nope.example.com/a.png")).authenticate() is not None
+    assert (
+        run_async(OpenIDProvider(session, _picture_claims("https://nope.example.com/a.png")).authenticate()) is not None
+    )
     assert requested == []
 
 
@@ -531,7 +535,10 @@ def test_disallow_list_blocks_a_public_avatar_host(monkeypatch: MonkeyPatch, ses
         _resolve_to(monkeypatch, "93.184.216.34")
         requested = _patch_network(monkeypatch, [])
 
-        assert OpenIDProvider(session, _picture_claims("https://cdn.example.com/a.png")).authenticate() is not None
+        assert (
+            run_async(OpenIDProvider(session, _picture_claims("https://cdn.example.com/a.png")).authenticate())
+            is not None
+        )
         assert requested == []
     finally:
         get_app_settings.cache_clear()
@@ -549,7 +556,7 @@ def test_provider_own_host_is_allowed_on_a_private_network(
 
     data = _picture_claims(url)
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     assert requested == [url]
 
@@ -563,7 +570,7 @@ def test_oversized_declared_content_length_is_refused(_oidc_env, monkeypatch: Mo
 
     data = _picture_claims("https://cdn.example.com/huge.png")
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     after = unique_user.repos.users.get_one(unique_user.user_id)
     assert after is not None
@@ -580,7 +587,7 @@ def test_oversized_stream_is_refused(_oidc_env, monkeypatch: MonkeyPatch, unique
 
     data = _picture_claims("https://cdn.example.com/liar.png")
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     after = unique_user.repos.users.get_one(unique_user.user_id)
     assert after is not None
@@ -595,7 +602,7 @@ def test_failed_download_does_not_break_login(_oidc_env, monkeypatch: MonkeyPatc
 
     data = _picture_claims("https://cdn.example.com/a.png")
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     after = unique_user.repos.users.get_one(unique_user.user_id)
     assert after is not None
@@ -612,7 +619,7 @@ def test_error_status_does_not_break_login(_oidc_env, monkeypatch: MonkeyPatch, 
 
     data = _picture_claims("https://cdn.example.com/a.png")
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     after = unique_user.repos.users.get_one(unique_user.user_id)
     assert after is not None
@@ -627,7 +634,7 @@ def test_undecodable_image_does_not_break_login(_oidc_env, monkeypatch: MonkeyPa
 
     data = _picture_claims("https://cdn.example.com/a.png")
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     after = unique_user.repos.users.get_one(unique_user.user_id)
     assert after is not None
@@ -637,7 +644,7 @@ def test_undecodable_image_does_not_break_login(_oidc_env, monkeypatch: MonkeyPa
 def _authenticate_with_picture(user: TestUser, url: str):
     data = _picture_claims(url)
     data["email"] = user.email
-    return OpenIDProvider(user.repos.session, data).authenticate()
+    return run_async(OpenIDProvider(user.repos.session, data).authenticate())
 
 
 @pytest.mark.parametrize("status_code", [301, 302, 303, 307, 308])
@@ -753,7 +760,7 @@ def test_temp_file_is_moved_not_left_behind(_oidc_env, monkeypatch: MonkeyPatch,
 
     data = _picture_claims("https://cdn.example.com/a.png")
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     assert len(moved) == 1
     source, _ = moved[0]
@@ -778,7 +785,7 @@ def test_malformed_picture_claim_does_not_break_login(
 
     data = _picture_claims(picture)
     data["email"] = unique_user.email
-    assert OpenIDProvider(unique_user.repos.session, data).authenticate() is not None
+    assert run_async(OpenIDProvider(unique_user.repos.session, data).authenticate()) is not None
 
     assert requested == []
     after = unique_user.repos.users.get_one(unique_user.user_id)

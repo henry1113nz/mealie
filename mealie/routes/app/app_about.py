@@ -48,14 +48,11 @@ def get_app_info(session: Session = Depends(generate_session)):
 
 
 @router.get("/startup-info", response_model=AppStartupInfo)
-def get_startup_info(session: Session = Depends(generate_session)):
+async def get_startup_info():
     """returns helpful startup information"""
     settings = get_app_settings()
 
-    is_first_login = False
-    with session as db:
-        if db.query(User).filter_by(email=settings._DEFAULT_EMAIL).count() > 0:
-            is_first_login = True
+    is_first_login = await User.filter(email=settings._DEFAULT_EMAIL).exists()
 
     return AppStartupInfo(
         is_first_login=is_first_login,
