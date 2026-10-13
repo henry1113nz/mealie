@@ -2,6 +2,8 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
+import pytest
+
 from mealie.schema.recipe.recipe import Recipe
 from mealie.services.recipe.recipe_bulk_service import RecipeBulkActionsService
 from mealie.services.scheduler.tasks.purge_group_exports import purge_group_data_exports
@@ -9,7 +11,8 @@ from tests.utils.factories import random_int, random_string
 from tests.utils.fixture_schemas import TestUser
 
 
-def test_purge_group_exports(unique_user: TestUser):
+@pytest.mark.asyncio
+async def test_purge_group_exports(unique_user: TestUser):
     database = unique_user.repos
 
     # create the export
@@ -39,7 +42,7 @@ def test_purge_group_exports(unique_user: TestUser):
     assert export_path.exists()
 
     # purge the export and confirm all data is removed
-    purge_group_data_exports(-525600)  # 1 year into the future
+    await purge_group_data_exports(-525600)  # 1 year into the future
 
     assert not export_path.exists()
     exports = recipe_exporter.get_exports()

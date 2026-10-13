@@ -2,10 +2,8 @@ from datetime import UTC, datetime
 
 from pydantic import UUID4
 
-from mealie.db.db_setup import session_context
-from mealie.repos.all_repositories import get_repositories
+from mealie.db.models.tortoise_models import Group, Household
 from mealie.schema.household.webhook import ReadWebhook
-from mealie.schema.response.pagination import PaginationQuery
 from mealie.services.event_bus_service.event_bus_listeners import WebhookEventListener
 from mealie.services.event_bus_service.event_bus_service import EventBusService
 from mealie.services.event_bus_service.event_types import (
@@ -21,7 +19,7 @@ from mealie.services.event_bus_service.event_types import (
 last_ran = datetime.now(UTC)
 
 
-def post_group_webhooks(
+async def post_group_webhooks(
     start_dt: datetime | None = None, group_id: UUID4 | None = None, household_id: UUID4 | None = None
 ) -> None:
     """Post webhook events to specified group, or all groups"""
@@ -36,11 +34,7 @@ def post_group_webhooks(
 
     if group_id is None:
         # publish the webhook event to each group's event bus
-
-        with session_context() as session:
-            repos = get_repositories(session)
-            groups_data = repos.groups.page_all(PaginationQuery(page=1, per_page=-1))
-            group_ids = [group.id for group in groups_data.items]
+        group_ids = await Group.all().values_list("id", flat=True)
 
     else:
         group_ids = [group_id]
@@ -61,10 +55,7 @@ def post_group_webhooks(
 
     for group_id in group_ids:
         if household_id is None:
-            with session_context() as session:
-                household_repos = get_repositories(session, group_id=group_id)
-                households_data = household_repos.households.page_all(PaginationQuery(page=1, per_page=-1))
-                household_ids = [household.id for household in households_data.items]
+            household_ids = await Household.filter(group_id=group_id).values_list("id", flat=True)
         else:
             household_ids = [household_id]
 

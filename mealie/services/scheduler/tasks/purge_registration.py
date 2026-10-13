@@ -1,25 +1,18 @@
 import datetime
 
-from sqlalchemy import delete
-
 from mealie.core import root_logger
-from mealie.db.db_setup import session_context
-from mealie.db.models.household import GroupInviteToken
+from mealie.db.models.tortoise_models import GroupInviteToken
 
 logger = root_logger.get_logger()
 
 MAX_DAYS_OLD = 4
 
 
-def purge_group_registration():
+async def purge_group_registration() -> None:
     """Purges all events after x days"""
     logger.debug("purging expired registration tokens")
     limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=MAX_DAYS_OLD)
 
-    with session_context() as session:
-        stmt = delete(GroupInviteToken).filter(GroupInviteToken.created_at <= limit)
-        session.execute(stmt)
-        session.commit()
-        session.close()
+    await GroupInviteToken.filter(created_at__lte=limit).delete()
 
     logger.info("registration token purged")

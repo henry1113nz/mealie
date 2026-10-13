@@ -1,35 +1,33 @@
-from fastapi import APIRouter, Depends, Response
-from sqlalchemy.orm.session import Session
+from fastapi import APIRouter, Response
 
 from mealie.core.config import get_app_settings
 from mealie.core.settings.static import APP_VERSION
-from mealie.db.db_setup import generate_session
-from mealie.db.models.users.users import User
-from mealie.repos.all_repositories import get_repositories
+from mealie.db.models.tortoise_models import Group, GroupPreferencesModel, Household, HouseholdPreferencesModel, User
 from mealie.schema.admin.about import AppInfo, AppStartupInfo, AppTheme
 
 router = APIRouter(prefix="/about")
 
 
 @router.get("", response_model=AppInfo)
-def get_app_info(session: Session = Depends(generate_session)):
+async def get_app_info():
     """Get general application information"""
     settings = get_app_settings()
-
-    public_repos = get_repositories(session, group_id=None, household_id=None)
 
     default_group_slug: str | None = None
     default_household_slug: str | None = None
 
-    default_group = public_repos.groups.get_by_name(settings.DEFAULT_GROUP)
-    if default_group and default_group.preferences and not default_group.preferences.private_group:
-        default_group_slug = default_group.slug
+    default_group = await Group.filter(name=settings.DEFAULT_GROUP).first()
+    if default_group:
+        group_preferences = await GroupPreferencesModel.filter(group_id=default_group.id).first()
+        if group_preferences and not group_preferences.private_group:
+            default_group_slug = default_group.slug
 
     if default_group and default_group_slug:
-        group_repos = get_repositories(session, group_id=default_group.id, household_id=None)
-        default_household = group_repos.households.get_by_name(settings.DEFAULT_HOUSEHOLD)
-        if default_household and default_household.preferences and not default_household.preferences.private_household:
-            default_household_slug = default_household.slug
+        default_household = await Household.filter(group_id=default_group.id, name=settings.DEFAULT_HOUSEHOLD).first()
+        if default_household:
+            household_preferences = await HouseholdPreferencesModel.filter(household_id=default_household.id).first()
+            if household_preferences and not household_preferences.private_household:
+                default_household_slug = default_household.slug
 
     return AppInfo(
         version=APP_VERSION,
@@ -48,14 +46,11 @@ def get_app_info(session: Session = Depends(generate_session)):
 
 
 @router.get("/startup-info", response_model=AppStartupInfo)
-def get_startup_info(session: Session = Depends(generate_session)):
+async def get_startup_info():
     """returns helpful startup information"""
     settings = get_app_settings()
 
-    is_first_login = False
-    with session as db:
-        if db.query(User).filter_by(email=settings._DEFAULT_EMAIL).count() > 0:
-            is_first_login = True
+    is_first_login = await User.filter(email=settings._DEFAULT_EMAIL).exists()
 
     return AppStartupInfo(
         is_first_login=is_first_login,

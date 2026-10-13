@@ -15,6 +15,7 @@ from mealie.core.config import get_app_settings
 from mealie.core.dependencies import get_auth_token, get_current_user
 from mealie.core.exceptions import MissingClaimException, UserLockedOut
 from mealie.core.security.security import get_auth_provider
+from mealie.core.security.tortoise_credentials import authenticate_credentials
 from mealie.db.db_setup import generate_session
 from mealie.lang import get_locale_provider
 from mealie.routes._base.routers import UserAPIRouter
@@ -132,7 +133,7 @@ class MealieAuthToken(BaseModel):
 
 
 @public_router.post("/token")
-def get_token(
+async def get_token(
     request: Request,
     response: Response,
     data: CredentialsRequestForm = Depends(),
@@ -147,8 +148,15 @@ def get_token(
         ip = request.client.host if request.client else "unknown"
 
     try:
-        auth_provider = get_auth_provider(session, data)
-        auth = auth_provider.authenticate()
+        if settings.LDAP_ENABLED:
+            auth_provider = get_auth_provider(session, data)
+            auth = auth_provider.authenticate()
+        else:
+            from mealie.schema.user.auth import CredentialsRequest
+
+            auth = await authenticate_credentials(
+                CredentialsRequest(username=data.username, password=data.password, remember_me=data.remember_me)
+            )
     except UserLockedOut as e:
         logger.error(f"User is locked out from {ip}")
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="User is locked out") from e

@@ -3,7 +3,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from shutil import rmtree
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import fastapi
 import jwt
@@ -15,9 +15,14 @@ from sqlalchemy.orm.session import Session
 from mealie.core import root_logger
 from mealie.core.config import get_app_dirs, get_app_settings
 from mealie.core.security.tokens import ALGORITHM
-from mealie.db.db_setup import generate_session
+from mealie.db.models.tortoise_models import Group as TortoiseGroup
+from mealie.db.models.tortoise_models import GroupPreferencesModel
+from mealie.db.models.tortoise_models import LongLiveToken as TortoiseLongLiveToken
+from mealie.db.models.tortoise_models import User as TortoiseUser
+from mealie.db.models.users.users import AuthMethod
 from mealie.repos.all_repositories import get_repositories
-from mealie.schema.user import PrivateUser, TokenData
+from mealie.schema.group.group_preferences import ReadGroupPreferences
+from mealie.schema.user import LongLiveTokenOut, PrivateUser, TokenData
 from mealie.schema.user.user import DEFAULT_INTEGRATION_ID, GroupInDB
 
 oauth2_scheme_soft_fail = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
@@ -32,15 +37,11 @@ credentials_exception = HTTPException(
 )
 
 
-async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=Depends(generate_session)) -> bool:
+async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail)) -> bool:
     """
     When you need to determine if the user is logged in, but don't need the user, you can use this
     function to return a boolean value to represent if the user is logged in. No Auth exceptions are raised
     if the user is not logged in. This behavior is not the same as 'get_current_user'
-
-    Args:
-        token (str, optional): [description]. Defaults to Depends(oauth2_scheme_soft_fail).
-        session ([type], optional): [description]. Defaults to Depends(generate_session).
 
     Returns:
         bool: True = Valid User / False = Not User
@@ -52,7 +53,7 @@ async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=De
 
         if long_token is not None:
             try:
-                if validate_long_live_token(session, token, payload.get("id")):
+                if await _validate_tortoise_long_live_token(token, payload.get("id")):
                     return True
             except Exception:
                 return False
@@ -63,14 +64,32 @@ async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=De
         return False
 
 
-async def get_public_group(group_slug: str = fastapi.Path(...), session=Depends(generate_session)) -> GroupInDB:
-    repos = get_repositories(session)
-    group = repos.groups.get_by_slug_or_id(group_slug)
-
-    if not group or group.preferences.private_group:
-        raise HTTPException(404, "group not found")
+async def get_public_group(group_slug: str = fastapi.Path(...)) -> GroupInDB:
+    try:
+        group_id = UUID(group_slug)
+    except ValueError:
+        group = await TortoiseGroup.filter(slug=group_slug).first()
     else:
-        return group
+        group = await TortoiseGroup.filter(id=group_id).first()
+
+    if group is None:
+        raise HTTPException(404, "group not found")
+
+    preferences = await GroupPreferencesModel.filter(group_id=group.id).first()
+    if preferences is None or preferences.private_group:
+        raise HTTPException(404, "group not found")
+
+    return GroupInDB(
+        id=group.id,
+        name=group.name,
+        slug=group.slug,
+        preferences=ReadGroupPreferences(
+            id=preferences.id,
+            group_id=group.id,
+            private_group=bool(preferences.private_group),
+            show_announcements=preferences.show_announcements,
+        ),
+    )
 
 
 async def get_auth_token(
@@ -91,17 +110,15 @@ async def get_auth_token(
 
 async def try_get_current_user(
     token: str = Depends(get_auth_token),
-    session=Depends(generate_session),
 ) -> PrivateUser | None:
     try:
-        return await get_current_user(token, session)
+        return await get_current_user(token)
     except Exception:
         return None
 
 
 async def get_current_user(
     token: str = Depends(get_auth_token),
-    session=Depends(generate_session),
 ) -> PrivateUser:
     try:
         payload = jwt.decode(token, settings.SECRET, algorithms=[ALGORITHM])
@@ -109,7 +126,7 @@ async def get_current_user(
         long_token: str | None = payload.get("long_token")
 
         if long_token is not None:
-            return validate_long_live_token(session, token, payload.get("id"))
+            return await _validate_tortoise_long_live_token(token, payload.get("id"))
 
         if user_id is None:
             raise credentials_exception
@@ -118,13 +135,8 @@ async def get_current_user(
     except PyJWTError as e:
         raise credentials_exception from e
 
-    repos = get_repositories(session, group_id=None, household_id=None)
-
-    user = repos.users.get_one(token_data.user_id, "id", any_case=False)
-
-    # If we don't commit here, lazy-loads from user relationships will leave some table lock in postgres
-    # which can cause quite a bit of pain further down the line
-    session.commit()
+    user_model = await TortoiseUser.filter(id=token_data.user_id).first()
+    user = await _to_private_user(user_model) if user_model else None
     if user is None:
         raise credentials_exception
 
@@ -136,6 +148,64 @@ async def get_current_user(
             raise credentials_exception
 
     return user
+
+
+async def _validate_tortoise_long_live_token(client_token: str, user_id: str | None) -> PrivateUser:
+    if user_id is None:
+        raise credentials_exception
+    token = await TortoiseLongLiveToken.filter(token=client_token, user_id=user_id).first()
+    if token is None:
+        raise credentials_exception
+
+    user_model = await token.user
+    user = await _to_private_user(user_model)
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+async def _to_private_user(user: TortoiseUser | None) -> PrivateUser | None:
+    if user is None:
+        return None
+
+    await user.fetch_related("group", "household", "tokens")
+    group = user.group
+    household = user.household
+    if household is None:
+        return None
+
+    tokens = [
+        LongLiveTokenOut(id=token.id, name=token.name, created_at=token.created_at)
+        for token in await user.tokens.all()
+    ]
+    return PrivateUser(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        email=user.email,
+        auth_method=AuthMethod[user.auth_method],
+        admin=bool(user.admin),
+        group=group.name,
+        group_id=user.group_id,
+        group_slug=group.slug,
+        household=household.name,
+        household_id=user.household_id,
+        household_slug=household.slug,
+        tokens=tokens,
+        cache_key=user.cache_key or "",
+        advanced=bool(user.advanced),
+        show_announcements=user.show_announcements,
+        last_read_announcement=user.last_read_announcement,
+        can_invite=bool(user.can_invite),
+        can_manage=bool(user.can_manage),
+        can_manage_household=bool(user.can_manage_household),
+        can_organize=bool(user.can_organize),
+        password=user.password or "",
+        login_attemps=user.login_attemps,
+        locked_at=user.locked_at,
+        tokens_valid_after=user.tokens_valid_after,
+        external_avatar_hash=user.external_avatar_hash,
+    )
 
 
 async def get_integration_id(token: str = Depends(get_auth_token)) -> str:

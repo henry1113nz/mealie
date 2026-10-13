@@ -46,11 +46,8 @@ from fastapi.testclient import TestClient
 from mealie.app import app
 from mealie.core import config
 from mealie.db.db_setup import SessionLocal, generate_session
-from mealie.db.init_db import main
 from tests import data as test_data
 from tests.fixtures import *  # noqa: F403 F401
-
-main()
 
 
 def override_get_db():
@@ -65,7 +62,8 @@ def override_get_db():
 def api_client():
     app.dependency_overrides[generate_session] = override_get_db
 
-    yield TestClient(app)
+    with TestClient(app) as client:
+        yield client
 
     with contextlib.suppress(Exception):
         settings = config.get_app_settings()

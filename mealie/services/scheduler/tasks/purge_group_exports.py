@@ -1,37 +1,29 @@
 import datetime
 from pathlib import Path
 
-from sqlalchemy import cast, select
-
 from mealie.core import root_logger
 from mealie.core.config import get_app_dirs
-from mealie.db.db_setup import session_context
-from mealie.db.models._model_utils.datetime import NaiveDateTime
-from mealie.db.models.group.exports import GroupDataExportsModel
+from mealie.db.models.tortoise_models import GroupDataExportsModel
 
 ONE_DAY_AS_MINUTES = 1440
 
 
-def purge_group_data_exports(max_minutes_old=ONE_DAY_AS_MINUTES):
+async def purge_group_data_exports(max_minutes_old: int = ONE_DAY_AS_MINUTES) -> None:
     """Purges all group exports after x days"""
     logger = root_logger.get_logger()
 
     logger.debug("purging group data exports")
     limit = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=max_minutes_old)
 
-    with session_context() as session:
-        stmt = select(GroupDataExportsModel).filter(cast(GroupDataExportsModel.expires, NaiveDateTime) <= limit)
-        results = session.execute(stmt).scalars().all()
+    results = await GroupDataExportsModel.filter(expires__lte=limit)
 
-        total_removed = 0
-        for result in results:
-            session.delete(result)
-            Path(result.path).unlink(missing_ok=True)
-            total_removed += 1
+    total_removed = 0
+    for result in results:
+        await result.delete()
+        Path(result.path).unlink(missing_ok=True)
+        total_removed += 1
 
-        session.commit()
-
-        logger.info(f"finished purging group data exports. {total_removed} exports removed from group data")
+    logger.info(f"finished purging group data exports. {total_removed} exports removed from group data")
 
 
 def purge_excess_files() -> None:

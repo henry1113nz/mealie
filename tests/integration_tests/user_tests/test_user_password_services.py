@@ -3,7 +3,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from mealie.db.db_setup import session_context
 from mealie.schema.user.user import PrivateUser
 from mealie.services.user_services.password_reset_service import PasswordResetService
 from tests.utils import api_routes
@@ -12,7 +11,8 @@ from tests.utils.fixture_schemas import TestUser
 
 
 @pytest.mark.parametrize("casing", ["lower", "upper", "mixed"])
-def test_password_reset(api_client: TestClient, unique_user: TestUser, casing: str):
+@pytest.mark.asyncio
+async def test_password_reset(api_client: TestClient, unique_user: TestUser, casing: str):
     cased_email = ""
     if casing == "lower":
         cased_email = unique_user.email.lower()
@@ -26,10 +26,9 @@ def test_password_reset(api_client: TestClient, unique_user: TestUser, casing: s
                 cased_email += letter.lower()
         assert cased_email
 
-    with session_context() as session:
-        service = PasswordResetService(session)
-        token = service.generate_reset_token(cased_email)
-        assert token is not None
+    service = PasswordResetService()
+    token = await service.generate_reset_token(cased_email)
+    assert token is not None
 
     new_password = random_string(15)
 
@@ -60,7 +59,8 @@ def test_password_reset(api_client: TestClient, unique_user: TestUser, casing: s
 
 
 @pytest.mark.parametrize("casing", ["lower", "upper", "mixed"])
-def test_password_reset_ldap(ldap_user: PrivateUser, casing: str):
+@pytest.mark.asyncio
+async def test_password_reset_ldap(ldap_user: PrivateUser, casing: str):
     cased_email = ""
     if casing == "lower":
         cased_email = ldap_user.email.lower()
@@ -74,7 +74,6 @@ def test_password_reset_ldap(ldap_user: PrivateUser, casing: str):
                 cased_email += letter.lower()
         assert cased_email
 
-    with session_context() as session:
-        service = PasswordResetService(session)
-        token = service.generate_reset_token(cased_email)
-        assert token is None
+    service = PasswordResetService()
+    token = await service.generate_reset_token(cased_email)
+    assert token is None

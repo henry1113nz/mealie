@@ -15,6 +15,17 @@ from starlette.concurrency import run_in_threadpool
 NoArgsNoReturnFuncT = Callable[[], None]
 NoArgsNoReturnAsyncFuncT = Callable[[], Coroutine[Any, Any, None]]
 NoArgsNoReturnDecorator = Callable[[NoArgsNoReturnFuncT | NoArgsNoReturnAsyncFuncT], NoArgsNoReturnAsyncFuncT]
+_REPEATING_TASKS: set[asyncio.Task[None]] = set()
+
+
+async def stop_repeating_tasks() -> None:
+    """Cancel periodic jobs when the application shuts down."""
+    tasks = tuple(_REPEATING_TASKS)
+    _REPEATING_TASKS.clear()
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def repeat_every(
@@ -77,7 +88,9 @@ def repeat_every(
                             raise exc
                     await asyncio.sleep(minutes * 60)
 
-            ensure_future(loop())
+            task = ensure_future(loop())
+            _REPEATING_TASKS.add(task)
+            task.add_done_callback(_REPEATING_TASKS.discard)
 
         return wrapped
 

@@ -1,18 +1,26 @@
+from datetime import UTC, datetime, timedelta
+
 from mealie.core import root_logger
-from mealie.db.db_setup import session_context
-from mealie.repos.repository_factory import AllRepositories
-from mealie.services.user_services.user_service import UserService
+from mealie.core.config import get_app_settings
+from mealie.db.models.tortoise_models import User
 
 
-def locked_user_reset():
+async def locked_user_reset() -> int:
     logger = root_logger.get_logger()
     logger.debug("resetting locked users")
 
-    with session_context() as session:
-        repos = AllRepositories(session, group_id=None, household_id=None)
-        user_service = UserService(repos)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    lockout_window = timedelta(hours=get_app_settings().SECURITY_USER_LOCKOUT_TIME)
+    locked_users = await User.filter(locked_at__not_isnull=True)
+    unlocked = 0
 
-        unlocked = user_service.reset_locked_users()
-        logger.debug(f"scheduled task unlocked {unlocked} users in the database")
-        logger.info("locked users reset")
-        return unlocked
+    for user in locked_users:
+        if user.locked_at is not None and user.locked_at + lockout_window <= now:
+            user.locked_at = None
+            user.login_attemps = 0
+            await user.save(update_fields=["locked_at", "login_attemps"])
+            unlocked += 1
+
+    logger.debug(f"scheduled task unlocked {unlocked} users in the database")
+    logger.info("locked users reset")
+    return unlocked

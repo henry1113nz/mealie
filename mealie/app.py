@@ -15,11 +15,22 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.routing import APIRoute
+from slugify import slugify
 from starlette.middleware.sessions import SessionMiddleware
 
 from mealie.core.config import get_app_settings
 from mealie.core.root_logger import get_logger
+from mealie.core.security import hash_password
 from mealie.core.settings.static import APP_VERSION
+from mealie.db.models.tortoise_models import (
+    AIProviderSettings,
+    Group,
+    GroupPreferencesModel,
+    Household,
+    HouseholdPreferencesModel,
+    User,
+)
+from mealie.db.tortoise_setup import TORTOISE_ORM, close_database
 from mealie.middleware.locale_context import LocaleContextMiddleware
 from mealie.routes import router, spa, utility_routes
 from mealie.routes.handlers import register_debug_handler
@@ -61,9 +72,11 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
       - https://fastapi.tiangolo.com/advanced/events/
     """
     logger.info("start: database initialization")
-    import mealie.db.init_db as init_db
+    from aerich import Command
 
-    init_db.main()
+    command = Command(tortoise_config=TORTOISE_ORM, app="models")
+    await command.init_db(safe=True)
+    await _init_default_records()
     logger.info("end: database initialization")
 
     await start_scheduler()
@@ -92,6 +105,8 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
+    await SchedulerService.stop()
+    await close_database()
     logger.info("-----SYSTEM SHUTDOWN----- \n")
 
 
@@ -119,6 +134,45 @@ if not settings.PRODUCTION:
     )
 
 register_debug_handler(app)
+
+
+async def _init_default_records() -> None:
+    if await User.exists():
+        return
+
+    group = await Group.create(name=settings.DEFAULT_GROUP, slug=slugify(settings.DEFAULT_GROUP))
+    await GroupPreferencesModel.create(group=group)
+    await AIProviderSettings.create(group=group)
+
+    household = await Household.create(
+        name=settings.DEFAULT_HOUSEHOLD,
+        slug=slugify(settings.DEFAULT_HOUSEHOLD),
+        group=group,
+    )
+    await HouseholdPreferencesModel.create(household=household)
+
+    password = hash_password(settings._DEFAULT_PASSWORD)
+    await User.create(
+        full_name="Change Me",
+        username="admin",
+        email=settings._DEFAULT_EMAIL,
+        password=password,
+        admin=True,
+        group=group,
+        household=household,
+    )
+
+    if not settings.PRODUCTION:
+        for username in ("jason", "bob", "sarah", "sammy"):
+            await User.create(
+                full_name=username.title(),
+                username=username,
+                email=f"{username}@example.com",
+                password=password,
+                admin=False,
+                group=group,
+                household=household,
+            )
 
 
 async def start_scheduler():

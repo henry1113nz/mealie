@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from mealie.core.release_checker import get_latest_version
 from mealie.core.settings.static import APP_VERSION
+from mealie.db.models.tortoise_models import Group, Household, Recipe, User
 from mealie.routes._base import BaseAdminController, controller
 from mealie.schema.admin.about import AdminAboutInfo, AppStatistics, CheckAppConfig
 
@@ -39,14 +40,14 @@ class AdminAboutController(BaseAdminController):
         )
 
     @router.get("/statistics", response_model=AppStatistics)
-    def get_app_statistics(self):
+    async def get_app_statistics(self):
         return AppStatistics(
-            total_recipes=self.repos.recipes.count_all(),
-            uncategorized_recipes=self.repos.recipes.count_uncategorized(),  # type: ignore
-            untagged_recipes=self.repos.recipes.count_untagged(),  # type: ignore
-            total_users=self.repos.users.count_all(),
-            total_households=self.repos.households.count_all(),
-            total_groups=self.repos.groups.count_all(),
+            total_recipes=await Recipe.all().count(),
+            uncategorized_recipes=await Recipe.filter(recipe_category__isnull=True).count(),
+            untagged_recipes=await Recipe.filter(tags__isnull=True).count(),
+            total_users=await User.all().count(),
+            total_households=await Household.all().count(),
+            total_groups=await Group.all().count(),
         )
 
     @router.get("/check", response_model=CheckAppConfig)

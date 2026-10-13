@@ -46,6 +46,8 @@ dependencies = [
     "ingredient-parser-nlp==2.8.0",
     "pint==0.26.1",
     "httpx-curl-cffi==0.1.5",
+    "tortoise-orm==1.1.8",
+    "aerich==0.10.1",
 ]
 
 [project.scripts]
@@ -53,7 +55,8 @@ mealie = "mealie.main:main"
 
 [project.optional-dependencies]
 pgsql = [
-    "psycopg2-binary==2.9.13"
+    "psycopg2-binary==2.9.13",
+    "asyncpg==0.31.0",
 ]
 
 [dependency-groups]
@@ -192,3 +195,8 @@ add-bounds = "exact"
 # supply-chain attacks (compromised releases are usually caught and yanked
 # within days). Evaluated at resolve time as a rolling window.
 exclude-newer = "5 days"
+
+[tool.aerich]
+tortoise_orm = "mealie.db.tortoise_setup.TORTOISE_ORM"
+location = "./mealie/migrations"
+src_folder = "./"
