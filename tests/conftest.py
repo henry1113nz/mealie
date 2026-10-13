@@ -65,7 +65,9 @@ def override_get_db():
 def api_client():
     app.dependency_overrides[generate_session] = override_get_db
 
-    yield TestClient(app)
+    # entering the client runs the lifespan (starting Tortoise) and keeps one event loop
+    with TestClient(app) as client:
+        yield client
 
     with contextlib.suppress(Exception):
         settings = config.get_app_settings()
