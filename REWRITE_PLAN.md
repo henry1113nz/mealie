@@ -72,3 +72,11 @@ change to existing test assertions.**
    the old history (out of scope by the ground rules), but the first Aerich migration must match the
    schema the Alembic history produces.
 8. **Size.** S8 and S10 are each larger than one session in practice; expect to split them further.
+
+## Review notes
+
+Recorded by the agent, 2026-10-13. The member was given four review questions on this plan
+(where the users/auth stage S6 should sit, whether PostgreSQL should be tested before S10,
+whether S8 and S10 should be split now, and whether "0 failing tests" is a usable gate given that
+another member found the suite to be flaky). The member chose to proceed without changing the
+plan, so the plan is executed as written. No part of this plan was edited by a human.
