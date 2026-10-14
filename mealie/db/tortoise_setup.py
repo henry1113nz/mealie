@@ -23,7 +23,7 @@ def tortoise_config(db_url: str | None = None) -> dict[str, Any]:
 
     return {
         "connections": {"default": db_url},
-        "apps": {"models": {"models": [], "default_connection": "default"}},
+        "apps": {"models": {"models": ["mealie.db.tortoise_models"], "default_connection": "default"}},
         "use_tz": True,
         "timezone": "UTC",
     }
