@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from tortoise import fields
 from tortoise.models import Model
 
@@ -43,7 +45,19 @@ class IngredientFood(TortoiseBaseModel):
         unique_together = (("name", "group"),)
 
 
-class IngredientUnitAlias(TortoiseBaseModel):
+class _IngredientAliasBase(Model):
+    """Give Tortoise a row key while retaining each alias's legacy UUID id."""
+
+    row_id = fields.IntField(primary_key=True)
+    id = fields.UUIDField(default=uuid4)
+    created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
+    update_at = fields.DatetimeField(auto_now=True, null=True)
+
+    class Meta:
+        abstract = True
+
+
+class IngredientUnitAlias(_IngredientAliasBase):
     unit: fields.ForeignKeyRelation[IngredientUnit] = fields.ForeignKeyField(
         "models.IngredientUnit", related_name="aliases", on_delete=fields.OnDelete.NO_ACTION
     )
@@ -52,9 +66,10 @@ class IngredientUnitAlias(TortoiseBaseModel):
 
     class Meta:
         table = "ingredient_units_aliases"
+        unique_together = (("id", "unit"),)
 
 
-class IngredientFoodAlias(TortoiseBaseModel):
+class IngredientFoodAlias(_IngredientAliasBase):
     food: fields.ForeignKeyRelation[IngredientFood] = fields.ForeignKeyField(
         "models.IngredientFood", related_name="aliases", on_delete=fields.OnDelete.NO_ACTION
     )
@@ -63,6 +78,7 @@ class IngredientFoodAlias(TortoiseBaseModel):
 
     class Meta:
         table = "ingredient_foods_aliases"
+        unique_together = (("id", "food"),)
 
 
 class IngredientFoodSubstitution(TortoiseBaseModel):
@@ -79,8 +95,6 @@ class IngredientFoodSubstitution(TortoiseBaseModel):
     class Meta:
         table = "ingredient_foods_substitutions"
         unique_together = (("food", "substitute_food"),)
-        # Tortoise does not expose portable check constraints in Meta. The two
-        # SQLAlchemy checks are documented as outstanding baseline DDL.
 
 
 class RecipeIngredient(Model):
