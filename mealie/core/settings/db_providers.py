@@ -15,6 +15,10 @@ class AbstractDBProvider(ABC):
     @abstractmethod
     def db_url_public(self) -> str: ...
 
+    @property
+    @abstractmethod
+    def tortoise_db_url(self) -> str: ...
+
 
 class SQLiteProvider(AbstractDBProvider, BaseModel):
     data_dir: Path
