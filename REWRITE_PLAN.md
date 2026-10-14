@@ -196,6 +196,23 @@ therefore still required before this stage is complete. Recipe links to
 organizers, meal plans, sharing, comments, timeline and later domains remain
 out of this stage.
 
+Stage 4 PostgreSQL verification update (2026-10-14; supersedes the earlier
+PostgreSQL-not-verified status above): Against only the dedicated
+PostgreSQL 16 `stage4_test` database, the bounded command
+`UV_CACHE_DIR=/tmp/uv-cache timeout 180s uv run python
+/tmp/stage4_postgres_acceptance.py` (exit 0) confirmed a clean Aerich baseline,
+the ordered Stage 4 upgrade/downgrade, all three validated CHECK constraints
+and rejection cases, alias pair uniqueness and row-scoped update/delete, and
+all 12 expected `pg_trgm` GIN indexes present, valid, ready, and defined with
+`gin_trgm_ops`. A populated fuzzy-search query returned matches, and `EXPLAIN`
+with `SET LOCAL enable_seqscan = off` used
+`ix_recipes_name_normalized_gin`; this demonstrates index usability without
+requiring planner selection on a small dataset. The post-test baseline tables
+were removed from the dedicated database after verifying the exact table
+inventory; `pg_trgm` remains installed. The SQLite migration checks and full
+suite previously passed (2 focused tests; 3179 passed, 18 skipped). No
+implementation files changed during this PostgreSQL verification.
+
 ### Stage 5 — Remaining model graph
 Complete organizers, meal plans, shopping lists, ratings, events, tokens, server records
 and remaining association tables. Resolve cross-domain references.
