@@ -130,6 +130,26 @@ nullable fields, UUIDs and timestamps. Do not switch recipe routes yet.
 Acceptance: discovery and isolated relation/ordering checks pass; compare mapped
 columns and constraints with the existing schema. Record unresolved behavior explicitly.
 
+Stage 4 implementation notes (2026-10-14): Added the Tortoise recipe core,
+nutrition, ingredient, food, unit, alias, substitution and household-food link
+mappings in `mealie/db/tortoise_models/`. Recipe/ingredient scalar columns,
+UUID and integer keys, nullable references, group-scoped unique keys, FK delete
+actions, and ingredient position ordering were compared with the legacy
+definitions. Tortoise metadata cannot express the two substitution CHECK
+constraints or PostgreSQL GIN/trigram opclasses; raw DDL in the new baseline is
+needed. Tortoise supports only one primary key per model, so its UUID alias key
+is stricter than legacy `(id, owner_id)` primary keys; no redundant composite
+unique constraint is declared. These are unresolved Stage 4 mapping gaps, not
+accepted differences. Recipe links to organizers, meal plans, sharing,
+comments, timeline and later domains remain out of this stage.
+
+Verification update: The isolated SQLite schema/CRUD/relation-ordering check
+passed outside the sandbox after participant approval (exit 0); the identical
+attempt had stalled in the sandbox. The full requested pytest suite passed
+outside the sandbox (3178 passed, 18 skipped, exit 0). PostgreSQL was not
+checked. Exact commands and their evidence are recorded in the Stage 4 session
+report; these checks do not resolve the metadata gaps above.
+
 ### Stage 5 — Remaining model graph
 Complete organizers, meal plans, shopping lists, ratings, events, tokens, server records
 and remaining association tables. Resolve cross-domain references.
