@@ -76,67 +76,148 @@ Schema definitions must remain unchanged in shape, fields, aliases, validators a
 
 ## Staged execution plan
 
-Each stage is sized as a separate implementation session. Complete the prior stage and its acceptance checks before starting the next, so the running application remains diagnosable.
+Each numbered stage is one implementation session. The six-hour budget is shared
+across planning and implementation; it is not six hours per stage. Completing all
+stages is not assumed. If a stage cannot meet its acceptance criteria within the
+session, stop and record the unfinished work and blockers.
 
-### Stage 1 — Define async persistence contract and dependencies
+### Verification rules for every stage
 
-Add pinned Tortoise ORM and Aerich dependencies, configure Tortoise app/model discovery, SQLite and async PostgreSQL driver URLs, lifecycle ownership, and a small database abstraction for initialization/shutdown and transaction boundaries. Decide how table/column names, UUID representation, timestamps, nullable values, JSON fields, defaults, indexes and constraints map. Keep existing SQLAlchemy available temporarily while the conversion proceeds.
+- Implement only the named stage and its necessary setup/access adaptations.
+- Keep existing tests, assertions, expected values and skip/xfail markers intact.
+- Adapt test database access alongside each converted feature rather than postponing
+  all fixture work until the end.
+- Before running focused tests, identify existing test files in the repository and
+  record their exact paths. Use:
+  `uv run pytest -n 4 --dist loadfile <existing-test-paths>`
+- At the end of each stage, run the full measurement through the evidence repository.
+  Record the commit, focused-test results, full-suite results, mypy results and test
+  integrity counts. Never describe focused checks as proof that the whole app works.
+- Mark each criterion as met, not met or not verified. A failed relevant test means
+  its criterion is not met. Unavailable PostgreSQL checks are not verified.
+- Preserve public HTTP contracts and Pydantic fields, aliases, validators and expected
+  behavior. ORM loading helpers may be adapted without changing public schema contracts.
+- Retain legacy runtime paths until their replacement and callers are ready. Temporary
+  coexistence must not split one operation across inconsistent database state or
+  transaction boundaries.
 
-**Acceptance criteria and evidence:** Settings can construct both SQLite and PostgreSQL Tortoise configurations; a minimal app lifespan initializes/closes connections; a temporary database can create/read a minimal model on SQLite. A focused DB bootstrap test passes. PostgreSQL smoke evidence is recorded when a test service is available.
+### Stage 1 — Dependencies and isolated async database lifecycle
+Add compatible Tortoise/Aerich and driver dependencies, SQLite/PostgreSQL configuration,
+and isolated initialization/shutdown helpers. Do not switch application startup,
+remove legacy initialization, or introduce a production placeholder model.
+Acceptance: dependency installation succeeds; both configurations can be constructed;
+an isolated SQLite smoke check connects, queries and closes successfully. Record
+PostgreSQL smoke results separately. Existing application tests remain unchanged.
 
-### Stage 2 — Convert model graph and establish schema baseline
+### Stage 2 — Test lifecycle support for incremental migration
+Establish how converted tests and FastAPI TestClient share correctly owned connections,
+event loops and worker-specific databases. Add only the necessary fixture support;
+retain existing initialization for tests that still use SQLAlchemy.
+Acceptance: existing fixture consumers still work; worker database isolation is
+preserved; an async database smoke check runs through the intended fixture lifecycle.
+No assertions or test expectations are changed.
 
-Convert the declarative model graph in `mealie/db/models/` to Tortoise models and fields. Rebuild FK/M2M relations, through tables, unique constraints, indexes, ordering, cascade rules, timestamp and normalization behavior, computed/search-only fields, and model initialization helpers. Remove ORM events/proxies by moving behavior into explicit async services/repositories. Generate the Aerich initial migration from the complete model graph and compare the schema against current Alembic head specifications.
+### Stage 3 — Group, household and user model definitions
+Introduce Tortoise mappings for these domains and their required relations, preserving
+table names, keys, defaults, uniqueness and tenant boundaries. Keep legacy callers
+working until their later conversion.
+Acceptance: model discovery succeeds; isolated SQLite schema and CRUD/relationship
+checks pass; mapped constraints are documented and PostgreSQL status is recorded.
 
-**Acceptance criteria and evidence:** Model import/discovery succeeds without SQLAlchemy models; Aerich can initialize an empty SQLite database and a PostgreSQL database and produce equivalent table/constraint structure for portable features. Model-focused tests pass, including ingredient substitutions, recipe organizer relations, cascades, timestamps and defaults. PostgreSQL-specific search extensions/indexes have explicit migration coverage.
+### Stage 4 — Recipe core and ingredient model definitions
+Map recipe core, ingredients and required food/unit dependencies, including ordering,
+nullable fields, UUIDs and timestamps. Do not switch recipe routes yet.
+Acceptance: discovery and isolated relation/ordering checks pass; compare mapped
+columns and constraints with the existing schema. Record unresolved behavior explicitly.
 
-### Stage 3 — Replace DB startup, fixes, and migration lifecycle
+### Stage 5 — Remaining model graph
+Complete organizers, meal plans, shopping lists, ratings, events, tokens, server records
+and remaining association tables. Resolve cross-domain references.
+Acceptance: all intended models register; compare the complete table/constraint
+inventory with the current schema. Do not equate model registration with runtime
+migration. Record exact discrepancies and PostgreSQL-specific requirements.
 
-Replace `db_setup.py` and `init_db.py` with async Tortoise lifecycle, connectivity retry, Aerich upgrade-to-head, PostgreSQL extension setup, initialization of default group/household/user, and async data repair functions. Specify fresh-install behavior and that legacy Alembic upgrade is unsupported. Replace `mealie/alembic/` runtime/config with Aerich migration configuration and new migrations; remove old history after callers are switched.
+### Stage 6 — Shared async repository primitives
+Implement async CRUD, transaction handling, tenant scoping and explicit serialization
+loading for the new persistence path, without prematurely switching every caller.
+Acceptance: focused tests cover CRUD, rollback, group/household isolation and relation
+materialization. Existing legacy callers remain usable.
 
-**Acceptance criteria and evidence:** Fresh SQLite and PostgreSQL startup creates schema, applies the Aerich baseline, creates default records exactly once, reruns idempotently, and closes connections cleanly. Existing initialization/data-fix tests pass or are adapted only in setup/API mechanics without changing assertions. No startup path imports Alembic or SQLAlchemy.
+### Stage 7 — Filtering, sorting and pagination
+Implement the existing query-filter language and pagination semantics for Tortoise,
+including nested conditions, relationship fields, null ordering and counts.
+Acceptance: existing pagination/filter tests pass with unchanged expectations after
+necessary database-access adaptations; record exact test paths and backend differences.
 
-### Stage 4 — Migrate generic repositories and query/filter machinery
+### Stage 8 — Authentication and user operations
+Convert user repositories, authentication dependencies, registration and password
+reset together with their callers and required tests.
+Acceptance: relevant login, permission, registration and password-reset tests pass;
+response contracts and tenant isolation remain unchanged; async calls are awaited.
 
-Rewrite repository construction and generic CRUD in `repos/`, beginning with common scoping, create/update/delete, pagination, sorting, search/filter, count and serialization/eager loading. Replace SQLAlchemy query expressions and dialect inspection with Tortoise QuerySets/Q objects/expressions or explicit backend-specific SQL where necessary. Preserve transactions and group/household isolation.
+### Stage 9 — Group and household operations
+Convert repositories, services and routes for group/household settings, invitations,
+organizers and administrative operations.
+Acceptance: focused group/household and permission tests pass with unchanged expected
+values; no converted operation silently falls back to a legacy session.
 
-**Acceptance criteria and evidence:** Generic repository and API CRUD/search/pagination tests pass with unchanged expected values on SQLite. Tenant-boundary tests pass. PostgreSQL query/search tests pass when available. Static scan shows the migrated generic repository/query helper layer has no SQLAlchemy imports.
+### Stage 10 — Recipe read operations
+Convert recipe lookup, listing, sharing and read serialization using the shared query
+machinery and explicit relation loading.
+Acceptance: focused recipe read/search/share tests pass; pagination, scoping and
+response fields are preserved. PostgreSQL fuzzy-search checks are recorded separately.
 
-### Stage 5 — Migrate specialized repositories and model-dependent serialization
+### Stage 11 — Recipe write operations
+Convert creation, updates, deletion, ingredient handling and associated organizer writes.
+Acceptance: relevant CRUD and relation tests pass; atomic updates, ordering and cascade
+behavior are preserved, including rollback on failed writes.
 
-Convert every specialized repository (`repository_factory.py`, `all_repositories.py`, all listed repository modules, `_recipe_suggestions.py`) and relation-heavy schema conversion paths. Use explicit prefetch/select-related plans and build unchanged schema objects after awaiting relations. Handle database-specific fuzzy search and bulk update/delete semantics.
+### Stage 12 — Meal plans, cookbooks and shopping lists
+Convert their repositories, services and routes with the required database test access.
+Acceptance: relevant domain and tenant-boundary tests pass. If this scope proves too
+large, stop and revise the plan in a separate commit before splitting it further.
 
-**Acceptance criteria and evidence:** Repository tests across recipes, ingredients/units/foods, users/ratings, meal plans, cookbooks, shopping lists, organizers, AI providers and groups pass. Serialization tests confirm API payloads stay byte/field-equivalent where asserted. Multi-tenant tests and PostgreSQL fuzzy-search behavior pass.
+### Stage 13 — Remaining services, routes and import workflows
+Audit remaining database callers, including parser, bulk actions, AI-provider operations,
+SPA reads and import/export workflows. Convert unresolved runtime paths.
+Acceptance: list every remaining caller and its disposition; relevant existing tests
+pass and public schema contracts remain unchanged. Do not claim completeness from
+direct-import scans alone.
 
-### Stage 6 — Propagate async through services, routes, auth and dependencies
+### Stage 14 — Scheduler, event bus and scripts
+Convert DB-backed tasks, event subscriptions/publishing and operational scripts together
+with affected callers. Keep connection and event-loop ownership explicit.
+Acceptance: relevant scheduler/event tests pass; script smoke results are recorded;
+no unawaited DB coroutine or legacy session remains in the converted paths.
 
-Convert service methods and their callers to async wherever they touch repositories. Convert controller base classes, HTTP routes, validators, auth/security dependencies, event bus DB handlers and SPA shared-recipe lookups. Ensure async ORM access is awaited before returning Pydantic models or scheduling background work. Preserve response codes, route schemas and dependency overrides.
+### Stage 15 — Aerich baseline, startup and seed cutover
+Generate the full initial schema migration, configure fresh-install lifecycle, and
+switch startup/default seeding only once required runtime consumers are compatible.
+Keep unsupported in-place Alembic upgrades explicitly out of scope.
+Acceptance: fresh SQLite initialization and repeated startup are idempotent; default
+records are correct; connections close cleanly; PostgreSQL extensions/indexes and
+migration behavior have evidence or remain explicitly not verified.
 
-**Acceptance criteria and evidence:** Route/API tests pass with unchanged status codes, payloads and validation expectations; auth, registration, password reset, household switching and public/shared recipe tests pass. FastAPI reports no un-awaited coroutines or lazy relation access errors. `mealie/schema` public definitions remain unchanged.
+### Stage 16 — Backup and restore
+Replace SQLAlchemy reflection/export/restore assumptions and define legacy-backup
+compatibility without silently changing the public API.
+Acceptance: relevant backup round-trip, datetime and invalid-FK tests pass; foreign-key
+enforcement is restored after errors. Record both backend results separately.
 
-### Stage 7 — Convert scheduler tasks, events, and operational scripts
+### Stage 17 — Full integration and test-fixture audit
+Finish remaining database-access fixture adaptations and audit all runtime call chains.
+Run `uv run pytest -n 4 --dist loadfile` and `uv run mypy mealie`.
+Acceptance: no unexplained failures/errors; no tests or assertions removed or weakened;
+no new skip/xfail markers; worker isolation remains correct. Record missing backend
+verification explicitly.
 
-Make all DB-using scheduler tasks async, update task registration/wrappers to await them, and migrate event listener lifecycle. Convert scripts, seeding and import utilities that currently open sync sessions. Ensure one event loop owns Tortoise connections and task invocations close scopes correctly.
-
-**Acceptance criteria and evidence:** Scheduler task unit/integration tests pass for each task; event bus tests pass; script smoke tests run against SQLite and applicable PostgreSQL setup. Scheduler logs/errors and task cadence remain unchanged. No `session_context()` or sync session APIs remain in runtime callers.
-
-### Stage 8 — Replace backup/restore persistence path
-
-Replace `AlchemyExporter` reflection, schema dump/restore and Alembic version restoration with a Tortoise-compatible backup implementation. Preserve backup data behavior and datetime/UUID/FK cleanup, including SQLite/PostgreSQL foreign-key handling and the existing datetime-column coverage. Define compatibility for legacy backup files carrying `alembic_version` separately from unsupported in-place Alembic database upgrades.
-
-**Acceptance criteria and evidence:** Backup round-trip tests pass unchanged, including every datetime column and invalid-FK filtering; restore creates the Aerich schema then restores all rows and operational defaults. Test both SQLite and PostgreSQL, including FK enforcement restored after errors.
-
-### Stage 9 — Convert test infrastructure and run full suite
-
-Rewrite `tests/conftest.py` and `tests/fixtures/` for async Tortoise init/cleanup, per-worker DB isolation, async repository fixture access and relation refresh behavior. Preserve fixture scope semantics and all test bodies/assertions except necessary DB setup/access changes. Ensure PostgreSQL xdist worker database creation/drop uses a driver-compatible administrative connection. Run exactly `uv run pytest -n 4 --dist loadfile`; also run focused PostgreSQL coverage if configured.
-
-**Acceptance criteria and evidence:** The full required command completes with all tests passing, no skips or xfails introduced and no tests deleted. Both SQLite and PostgreSQL suites/smokes pass where CI services exist. Xdist workers do not share databases; repeated module-scoped fixture use remains isolated as before.
-
-### Stage 10 — Remove SQLAlchemy/Alembic remnants and final audit
-
-Remove SQLAlchemy and Alembic dependencies/config, obsolete Alembic history, SQLAlchemy-only utility code, imports, typing, task commands and lint configuration. Update documentation and deployment configuration for Aerich startup and async DB lifecycle. Keep only explicit notes about the Alembic upgrade boundary.
-
-**Acceptance criteria and evidence:** `rg -n -i 'sqlalchemy|alembic' mealie` returns no runtime imports/references (historical documentation may be clearly marked if retained); dependency lock/install resolves with Tortoise/Aerich only; the full test command passes after cleanup; startup, backup/restore and SQLite/PostgreSQL checks pass.
+### Stage 18 — Legacy removal and final audit
+Remove SQLAlchemy/Alembic runtime dependencies, obsolete model helpers/history and
+configuration only after their callers are replaced.
+Acceptance: no Python imports SQLAlchemy anywhere under mealie/; installation,
+full pytest and mypy succeed after cleanup; fresh SQLite/PostgreSQL lifecycle and
+backup/restore meet the completion gate. Text mentions in documentation are assessed
+separately from executable imports.
 
 ## Expected risks and mitigations
 
@@ -154,3 +235,23 @@ Remove SQLAlchemy and Alembic dependencies/config, obsolete Alembic history, SQL
 ## Completion gate
 
 The migration is complete only when the required xdist pytest command passes, SQLite and PostgreSQL paths have evidence, the external API and `mealie/schema` remain unchanged, Aerich replaces Alembic for new schema lifecycle, and a whole-tree scan confirms there are no SQLAlchemy imports anywhere under `mealie/`.
+
+## Review notes
+
+This revision was drafted with ChatGPT assistance at the participant's request.
+It must not be reported as an unaided human review. The participant should read
+the revised stages and record whether they accept them before implementation.
+
+Changes and reasons:
+- Split broad model/repository/service stages into smaller numbered sessions.
+- Added early incremental test-lifecycle support because earlier acceptance criteria
+  depended on fixtures that the original plan postponed until Stage 9.
+- Deferred application startup cutover and legacy removal until dependent callers
+  are ready, reducing the risk of breaking still-synchronous runtime paths.
+- Required recorded existing test paths and separated focused tests, full measurement,
+  and PostgreSQL verification. Missing evidence does not count as a pass.
+- Clarified preservation of public Pydantic contracts while adapting internal ORM bridges.
+- Added an explicit stop/revision rule when a stage is too large and clarified that
+  the total budget includes planning. Stage sizes remain estimates.
+- Preserved the original dependency inventory and risk section; their exhaustive
+  accuracy has not been independently verified against the complete source tree.
