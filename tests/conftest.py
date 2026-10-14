@@ -3,6 +3,7 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
+import pytest_asyncio
 from pytest import MonkeyPatch, fixture
 
 # Under pytest-xdist each worker (gw0, gw1, ...) gets its own data dir, so workers
@@ -59,6 +60,26 @@ def override_get_db():
         yield db
     finally:
         db.close()
+
+
+@pytest_asyncio.fixture
+async def tortoise_connection():
+    """Provide an isolated Tortoise connection on pytest's async fixture loop."""
+    from tortoise import connections
+
+    from mealie.core.config import get_app_settings
+    from mealie.db.tortoise_setup import tortoise_close, tortoise_init
+
+    settings = get_app_settings()
+    provider = settings.DB_PROVIDER
+    if provider is None:
+        raise RuntimeError("Database provider is not configured")
+
+    await tortoise_init(provider.tortoise_db_url)
+    try:
+        yield connections.get("default")
+    finally:
+        await tortoise_close()
 
 
 @fixture(scope="session")
