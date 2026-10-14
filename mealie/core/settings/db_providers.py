@@ -29,6 +29,11 @@ class SQLiteProvider(AbstractDBProvider, BaseModel):
         return f"sqlite:///{self.db_path.absolute()!s}"
 
     @property
+    def tortoise_db_url(self) -> str:
+        """Async-driver URL for the incremental Tortoise migration path."""
+        return f"sqlite://{self.db_path.absolute()!s}"
+
+    @property
     def db_url_public(self) -> str:
         return self.db_url
 
@@ -69,6 +74,14 @@ class PostgresProvider(AbstractDBProvider, BaseSettings):
                 path=f"{self.POSTGRES_DB or ''}",
             )
         )
+
+    @property
+    def tortoise_db_url(self) -> str:
+        """Return a PostgreSQL URL using Tortoise's asyncpg backend."""
+        url = self.db_url
+        if url.startswith("postgresql://"):
+            return "postgres://" + url.removeprefix("postgresql://")
+        return url
 
     @property
     def db_url_public(self) -> str:
