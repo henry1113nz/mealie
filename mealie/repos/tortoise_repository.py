@@ -7,12 +7,22 @@ callers can adopt the same CRUD, scoping, transaction and serialization rules.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Iterable, Mapping, Sequence
+from math import ceil
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
-from tortoise import Model
+from tortoise import Model, connections
 from tortoise.transactions import in_transaction
+
+from mealie.schema.response.pagination import (
+    OrderByNullPosition,
+    OrderDirection,
+    PaginationBase,
+    PaginationQuery,
+)
+from mealie.services.query_filter.tortoise import TortoiseFilterCompiler, validate_order_path
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 ModelT = TypeVar("ModelT", bound=Model)
@@ -131,6 +141,134 @@ class AsyncRepository(Generic[SchemaT, ModelT]):
 
     async def count(self, **filters: Any) -> int:
         return await self._query(**filters).count()
+
+    async def page_all(
+        self,
+        pagination: PaginationQuery,
+        *,
+        related_fields: Sequence[str] = (),
+    ) -> PaginationBase[SchemaT]:
+        """Apply Mealie filter, ordering and pagination semantics asynchronously."""
+        request = pagination.model_copy()
+        query = self._query()
+        if request.query_filter:
+            try:
+                query = query.filter(TortoiseFilterCompiler.compile(request.query_filter, self.model))
+            except ValueError as error:
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=400, detail=str(error)) from error
+
+        # Related predicates compile as primary-key subqueries, keeping this
+        # count at one row per root record.
+        total = await query.count()
+        if request.per_page == -1:
+            request.per_page = total
+            limit: int | None = None
+        else:
+            limit = request.per_page
+        total_pages = ceil(total / request.per_page) if request.per_page else 0
+        if request.page == -1:
+            request.page = total_pages
+        request.page = max(request.page, 1)
+
+        rows = await query
+        if request.order_by == "random":
+            ids = [getattr(row, self.primary_key) for row in rows]
+            ordering = list(range(len(ids)))
+            random.seed(request.pagination_seed)
+            random.shuffle(ordering)
+            rank = dict(zip(ids, ordering, strict=True))
+            rows.sort(key=lambda row: rank[getattr(row, self.primary_key)])
+        else:
+            order_by = request.order_by or ("created_at" if hasattr(self.model, "created_at") else None)
+            if order_by:
+                terms: list[tuple[str, OrderDirection, bool, bool]] = []
+                for term in order_by.split(","):
+                    term = term.strip()
+                    if ":" in term:
+                        path, direction_text = term.rsplit(":", maxsplit=1)
+                        try:
+                            direction = OrderDirection(direction_text)
+                        except ValueError as error:
+                            from fastapi import HTTPException
+
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f'Invalid order_by statement "{order_by}": "{term}" is invalid',
+                            ) from error
+                    else:
+                        path, direction = term, request.order_direction
+                    try:
+                        tortoise_path, is_related, to_many = validate_order_path(self.model, path)
+                    except ValueError as error:
+                        from fastapi import HTTPException
+
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f'Invalid order_by statement "{order_by}": "{term}" is invalid',
+                        ) from error
+                    terms.append((tortoise_path, direction, is_related, to_many))
+
+                # Apply stable sorts from least to most significant. Related
+                # values are reduced to MIN (ascending) or MAX (descending),
+                # matching the legacy correlated aggregate.
+                for path, direction, is_related, to_many in reversed(terms):
+                    values_by_id: dict[Any, Any] = {}
+                    for row in rows:
+                        row_id = getattr(row, self.primary_key)
+                        if is_related:
+                            values = await self.model.filter(**{self.primary_key: row_id}).values_list(path, flat=True)
+                            values = [value for value in values if value is not None]
+                            if values:
+                                if to_many:
+                                    values_by_id[row_id] = (
+                                        min(values) if direction is OrderDirection.asc else max(values)
+                                    )
+                                else:
+                                    values_by_id[row_id] = values[0]
+                            else:
+                                values_by_id[row_id] = None
+                        else:
+                            values_by_id[row_id] = self._scalar_path(row, path)
+
+                    non_null = [row for row in rows if values_by_id[getattr(row, self.primary_key)] is not None]
+                    null_rows = [row for row in rows if values_by_id[getattr(row, self.primary_key)] is None]
+                    non_null.sort(
+                        key=lambda row: self._normalize_sort_value(values_by_id[getattr(row, self.primary_key)]),
+                        reverse=direction is OrderDirection.desc,
+                    )
+                    if request.order_by_null_position is None:
+                        dialect = connections.get("default").capabilities.dialect
+                        nulls_first = (dialect == "sqlite" and direction is OrderDirection.asc) or (
+                            dialect == "postgres" and direction is OrderDirection.desc
+                        )
+                    else:
+                        nulls_first = request.order_by_null_position is OrderByNullPosition.first
+                    rows = null_rows + non_null if nulls_first else non_null + null_rows
+
+        if limit is not None:
+            start = (request.page - 1) * request.per_page
+            rows = rows[start : start + limit]
+        relations = tuple(dict.fromkeys((*self.related_fields, *related_fields)))
+        return PaginationBase(
+            page=request.page,
+            per_page=request.per_page,
+            total=total,
+            total_pages=total_pages,
+            items=[await self._serialize(row, related_fields=relations) for row in rows],
+        )
+
+    @staticmethod
+    def _scalar_path(instance: Model, path: str) -> Any:
+        value: Any = instance
+        for part in path.split("__"):
+            value = getattr(value, part)
+        return value
+
+    @staticmethod
+    def _normalize_sort_value(value: Any) -> Any:
+        return value.casefold() if isinstance(value, str) else value
 
 
 class GroupAsyncRepository(AsyncRepository[SchemaT, ModelT]):

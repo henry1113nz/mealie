@@ -1,19 +1,26 @@
-from datetime import date, datetime
+from __future__ import annotations
+
+from datetime import date
+from typing import TYPE_CHECKING
 
 from tortoise import fields
 from tortoise.models import Model
 
 from ._base import TortoiseBaseModel
 
+if TYPE_CHECKING:
+    from .group import Group
+    from .user import User
+
 
 class Recipe(TortoiseBaseModel):
     """Recipe core columns, without runtime construction or route behavior."""
 
     slug = fields.CharField(max_length=255, null=True, db_index=True)
-    group: fields.ForeignKeyRelation["Group"] = fields.ForeignKeyField(
+    group: fields.ForeignKeyRelation[Group] = fields.ForeignKeyField(
         "models.Group", related_name="recipes", on_delete=fields.OnDelete.NO_ACTION, db_index=True
     )
-    user: fields.ForeignKeyNullableRelation["User"] = fields.ForeignKeyField(
+    user: fields.ForeignKeyNullableRelation[User] = fields.ForeignKeyField(
         "models.User", related_name="recipes", null=True, on_delete=fields.OnDelete.NO_ACTION, db_index=True
     )
     rating = fields.FloatField(null=True, db_index=True)
@@ -38,6 +45,27 @@ class Recipe(TortoiseBaseModel):
     cook_time = fields.CharField(max_length=255, null=True)
     recipeCuisine = fields.CharField(max_length=255, null=True)
     is_ocr_recipe = fields.BooleanField(default=False, null=True)
+    recipe_category = fields.ManyToManyField(
+        "models.Category",
+        through="recipes_to_categories",
+        forward_key="category_id",
+        backward_key="recipe_id",
+        related_name="recipes",
+    )
+    tags = fields.ManyToManyField(
+        "models.Tag",
+        through="recipes_to_tags",
+        forward_key="tag_id",
+        backward_key="recipe_id",
+        related_name="recipes",
+    )
+    tools = fields.ManyToManyField(
+        "models.Tool",
+        through="recipes_to_tools",
+        forward_key="tool_id",
+        backward_key="recipe_id",
+        related_name="recipes",
+    )
 
     class Meta:
         table = "recipes"
