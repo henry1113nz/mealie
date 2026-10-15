@@ -187,9 +187,9 @@ class AsyncOpenIDProvider(AsyncAuthProvider):
         self.users = TortoiseUserRepository()
 
     @property
-    def required_claims(self) -> set[str]:
+    def required_claims(self) -> set[str | None]:
         settings = get_app_settings()
-        claims = {settings.OIDC_NAME_CLAIM, "email", settings.OIDC_USER_CLAIM}
+        claims: set[str | None] = {settings.OIDC_NAME_CLAIM, "email", settings.OIDC_USER_CLAIM}
         if settings.OIDC_REQUIRES_GROUP_CLAIM and not self.use_default_groups:
             claims.add(settings.OIDC_GROUPS_CLAIM)
         return claims
@@ -197,9 +197,13 @@ class AsyncOpenIDProvider(AsyncAuthProvider):
     async def authenticate(self) -> tuple[str, timedelta] | None:
         settings = get_app_settings()
         claims = self.data
-        if not claims or not self.required_claims.issubset(claims.keys()):
+        required_claims = self.required_claims
+        if not claims or None in required_claims:
             raise MissingClaimException()
-        if any(not claims.get(claim) for claim in self.required_claims):
+        claim_names = {claim for claim in required_claims if claim is not None}
+        if not claim_names.issubset(claims.keys()):
+            raise MissingClaimException()
+        if any(not claims.get(claim) for claim in claim_names):
             raise MissingClaimException()
         if settings.OIDC_REQUIRES_EMAIL_VERIFICATION and not claims.get("email_verified", False):
             raise MissingClaimException()

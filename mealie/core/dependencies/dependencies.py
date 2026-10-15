@@ -125,18 +125,18 @@ async def get_current_user(
     except PyJWTError as e:
         raise credentials_exception from e
 
-    user = await TortoiseAuthRepository.users.get_one(token_data.user_id, "id")
-    if user is None:
+    async_user = await TortoiseAuthRepository.users.get_one(token_data.user_id, "id")
+    if async_user is None:
         raise credentials_exception
 
     # A password change invalidates everything issued before it. Tokens minted before `iat` existed
     # carry no issue time, and since they necessarily predate any password change, they fail closed.
-    if user.tokens_valid_after is not None:
+    if async_user.tokens_valid_after is not None:
         issued_at = payload.get("iat")
-        if issued_at is None or issued_at < user.tokens_valid_after.timestamp():
+        if issued_at is None or issued_at < async_user.tokens_valid_after.timestamp():
             raise credentials_exception
 
-    return user
+    return async_user
 
 
 async def get_integration_id(token: str = Depends(get_auth_token)) -> str:

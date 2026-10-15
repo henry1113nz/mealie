@@ -58,6 +58,8 @@ class TortoiseRegistrationService:
                 raise HTTPException(status.HTTP_409_CONFLICT, {"message": self.t("exceptions.email-conflict-error")})
 
             if registration.group_token:
+                if invite is None:
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST, {"message": "Invalid group token"})
                 group = await Group.filter(id=invite.group_id).using_db(connection).first()
                 household = (
                     await Household.filter(id=invite.household_id, group_id=invite.group_id)
