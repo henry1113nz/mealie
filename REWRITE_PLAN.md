@@ -345,9 +345,105 @@ necessary database-access adaptations; record exact test paths and backend diffe
 
 ### Stage 8 — Authentication and user operations
 Convert user repositories, authentication dependencies, registration and password
-reset together with their callers and required tests.
-Acceptance: relevant login, permission, registration and password-reset tests pass;
-response contracts and tenant isolation remain unchanged; async calls are awaited.
+reset together with their callers and required tests. Reuse the Stage 6 async
+repository primitives, Stage 7 query implementation where applicable, Tortoise
+models and lifecycle helpers; do not reimplement those foundations. Converted
+auth/user routes must run through the actual application, not only a test-specific
+lifespan.
+
+#### Stage 8 request lifecycle and coexistence boundary
+
+- Add a narrowly scoped application lifespan integration for Tortoise before any
+  converted auth/user route can issue a Tortoise query. Initialize once in the
+  FastAPI lifespan event loop and close during that same lifespan; do not initialize
+  or close Tortoise per request, from pytest's separate async fixture loop, or from
+  an unowned background loop. Preserve the existing SQLAlchemy initialization and
+  callers for domains not yet converted. This is an incremental runtime integration,
+  not the Stage 15 fresh-install/schema-management/startup cutover.
+- Make the initialized state explicit and fail closed: converted route dependencies
+  must depend on an application-scoped Tortoise-ready dependency/state set only after
+  successful initialization. If the app is run without its lifespan or initialization
+  fails, return a clear service-unavailable/startup error before repository access;
+  never fall through to SQLAlchemy or attempt implicit per-request initialization.
+  Lifespan teardown closes Tortoise even when scheduler startup or application work
+  raises after initialization.
+- Do not point both ORMs at one mutable test database merely because the table names
+  match. Before selecting a shared test schema, compare Stage 4–5 Aerich schema with
+  the legacy SQLAlchemy-created test schema, including: Stage 4 hidden integer alias
+  primary keys and `(id, owner_id)` uniqueness; Stage 5 surrogates replacing five
+  composite primary keys; surrogate columns on twelve keyless association tables;
+  defaults and auto-increment behavior for those surrogates and UUID columns; and
+  association-table nullability, foreign keys, uniqueness and NULL semantics. The
+  comparison must also cover required values/defaults for `users`, password reset
+  tokens, groups, households, preferences, invite tokens, and long-lived tokens.
+- Keep existing SQLAlchemy fixtures operational and do not rebuild, drop, migrate,
+  or truncate their database to make it match Tortoise. Prefer a separate worker-
+  isolated Tortoise test database initialized through the ordered Aerich migrations,
+  while legacy fixtures retain their existing SQLAlchemy database and rows. Where a
+  converted request must exercise data created by retained legacy setup, first prove
+  the schemas are compatible for the exact shared tables and columns; use controlled
+  cross-ORM read/write checks on representative user, group, household, preference,
+  invite-token and reset-token rows, including generated defaults, relation IDs,
+  updates, deletes and transaction visibility. If a required table is incompatible,
+  adapt only the relevant fixture setup/access to create equivalent data in the
+  Tortoise database without changing assertions or expected values. Do not silently
+  copy, rebuild or destroy existing test data.
+- Keep the registration transaction on the Tortoise database. For group-token
+  registration, validate the token and atomically decrement/delete its remaining
+  uses with user creation; concurrent redemption must not over-consume the token or
+  create more users than the token permits. Roll back group, household, preference,
+  user and token changes together after an injected failure. A SQLAlchemy write in a
+  separate database cannot be treated as part of this transaction.
+
+#### Bounded registration prerequisites moved forward from Stage 9
+
+Move forward only the async operations needed by registration: group creation with
+group preferences and required AI-provider settings; default or selected household
+creation with household preferences; group-scoped household lookup; invite validation
+and consumption; and the optional food/unit seeding path when `seed_data` is true.
+Implement these as registration-specific async service operations using the Stage 6
+repository transaction support. Keep general group/household settings, invitation
+administration routes, organizers, administrative operations and unrelated seeding
+policy in their existing later stages. Preserve current signup eligibility, conflict
+and invalid-token responses, default household selection, permissions assigned to a
+new-group owner, invite uses, signup event payload/timing, and serialized response.
+
+#### Stage 8 focused existing test paths
+
+Run the existing paths below with assertions and expected values unchanged; make
+only database setup/access adaptations permitted by the plan:
+
+- Authentication and dependencies: `tests/integration_tests/user_tests/test_user_login.py`,
+  `tests/integration_tests/user_tests/test_oidc_native.py`,
+  `tests/unit_tests/core/test_dependencies.py`,
+  `tests/unit_tests/core/test_security.py`,
+  `tests/unit_tests/core/security/providers/test_credentials_provider.py`.
+- Registration and reset: `tests/integration_tests/user_tests/test_user_registration.py`,
+  `tests/integration_tests/user_tests/test_user_password_services.py`,
+  `tests/unit_tests/validator_tests/test_registration_validators.py`.
+- Authentication-based permissions and tenant isolation: retain relevant coverage in
+  `tests/integration_tests/admin_tests/test_admin_user_actions.py` and
+  `tests/integration_tests/user_household_tests/test_household_permissions.py`; only
+  authentication and authorization resolution moves in this stage. Household
+  permission-management behavior remains Stage 9.
+- Legacy regressions: `tests/unit_tests/repository_tests/test_user_repository.py`,
+  `tests/unit_tests/services_tests/user_services/test_user_service.py`,
+  `tests/integration_tests/user_tests/test_user_crud.py`, and the applicable tests in
+  `tests/integration_tests/test_repository_factory.py`. Keep these legacy callers
+  working until their planned conversion.
+
+Acceptance: actual application-lifespan requests initialize and close Tortoise on
+one owned event loop; requests cannot enter the async repository path when
+uninitialized. Login, API-token/session resolution, admin authorization, registration
+(including invite and new-group paths), and password reset pass with unchanged HTTP
+responses, Pydantic schemas, tenant boundaries and existing expectations. Converted
+paths await Tortoise operations and do not perform blocking SQLAlchemy database
+access. Verify transaction rollback and concurrent invite consumption. Record the
+dual-ORM schema comparison and cross-ORM read/write evidence, or use the isolated
+Tortoise test database and record why any tables cannot safely be shared. Legacy
+regression tests remain operational. Focused-test results are recorded separately;
+the full suite remains required at the end of the migration, not as a substitute for
+these checks.
 
 ### Stage 9 — Group and household operations
 Convert repositories, services and routes for group/household settings, invitations,
