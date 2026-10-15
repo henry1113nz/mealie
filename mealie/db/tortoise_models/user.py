@@ -36,7 +36,15 @@ class User(TortoiseBaseModel):
     can_manage = fields.BooleanField(default=False, null=True)
     can_invite = fields.BooleanField(default=False, null=True)
     can_organize = fields.BooleanField(default=False, null=True)
+    owned_recipes: fields.ForeignKeyNullableRelation["Recipe"] = fields.ForeignKeyField(
+        "models.Recipe",
+        related_name="owned_by_users",
+        on_delete=fields.OnDelete.NO_ACTION,
+        source_field="owned_recipes_id",
+        null=True,
+        db_index=True,
+        db_constraint=False,
+    )
 
     class Meta:
         table = "users"
-

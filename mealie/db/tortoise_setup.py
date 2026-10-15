@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from tortoise import Tortoise
+from tortoise.backends.base.config_generator import expand_db_url
 
 from mealie.core.config import get_app_settings
 
@@ -21,8 +22,13 @@ def tortoise_config(db_url: str | None = None) -> dict[str, Any]:
             raise ValueError("Database provider is not configured")
         db_url = provider.tortoise_db_url
 
+    connection = expand_db_url(db_url)
+    backend = connection["engine"].rsplit(".", maxsplit=1)[-1]
+    if backend in {"sqlite", "asyncpg"}:
+        connection["engine"] = f"mealie.db.tortoise_backends.{backend}"
+
     return {
-        "connections": {"default": db_url},
+        "connections": {"default": connection},
         "apps": {
             "models": {
                 "models": ["mealie.db.tortoise_models", "aerich.models"],

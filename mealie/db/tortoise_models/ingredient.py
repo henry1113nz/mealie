@@ -39,6 +39,9 @@ class IngredientFood(TortoiseBaseModel):
     name_normalized = fields.CharField(max_length=255, null=True, db_index=True)
     plural_name_normalized = fields.CharField(max_length=255, null=True, db_index=True)
     on_hand = fields.BooleanField(default=False)
+    label: fields.ForeignKeyNullableRelation["MultiPurposeLabel"] = fields.ForeignKeyField(
+        "models.MultiPurposeLabel", related_name="foods", null=True, on_delete=fields.OnDelete.NO_ACTION, db_index=True
+    )
 
     class Meta:
         table = "ingredient_foods"
@@ -86,8 +89,11 @@ class IngredientFoodSubstitution(TortoiseBaseModel):
         "models.IngredientFood", related_name="substitutions", on_delete=fields.OnDelete.NO_ACTION, db_index=True
     )
     substitute_food: fields.ForeignKeyNullableRelation[IngredientFood] = fields.ForeignKeyField(
-        "models.IngredientFood", related_name="substitution_references", null=True,
-        on_delete=fields.OnDelete.NO_ACTION, db_index=True
+        "models.IngredientFood",
+        related_name="substitution_references",
+        null=True,
+        on_delete=fields.OnDelete.NO_ACTION,
+        db_index=True,
     )
     note = fields.TextField(null=True)
     position = fields.IntField(null=True, db_index=True)
@@ -106,22 +112,33 @@ class RecipeIngredient(Model):
     title = fields.CharField(max_length=255, null=True)
     note = fields.TextField(null=True)
     unit: fields.ForeignKeyNullableRelation[IngredientUnit] = fields.ForeignKeyField(
-        "models.IngredientUnit", related_name="ingredients", null=True, on_delete=fields.OnDelete.NO_ACTION,
-        db_index=True
+        "models.IngredientUnit",
+        related_name="ingredients",
+        null=True,
+        on_delete=fields.OnDelete.NO_ACTION,
+        db_index=True,
     )
     food: fields.ForeignKeyNullableRelation[IngredientFood] = fields.ForeignKeyField(
-        "models.IngredientFood", related_name="ingredients", null=True, on_delete=fields.OnDelete.NO_ACTION,
-        db_index=True
+        "models.IngredientFood",
+        related_name="ingredients",
+        null=True,
+        on_delete=fields.OnDelete.NO_ACTION,
+        db_index=True,
     )
     quantity = fields.FloatField(null=True)
     original_text = fields.TextField(null=True)
     reference_id = fields.UUIDField(null=True)
     referenced_recipe: fields.ForeignKeyNullableRelation["Recipe"] = fields.ForeignKeyField(
-        "models.Recipe", related_name="referenced_ingredients", null=True, on_delete=fields.OnDelete.NO_ACTION,
-        db_index=True
+        "models.Recipe",
+        related_name="referenced_ingredients",
+        null=True,
+        on_delete=fields.OnDelete.NO_ACTION,
+        db_index=True,
     )
     note_normalized = fields.CharField(max_length=2048, null=True, db_index=True)
     original_text_normalized = fields.CharField(max_length=2048, null=True, db_index=True)
+    created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
+    update_at = fields.DatetimeField(auto_now=True, null=True)
 
     class Meta:
         table = "recipes_ingredients"
@@ -133,8 +150,11 @@ class RecipeIngredientSubstitution(TortoiseBaseModel):
         "models.RecipeIngredient", related_name="substitutions", on_delete=fields.OnDelete.NO_ACTION, db_index=True
     )
     substitute_food: fields.ForeignKeyNullableRelation[IngredientFood] = fields.ForeignKeyField(
-        "models.IngredientFood", related_name="recipe_substitution_references", null=True,
-        on_delete=fields.OnDelete.NO_ACTION, db_index=True
+        "models.IngredientFood",
+        related_name="recipe_substitution_references",
+        null=True,
+        on_delete=fields.OnDelete.NO_ACTION,
+        db_index=True,
     )
     note = fields.TextField(null=True)
     position = fields.IntField(null=True, db_index=True)
@@ -144,13 +164,17 @@ class RecipeIngredientSubstitution(TortoiseBaseModel):
 
 
 class HouseholdIngredientFood(Model):
-    """The existing association table, registered for schema/constraint fidelity."""
-
     household: fields.ForeignKeyRelation["Household"] = fields.ForeignKeyField(
-        "models.Household", related_name="ingredient_food_links", on_delete=fields.OnDelete.NO_ACTION
+        "models.Household",
+        related_name="ingredient_food_links",
+        on_delete=fields.OnDelete.NO_ACTION,
+        null=True,
     )
     food: fields.ForeignKeyRelation[IngredientFood] = fields.ForeignKeyField(
-        "models.IngredientFood", related_name="household_links", on_delete=fields.OnDelete.NO_ACTION
+        "models.IngredientFood",
+        related_name="household_links",
+        on_delete=fields.OnDelete.NO_ACTION,
+        null=True,
     )
 
     class Meta:

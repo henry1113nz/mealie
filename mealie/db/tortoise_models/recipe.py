@@ -60,6 +60,8 @@ class RecipeNutrition(Model):
     sugar_content = fields.CharField(max_length=255, null=True)
     trans_fat_content = fields.CharField(max_length=255, null=True)
     unsaturated_fat_content = fields.CharField(max_length=255, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
+    update_at = fields.DatetimeField(auto_now=True, null=True)
 
     class Meta:
         table = "recipe_nutrition"

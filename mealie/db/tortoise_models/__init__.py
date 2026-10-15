@@ -1,27 +1,16 @@
-"""Incremental Tortoise model graph.
+"""Tortoise mappings for the full legacy table graph.
 
-These mappings coexist with the legacy SQLAlchemy models during the staged
-migration. This registry currently covers groups, households, users, recipe
-core, ingredients, foods and units. It keeps legacy table and column names and
-mirrors the constraints represented by these mappings:
-
-* ``groups.name`` and ``groups.slug`` are unique (and indexed).
-* Household names and slugs are unique within a group; both are indexed.
-* User usernames and emails are globally unique and indexed.
-* Recipe slugs are unique within a group.
-* Food and unit names are unique within a group.
-
-The substitution CHECK constraints and PostgreSQL trigram indexes require
-custom migration DDL; Tortoise model metadata cannot represent them.
-
-The SQLite mappings use Tortoise UUID fields and are also compatible with
-PostgreSQL UUID columns. PostgreSQL schema creation and constraint behavior
-still requires a separate backend smoke check.
+The mappings preserve legacy table and column names. Tortoise's field metadata
+cannot represent every legacy primary key or database-only constraint; those
+inventory differences and required migration operations are recorded in
+``STAGE5_MODEL_INVENTORY.md``.
 """
 
+from . import remaining as _remaining
 from .group import Group
 from .household import Household
 from .ingredient import (
+    HouseholdIngredientFood,
     IngredientFood,
     IngredientFoodAlias,
     IngredientFoodSubstitution,
@@ -31,6 +20,7 @@ from .ingredient import (
     RecipeIngredientSubstitution,
 )
 from .recipe import Recipe, RecipeNutrition
+from .remaining import *
 from .user import AuthMethod, User
 
 __all__ = [
@@ -40,6 +30,7 @@ __all__ = [
     "IngredientFood",
     "IngredientFoodAlias",
     "IngredientFoodSubstitution",
+    "HouseholdIngredientFood",
     "IngredientUnit",
     "IngredientUnitAlias",
     "Recipe",
@@ -47,4 +38,5 @@ __all__ = [
     "RecipeIngredientSubstitution",
     "RecipeNutrition",
     "User",
+    *_remaining.__all__,
 ]
