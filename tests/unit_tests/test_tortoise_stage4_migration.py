@@ -23,6 +23,8 @@ from mealie.db.tortoise_models import (
 )
 from mealie.db.tortoise_setup import tortoise_config
 
+pytestmark = pytest.mark.usefixtures("restore_tortoise_application")
+
 
 @pytest.mark.asyncio
 async def test_stage4_aerich_migration_constraints_alias_identity_and_downgrade():

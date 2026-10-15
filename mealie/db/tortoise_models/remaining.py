@@ -6,6 +6,8 @@ from uuid import uuid4
 from tortoise import fields
 from tortoise.models import Model
 
+from ._base import MealieUUIDField
+
 
 class AIProviderHeaders(Model):
     provider = fields.ForeignKeyField(
@@ -44,7 +46,7 @@ class AIProviderParams(Model):
 
 
 class AIProvider(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     settings = fields.ForeignKeyField(
         "models.AIProviderSettings",
         related_name="ai_providers_settings_id_related",
@@ -66,7 +68,7 @@ class AIProvider(Model):
 
 
 class AIProviderSettings(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="ai_provider_settings_group_id_related",
@@ -110,7 +112,7 @@ class AIProviderSettings(Model):
 
 
 class GroupDataExportsModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="group_data_exports_group_id_related",
@@ -331,7 +333,7 @@ class Category(Model):
         source_field="group_id",
         db_index=True,
     )
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     name = fields.CharField(max_length=255, db_index=True)
     slug = fields.CharField(max_length=255, db_index=True)
     created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
@@ -343,7 +345,7 @@ class Category(Model):
 
 
 class RecipeComment(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     text = fields.TextField(null=True)
     recipe = fields.ForeignKeyField(
         "models.Recipe",
@@ -367,7 +369,7 @@ class RecipeComment(Model):
 
 
 class MultiPurposeLabel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     name = fields.CharField(max_length=255)
     color = fields.CharField(max_length=10, default="")
     group = fields.ForeignKeyField(
@@ -394,7 +396,7 @@ class RecipeIngredientRefLink(Model):
         null=True,
         db_index=True,
     )
-    reference_id = fields.UUIDField(null=True, db_index=True, default=uuid4)
+    reference_id = MealieUUIDField(null=True, db_index=True, default=uuid4)
     id = fields.IntField(primary_key=True)
     created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
     update_at = fields.DatetimeField(auto_now=True, null=True)
@@ -412,7 +414,7 @@ class RecipeNoteRefLink(Model):
         null=True,
         db_index=True,
     )
-    reference_id = fields.UUIDField(null=True, db_index=True, default=uuid4)
+    reference_id = MealieUUIDField(null=True, db_index=True, default=uuid4)
     id = fields.IntField(primary_key=True)
     created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
     update_at = fields.DatetimeField(auto_now=True, null=True)
@@ -422,7 +424,7 @@ class RecipeNoteRefLink(Model):
 
 
 class RecipeInstruction(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     recipe = fields.ForeignKeyField(
         "models.Recipe",
         related_name="recipe_instructions_recipe_id_related",
@@ -455,7 +457,7 @@ class Note(Model):
     )
     title = fields.TextField(null=True)
     text = fields.TextField(null=True)
-    reference_id = fields.UUIDField(null=True, db_index=True, default=uuid4)
+    reference_id = MealieUUIDField(null=True, db_index=True, default=uuid4)
     created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
     update_at = fields.DatetimeField(auto_now=True, null=True)
 
@@ -536,7 +538,7 @@ class CookbooksToTags(Model):
 
 
 class Tag(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="tags_group_id_related",
@@ -627,7 +629,7 @@ class CookbooksToTools(Model):
 
 
 class Tool(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="tools_group_id_related",
@@ -647,7 +649,7 @@ class Tool(Model):
 
 
 class CookBook(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     position = fields.IntField(default=1)
     group = fields.ForeignKeyField(
         "models.Group",
@@ -682,7 +684,7 @@ class CookBook(Model):
 
 
 class GroupEventNotifierOptionsModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     event_notifier = fields.ForeignKeyField(
         "models.GroupEventNotifierModel",
         related_name="group_events_notifier_options_event_notifier_id_related",
@@ -722,7 +724,7 @@ class GroupEventNotifierOptionsModel(Model):
 
 
 class GroupEventNotifierModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     name = fields.TextField()
     enabled = fields.BooleanField(default=True)
     apprise_url = fields.TextField()
@@ -751,7 +753,7 @@ class GroupEventNotifierModel(Model):
 
 class HouseholdToRecipe(Model):
     row_id = fields.IntField(primary_key=True)
-    id = fields.UUIDField(default=uuid4)
+    id = MealieUUIDField(default=uuid4)
     household = fields.ForeignKeyField(
         "models.Household",
         related_name="households_to_recipes_household_id_related",
@@ -827,7 +829,7 @@ class PlanRulesToHouseholds(Model):
 
 
 class GroupMealPlanRules(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="group_meal_plan_rules_group_id_related",
@@ -891,7 +893,7 @@ class GroupMealPlan(Model):
 
 
 class HouseholdPreferencesModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     household = fields.ForeignKeyField(
         "models.Household",
         related_name="household_preferences_household_id_related",
@@ -917,7 +919,7 @@ class HouseholdPreferencesModel(Model):
 
 
 class GroupRecipeAction(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="recipe_actions_group_id_related",
@@ -945,7 +947,7 @@ class GroupRecipeAction(Model):
 
 class ShoppingListItemRecipeReference(Model):
     row_id = fields.IntField(primary_key=True)
-    id = fields.UUIDField(default=uuid4)
+    id = MealieUUIDField(default=uuid4)
     shopping_list_item = fields.ForeignKeyField(
         "models.ShoppingListItem",
         related_name="shopping_list_item_recipe_reference_shopping_list_item_id_related",
@@ -972,7 +974,7 @@ class ShoppingListItemRecipeReference(Model):
 
 
 class ShoppingListItem(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     shopping_list = fields.ForeignKeyField(
         "models.ShoppingList",
         related_name="shopping_list_items_shopping_list_id_related",
@@ -1017,7 +1019,7 @@ class ShoppingListItem(Model):
 
 class ShoppingListRecipeReference(Model):
     row_id = fields.IntField(primary_key=True)
-    id = fields.UUIDField(default=uuid4)
+    id = MealieUUIDField(default=uuid4)
     shopping_list = fields.ForeignKeyField(
         "models.ShoppingList",
         related_name="shopping_list_recipe_reference_shopping_list_id_related",
@@ -1043,7 +1045,7 @@ class ShoppingListRecipeReference(Model):
 
 class ShoppingListMultiPurposeLabel(Model):
     row_id = fields.IntField(primary_key=True)
-    id = fields.UUIDField(default=uuid4)
+    id = MealieUUIDField(default=uuid4)
     shopping_list = fields.ForeignKeyField(
         "models.ShoppingList",
         related_name="shopping_lists_multi_purpose_labels_shopping_list_id_related",
@@ -1066,7 +1068,7 @@ class ShoppingListMultiPurposeLabel(Model):
 
 
 class ShoppingList(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="shopping_lists_group_id_related",
@@ -1090,7 +1092,7 @@ class ShoppingList(Model):
 
 
 class GroupWebhooksModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="webhook_urls_group_id_related",
@@ -1139,7 +1141,7 @@ class PasswordResetModel(Model):
 
 class UserToRecipe(Model):
     row_id = fields.IntField(primary_key=True)
-    id = fields.UUIDField(default=uuid4)
+    id = MealieUUIDField(default=uuid4)
     user = fields.ForeignKeyField(
         "models.User",
         related_name="users_to_recipes_user_id_related",
@@ -1166,7 +1168,7 @@ class UserToRecipe(Model):
 
 class LongLiveToken(Model):
     name = fields.TextField()
-    token = fields.CharField(max_length=255, db_index=True)
+    token = fields.CharField(max_length=512, db_index=True)
     user = fields.ForeignKeyField(
         "models.User",
         related_name="long_live_tokens_user_id_related",
@@ -1184,7 +1186,7 @@ class LongLiveToken(Model):
 
 
 class RecipeTimelineEvent(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     recipe = fields.ForeignKeyField(
         "models.Recipe",
         related_name="recipe_timeline_events_recipe_id_related",
@@ -1236,7 +1238,7 @@ class RecipeSettings(Model):
 
 
 class RecipeShareTokenModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="recipe_share_tokens_group_id_related",
@@ -1280,7 +1282,7 @@ class ServerTaskModel(Model):
 
 
 class GroupPreferencesModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     group = fields.ForeignKeyField(
         "models.Group",
         related_name="group_preferences_group_id_related",
@@ -1305,7 +1307,7 @@ class GroupPreferencesModel(Model):
 
 
 class ReportEntryModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     success = fields.BooleanField(null=True, default=False)
     message = fields.TextField(null=True)
     exception = fields.TextField(null=True)
@@ -1325,7 +1327,7 @@ class ReportEntryModel(Model):
 
 
 class ReportModel(Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
+    id = MealieUUIDField(primary_key=True, default=uuid4)
     name = fields.TextField()
     status = fields.TextField()
     category = fields.CharField(max_length=255, db_index=True)

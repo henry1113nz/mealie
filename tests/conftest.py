@@ -82,11 +82,27 @@ async def tortoise_connection():
         await tortoise_close()
 
 
+@pytest_asyncio.fixture
+async def restore_tortoise_application():
+    """Restore the app-owned Tortoise registry after isolated ORM tests use it globally."""
+    yield
+
+    from tortoise import Tortoise
+
+    from mealie.app import app
+    from mealie.db.tortoise_setup import tortoise_close, tortoise_init
+
+    if getattr(app.state, "tortoise_ready", False):
+        if Tortoise._inited:
+            await tortoise_close()
+        await tortoise_init()
+
+
 @fixture(scope="session")
 def api_client():
     app.dependency_overrides[generate_session] = override_get_db
-
-    yield TestClient(app)
+    with TestClient(app) as client:
+        yield client
 
     with contextlib.suppress(Exception):
         settings = config.get_app_settings()

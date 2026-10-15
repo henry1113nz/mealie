@@ -60,39 +60,50 @@ async def lifespan_fn(_: FastAPI) -> AsyncGenerator[None]:
     See FastAPI documentation for more information:
       - https://fastapi.tiangolo.com/advanced/events/
     """
-    logger.info("start: database initialization")
-    import mealie.db.init_db as init_db
+    from mealie.db.tortoise_setup import tortoise_close, tortoise_init
 
-    init_db.main()
-    logger.info("end: database initialization")
+    app.state.tortoise_ready = False
+    tortoise_initialized = False
+    try:
+        logger.info("start: database initialization")
+        import mealie.db.init_db as init_db
 
-    await start_scheduler()
+        init_db.main()
+        await tortoise_init()
+        tortoise_initialized = True
+        app.state.tortoise_ready = True
+        logger.info("end: database initialization")
 
-    logger.info("-----SYSTEM STARTUP-----")
-    logger.info("------APP SETTINGS------")
-    logger.info(
-        settings.model_dump_json(
-            indent=4,
-            exclude={
-                "SECRET",
-                "SESSION_SECRET",
-                "DB_URL",  # replace by DB_URL_PUBLIC for logs
-                "DB_PROVIDER",
-            },
+        await start_scheduler()
+
+        logger.info("-----SYSTEM STARTUP-----")
+        logger.info("------APP SETTINGS------")
+        logger.info(
+            settings.model_dump_json(
+                indent=4,
+                exclude={
+                    "SECRET",
+                    "SESSION_SECRET",
+                    "DB_URL",  # replace by DB_URL_PUBLIC for logs
+                    "DB_PROVIDER",
+                },
+            )
         )
-    )
-    logger.info("------APP FEATURES------")
-    logger.info("--------==SMTP==--------")
-    logger.info(settings.SMTP_FEATURE)
-    logger.info("--------==LDAP==--------")
-    logger.info(settings.LDAP_FEATURE)
-    logger.info("--------==OIDC==--------")
-    logger.info(settings.OIDC_FEATURE)
-    logger.info("------------------------")
+        logger.info("------APP FEATURES------")
+        logger.info("--------==SMTP==--------")
+        logger.info(settings.SMTP_FEATURE)
+        logger.info("--------==LDAP==--------")
+        logger.info(settings.LDAP_FEATURE)
+        logger.info("--------==OIDC==--------")
+        logger.info(settings.OIDC_FEATURE)
+        logger.info("------------------------")
 
-    yield
-
-    logger.info("-----SYSTEM SHUTDOWN----- \n")
+        yield
+    finally:
+        app.state.tortoise_ready = False
+        if tortoise_initialized:
+            await tortoise_close()
+        logger.info("-----SYSTEM SHUTDOWN----- \n")
 
 
 app = FastAPI(

@@ -1,5 +1,7 @@
 import pytest
 
+pytestmark = pytest.mark.usefixtures("restore_tortoise_application")
+
 
 @pytest.mark.asyncio
 async def test_tortoise_connection_fixture_executes_query(tortoise_connection):

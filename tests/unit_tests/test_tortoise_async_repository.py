@@ -9,6 +9,8 @@ from tortoise.models import Model
 from mealie.repos.tortoise_repository import AsyncRepository
 from mealie.db.tortoise_setup import tortoise_close, tortoise_init
 
+pytestmark = pytest.mark.usefixtures("restore_tortoise_application")
+
 
 class RepositoryGroup(Model):
     id = fields.UUIDField(primary_key=True)

@@ -11,7 +11,7 @@ from mealie.schema.response.responses import ErrorResponse
 from mealie.schema.user.auth import UnlockResults
 from mealie.schema.user.user import UserIn, UserOut, UserPagination
 from mealie.schema.user.user_passwords import ForgotPassword, PasswordResetToken
-from mealie.services.user_services.password_reset_service import PasswordResetService
+from mealie.services.user_services.password_reset_service import AsyncPasswordResetService
 from mealie.services.user_services.user_service import UserService
 
 router = APIRouter(prefix="/users")
@@ -74,10 +74,10 @@ class AdminUserManagementRoutes(BaseAdminController):
         return self.mixins.delete_one(item_id)
 
     @router.post("/password-reset-token", response_model=PasswordResetToken, status_code=201)
-    def generate_token(self, email: ForgotPassword):
+    async def generate_token(self, email: ForgotPassword):
         """Generates a reset token and returns it. This is an authenticated endpoint"""
-        f_service = PasswordResetService(self.session)
-        token_entry = f_service.generate_reset_token(email.email)
+        f_service = AsyncPasswordResetService()
+        token_entry = await f_service.generate_reset_token(email.email)
         if not token_entry:
             raise HTTPException(status_code=500, detail=ErrorResponse.respond("error while generating reset token"))
         return PasswordResetToken(token=token_entry.token)

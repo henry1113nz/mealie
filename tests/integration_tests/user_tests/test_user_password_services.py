@@ -78,3 +78,53 @@ def test_password_reset_ldap(ldap_user: PrivateUser, casing: str):
         service = PasswordResetService(session)
         token = service.generate_reset_token(cased_email)
         assert token is None
+
+
+def test_password_reset_rolls_back_password_and_token_on_failure(
+    api_client: TestClient, unique_user: TestUser, monkeypatch
+):
+    from mealie.db.tortoise_models.remaining import PasswordResetModel
+
+    baseline_password = random_string(15)
+    with session_context() as session:
+        service = PasswordResetService(session)
+        baseline_token = service.generate_reset_token(unique_user.email)
+        assert baseline_token is not None
+    baseline_payload = {
+        "token": baseline_token.token,
+        "email": unique_user.email,
+        "password": baseline_password,
+        "passwordConfirm": baseline_password,
+    }
+    assert api_client.post(api_routes.users_reset_password, json=baseline_payload).status_code == 200
+
+    with session_context() as session:
+        service = PasswordResetService(session)
+        token = service.generate_reset_token(unique_user.email)
+        assert token is not None
+
+    new_password = random_string(15)
+    payload = {
+        "token": token.token,
+        "email": unique_user.email,
+        "password": new_password,
+        "passwordConfirm": new_password,
+    }
+    original_delete = PasswordResetModel.delete
+
+    async def fail_delete(self, using_db=None):
+        raise RuntimeError("injected reset failure")
+
+    monkeypatch.setattr(PasswordResetModel, "delete", fail_delete)
+    monkeypatch.setattr(api_client._transport, "raise_server_exceptions", False)
+    response = api_client.post(api_routes.users_reset_password, json=payload)
+    assert response.status_code == 500
+
+    old_credentials = {"username": unique_user.email, "password": baseline_password}
+    assert api_client.post(api_routes.auth_token, data=old_credentials).status_code == 200
+
+    monkeypatch.setattr(PasswordResetModel, "delete", original_delete)
+    response = api_client.post(api_routes.users_reset_password, json=payload)
+    assert response.status_code == 200
+    new_credentials = {"username": unique_user.email, "password": new_password}
+    assert api_client.post(api_routes.auth_token, data=new_credentials).status_code == 200

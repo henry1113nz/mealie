@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from joserfc.errors import InvalidClaimError
 from pytest import MonkeyPatch
 
-from mealie.app import app
 from mealie.routes.auth import auth as auth_routes
 from tests.utils import api_routes
 
@@ -71,23 +70,23 @@ def test_native_token_returns_401_when_code_is_rejected(api_client: TestClient, 
     assert response.status_code == 401
 
 
-def test_native_token_returns_500_on_unexpected_errors(monkeypatch: MonkeyPatch):
+def test_native_token_returns_500_on_unexpected_errors(api_client: TestClient, monkeypatch: MonkeyPatch):
     setup_oidc(monkeypatch, token_error=RuntimeError("the IdP is unreachable"))
 
     # anything that isn't an OAuthError is a server-side failure, not a bad code, so it must not
     # become a 401; this client returns the 500 instead of re-raising the way the shared one does
-    client = TestClient(app, raise_server_exceptions=False)
-    response = client.post(api_routes.auth_oauth_native_token, json=native_token_request)
+    monkeypatch.setattr(api_client._transport, "raise_server_exceptions", False)
+    response = api_client.post(api_routes.auth_oauth_native_token, json=native_token_request)
 
     assert response.status_code == 500
 
 
-def test_native_token_returns_500_when_id_token_is_rejected(monkeypatch: MonkeyPatch):
+def test_native_token_returns_500_when_id_token_is_rejected(api_client: TestClient, monkeypatch: MonkeyPatch):
     setup_oidc(monkeypatch, id_token_error=InvalidClaimError("nonce"))
 
     # authlib validates the id_token with joserfc, whose errors are not OAuthError, so a bad nonce
     # or signature is a 500 here, matching the web /oauth/callback route's unwrapped behavior
-    client = TestClient(app, raise_server_exceptions=False)
-    response = client.post(api_routes.auth_oauth_native_token, json=native_token_request)
+    monkeypatch.setattr(api_client._transport, "raise_server_exceptions", False)
+    response = api_client.post(api_routes.auth_oauth_native_token, json=native_token_request)
 
     assert response.status_code == 500

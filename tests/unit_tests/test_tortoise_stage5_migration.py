@@ -34,6 +34,8 @@ from mealie.db.tortoise_models import (
 )
 from mealie.db.tortoise_setup import tortoise_config
 
+pytestmark = pytest.mark.usefixtures("restore_tortoise_application")
+
 _ROOT = Path(__file__).parents[2]
 _MIGRATION_DIR = _ROOT / "mealie" / "db" / "aerich_migrations" / "models"
 _STAGE4_MIGRATION = _MIGRATION_DIR / "1_stage4_recipe_constraints.py"
@@ -205,25 +207,25 @@ async def test_stage5_ordered_aerich_migrations_preserve_schema_and_key_behavior
             food = await IngredientFood.create(group=group, name="food")
 
             keyless_values = {
-                "group_to_categories": ("group_id", str(group.id), "category_id", str(category.id)),
+            "group_to_categories": ("group_id", group.id.hex, "category_id", category.id.hex),
                 "plan_rules_to_categories": (
-                    "group_plan_rule_id", str(plan_rule.id), "category_id", str(category.id)
+                "group_plan_rule_id", plan_rule.id.hex, "category_id", category.id.hex
                 ),
-                "recipes_to_categories": ("recipe_id", str(recipe.id), "category_id", str(category.id)),
+            "recipes_to_categories": ("recipe_id", recipe.id.hex, "category_id", category.id.hex),
                 "cookbooks_to_categories": (
-                    "cookbook_id", str(cookbook.id), "category_id", str(category.id)
+                "cookbook_id", cookbook.id.hex, "category_id", category.id.hex
                 ),
-                "recipes_to_tags": ("recipe_id", str(recipe.id), "tag_id", str(tag.id)),
-                "plan_rules_to_tags": ("plan_rule_id", str(plan_rule.id), "tag_id", str(tag.id)),
-                "cookbooks_to_tags": ("cookbook_id", str(cookbook.id), "tag_id", str(tag.id)),
-                "households_to_tools": ("household_id", str(household.id), "tool_id", str(tool.id)),
-                "recipes_to_tools": ("recipe_id", str(recipe.id), "tool_id", str(tool.id)),
-                "cookbooks_to_tools": ("cookbook_id", str(cookbook.id), "tool_id", str(tool.id)),
+            "recipes_to_tags": ("recipe_id", recipe.id.hex, "tag_id", tag.id.hex),
+            "plan_rules_to_tags": ("plan_rule_id", plan_rule.id.hex, "tag_id", tag.id.hex),
+            "cookbooks_to_tags": ("cookbook_id", cookbook.id.hex, "tag_id", tag.id.hex),
+            "households_to_tools": ("household_id", household.id.hex, "tool_id", tool.id.hex),
+            "recipes_to_tools": ("recipe_id", recipe.id.hex, "tool_id", tool.id.hex),
+            "cookbooks_to_tools": ("cookbook_id", cookbook.id.hex, "tool_id", tool.id.hex),
                 "plan_rules_to_households": (
-                    "group_plan_rule_id", str(plan_rule.id), "household_id", str(household.id)
+                "group_plan_rule_id", plan_rule.id.hex, "household_id", household.id.hex
                 ),
                 "households_to_ingredient_foods": (
-                    "household_id", str(household.id), "food_id", str(food.id)
+                "household_id", household.id.hex, "food_id", food.id.hex
                 ),
             }
 
@@ -358,7 +360,7 @@ async def test_stage5_ordered_aerich_migrations_preserve_schema_and_key_behavior
                     with pytest.raises(IntegrityError):
                         await db.execute_query(
                             f'UPDATE "{table}" SET "{column}"=? WHERE "id"=?',
-                            [str(uuid4()), str(settings.id if table == "ai_provider_settings" else user.id)],
+                        [uuid4().hex, (settings.id if table == "ai_provider_settings" else user.id).hex],
                         )
             settings.default_provider = None
             settings.audio_provider = None
@@ -386,7 +388,7 @@ async def test_stage5_ordered_aerich_migrations_preserve_schema_and_key_behavior
                     assert observed[column] == (target, "id", "NO ACTION")
                     with pytest.raises(IntegrityError):
                         await db.execute_query(
-                            f'INSERT INTO "{table}" ("{column}") VALUES (?)', [str(uuid4())]
+                        f'INSERT INTO "{table}" ("{column}") VALUES (?)', [uuid4().hex]
                         )
                 null_count = await db.execute_query_dict(
                     f'SELECT COUNT(*) AS count FROM "{table}" WHERE "{pair[0]}" IS NULL AND "{pair[1]}" IS NULL'

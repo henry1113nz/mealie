@@ -5,8 +5,8 @@ from tortoise import fields
 from ._base import TortoiseBaseModel
 
 
-class AuthMethod(str, Enum):
-    MEALIE = "Mealie"
+class AuthMethod(Enum):
+    MEALIE = "MEALIE"
     LDAP = "LDAP"
     OIDC = "OIDC"
 

@@ -7,6 +7,7 @@ migration stages switch runtime callers over to Tortoise.
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException, Request, status
 from tortoise import Tortoise
 from tortoise.backends.base.config_generator import expand_db_url
 
@@ -26,6 +27,10 @@ def tortoise_config(db_url: str | None = None) -> dict[str, Any]:
     backend = connection["engine"].rsplit(".", maxsplit=1)[-1]
     if backend in {"sqlite", "asyncpg"}:
         connection["engine"] = f"mealie.db.tortoise_backends.{backend}"
+    if backend == "sqlite":
+        settings = get_app_settings()
+        if settings.TESTING:
+            connection["credentials"]["journal_mode"] = "WAL" if settings.SQLITE_MIGRATE_JOURNAL_WAL else "MEMORY"
 
     return {
         "connections": {"default": connection},
@@ -56,3 +61,12 @@ async def tortoise_init(db_url: str | None = None, *, create_schema: bool = Fals
 async def tortoise_close() -> None:
     """Close all initialized Tortoise connections."""
     await Tortoise.close_connections()
+
+
+async def require_tortoise_ready(request: Request) -> None:
+    """Guard converted routes against lifespan bypass or failed initialization."""
+    if not getattr(request.app.state, "tortoise_ready", False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Async database is not initialized",
+        )

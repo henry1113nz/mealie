@@ -7,15 +7,15 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
 from jwt.exceptions import PyJWTError
 from pydantic import BaseModel
-from sqlalchemy.orm.session import Session
 from starlette.datastructures import URLPath
 
 from mealie.core import root_logger, security
 from mealie.core.config import get_app_settings
 from mealie.core.dependencies import get_auth_token, get_current_user
 from mealie.core.exceptions import MissingClaimException, UserLockedOut
-from mealie.core.security.security import get_auth_provider
-from mealie.db.db_setup import generate_session
+from mealie.core.security.providers.tortoise_providers import AsyncOpenIDProvider
+from mealie.core.security.security import get_async_auth_provider
+from mealie.db.tortoise_setup import require_tortoise_ready
 from mealie.lang import get_locale_provider
 from mealie.routes._base.routers import UserAPIRouter
 from mealie.schema.user import PrivateUser
@@ -132,11 +132,11 @@ class MealieAuthToken(BaseModel):
 
 
 @public_router.post("/token")
-def get_token(
+async def get_token(
     request: Request,
     response: Response,
     data: CredentialsRequestForm = Depends(),
-    session: Session = Depends(generate_session),
+    _tortoise_ready=Depends(require_tortoise_ready),
 ):
     if "x-forwarded-for" in request.headers:
         ip = request.headers["x-forwarded-for"]
@@ -147,8 +147,8 @@ def get_token(
         ip = request.client.host if request.client else "unknown"
 
     try:
-        auth_provider = get_auth_provider(session, data)
-        auth = auth_provider.authenticate()
+        auth_provider = get_async_auth_provider(data)
+        auth = await auth_provider.authenticate()
     except UserLockedOut as e:
         logger.error(f"User is locked out from {ip}")
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="User is locked out") from e
@@ -189,7 +189,7 @@ async def oauth_login(request: Request):
 
 
 @public_router.get("/oauth/callback")
-async def oauth_callback(request: Request, response: Response, session: Session = Depends(generate_session)):
+async def oauth_callback(request: Request, response: Response, _tortoise_ready=Depends(require_tortoise_ready)):
     if not oauth:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -199,18 +199,16 @@ async def oauth_callback(request: Request, response: Response, session: Session 
 
     token = await client.authorize_access_token(request)
 
-    from mealie.core.security.providers.openid_provider import OpenIDProvider
-
     auth = None
     try:
-        auth_provider = OpenIDProvider(session, token["userinfo"])
-        auth = auth_provider.authenticate()
+        auth_provider = AsyncOpenIDProvider(token["userinfo"])
+        auth = await auth_provider.authenticate()
     except MissingClaimException:
         try:
             logger.debug("[OIDC] Claims not present in the ID token, pulling user info")
             userinfo = await client.userinfo(token=token)
-            auth_provider = OpenIDProvider(session, userinfo, use_default_groups=True)
-            auth = auth_provider.authenticate()
+            auth_provider = AsyncOpenIDProvider(userinfo, use_default_groups=True)
+            auth = await auth_provider.authenticate()
         except MissingClaimException:
             logger.error("[OIDC] Required claims not present in ID token or userinfo endpoint")
             auth = None
@@ -246,7 +244,7 @@ async def oauth_native_token(
     request: Request,
     response: Response,
     data: NativeOIDCTokenRequest,
-    session: Session = Depends(generate_session),
+    _tortoise_ready=Depends(require_tortoise_ready),
 ):
     """Exchange a native client's authorization code for a Mealie token.
 
@@ -274,18 +272,16 @@ async def oauth_native_token(
         logger.error("[OIDC] Native token exchange failed: %s", e)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED) from e
 
-    from mealie.core.security.providers.openid_provider import OpenIDProvider
-
     auth = None
     try:
-        auth_provider = OpenIDProvider(session, userinfo)
-        auth = auth_provider.authenticate()
+        auth_provider = AsyncOpenIDProvider(userinfo)
+        auth = await auth_provider.authenticate()
     except MissingClaimException:
         try:
             logger.debug("[OIDC] Claims not present in the id_token, pulling user info")
             userinfo = await client.userinfo(token=token)
-            auth_provider = OpenIDProvider(session, userinfo, use_default_groups=True)
-            auth = auth_provider.authenticate()
+            auth_provider = AsyncOpenIDProvider(userinfo, use_default_groups=True)
+            auth = await auth_provider.authenticate()
         except MissingClaimException:
             logger.error("[OIDC] Required claims not present in ID token or userinfo endpoint")
             auth = None

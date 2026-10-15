@@ -16,7 +16,9 @@ from mealie.core import root_logger
 from mealie.core.config import get_app_dirs, get_app_settings
 from mealie.core.security.tokens import ALGORITHM
 from mealie.db.db_setup import generate_session
+from mealie.db.tortoise_setup import require_tortoise_ready
 from mealie.repos.all_repositories import get_repositories
+from mealie.repos.tortoise_user import TortoiseAuthRepository
 from mealie.schema.user import PrivateUser, TokenData
 from mealie.schema.user.user import DEFAULT_INTEGRATION_ID, GroupInDB
 
@@ -32,7 +34,9 @@ credentials_exception = HTTPException(
 )
 
 
-async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=Depends(generate_session)) -> bool:
+async def is_logged_in(
+    token: str = Depends(oauth2_scheme_soft_fail), _tortoise_ready=Depends(require_tortoise_ready)
+) -> bool:
     """
     When you need to determine if the user is logged in, but don't need the user, you can use this
     function to return a boolean value to represent if the user is logged in. No Auth exceptions are raised
@@ -52,7 +56,7 @@ async def is_logged_in(token: str = Depends(oauth2_scheme_soft_fail), session=De
 
         if long_token is not None:
             try:
-                if validate_long_live_token(session, token, payload.get("id")):
+                if await validate_long_live_token_async(token, payload.get("id")):
                     return True
             except Exception:
                 return False
@@ -91,17 +95,17 @@ async def get_auth_token(
 
 async def try_get_current_user(
     token: str = Depends(get_auth_token),
-    session=Depends(generate_session),
+    _tortoise_ready=Depends(require_tortoise_ready),
 ) -> PrivateUser | None:
     try:
-        return await get_current_user(token, session)
+        return await get_current_user(token)
     except Exception:
         return None
 
 
 async def get_current_user(
     token: str = Depends(get_auth_token),
-    session=Depends(generate_session),
+    _tortoise_ready=Depends(require_tortoise_ready),
 ) -> PrivateUser:
     try:
         payload = jwt.decode(token, settings.SECRET, algorithms=[ALGORITHM])
@@ -109,7 +113,10 @@ async def get_current_user(
         long_token: str | None = payload.get("long_token")
 
         if long_token is not None:
-            return validate_long_live_token(session, token, payload.get("id"))
+            user = await validate_long_live_token_async(token, payload.get("id"))
+            if user is None:
+                raise credentials_exception
+            return user
 
         if user_id is None:
             raise credentials_exception
@@ -118,13 +125,7 @@ async def get_current_user(
     except PyJWTError as e:
         raise credentials_exception from e
 
-    repos = get_repositories(session, group_id=None, household_id=None)
-
-    user = repos.users.get_one(token_data.user_id, "id", any_case=False)
-
-    # If we don't commit here, lazy-loads from user relationships will leave some table lock in postgres
-    # which can cause quite a bit of pain further down the line
-    session.commit()
+    user = await TortoiseAuthRepository.users.get_one(token_data.user_id, "id")
     if user is None:
         raise credentials_exception
 
@@ -173,6 +174,14 @@ def validate_long_live_token(session: Session, client_token: str, user_id: str) 
     except IndexError as e:
         session.rollback()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED) from e
+
+
+async def validate_long_live_token_async(client_token: str, user_id: str) -> PrivateUser:
+    """Resolve a long-lived token without touching the legacy SQLAlchemy session."""
+    user = await TortoiseAuthRepository().get_api_token_user(client_token, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    return user
 
 
 def validate_file_token(token: str | None = None) -> Path:

@@ -19,6 +19,8 @@ from mealie.schema.response.pagination import OrderByNullPosition, OrderDirectio
 from mealie.services.query_filter.builder import NonFilterableValueError, QueryFilterBuilder
 from mealie.services.query_filter.tortoise import TortoiseFilterCompiler, validate_order_path
 
+pytestmark = pytest.mark.usefixtures("restore_tortoise_application")
+
 
 class RecipeResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)

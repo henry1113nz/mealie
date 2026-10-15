@@ -3,7 +3,7 @@ from uuid import uuid4
 from tortoise import fields
 from tortoise.models import Model
 
-from ._base import TortoiseBaseModel
+from ._base import MealieUUIDField, TortoiseBaseModel
 
 
 class IngredientUnit(TortoiseBaseModel):
@@ -52,7 +52,7 @@ class _IngredientAliasBase(Model):
     """Give Tortoise a row key while retaining each alias's legacy UUID id."""
 
     row_id = fields.IntField(primary_key=True)
-    id = fields.UUIDField(default=uuid4)
+    id = MealieUUIDField(default=uuid4)
     created_at = fields.DatetimeField(auto_now_add=True, null=True, db_index=True)
     update_at = fields.DatetimeField(auto_now=True, null=True)
 
@@ -127,7 +127,7 @@ class RecipeIngredient(Model):
     )
     quantity = fields.FloatField(null=True)
     original_text = fields.TextField(null=True)
-    reference_id = fields.UUIDField(null=True)
+    reference_id = MealieUUIDField(null=True)
     referenced_recipe: fields.ForeignKeyNullableRelation["Recipe"] = fields.ForeignKeyField(
         "models.Recipe",
         related_name="referenced_ingredients",

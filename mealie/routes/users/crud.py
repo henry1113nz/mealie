@@ -4,6 +4,7 @@ from pydantic import UUID4
 from mealie.core.security import hash_password
 from mealie.core.security.providers.credentials_provider import CredentialsProvider
 from mealie.db.models.users.users import AuthMethod
+from mealie.repos.tortoise_user import TortoiseUserRepository
 from mealie.routes._base import BaseUserController, controller
 from mealie.routes._base.routers import UserAPIRouter
 from mealie.routes.users._helpers import assert_user_change_allowed
@@ -40,7 +41,7 @@ class UserController(BaseUserController):
         return UserRatings(ratings=self.repos.user_ratings.get_by_user(self.user.id, favorites_only=True))
 
     @user_router.put("/password")
-    def update_password(self, password_change: ChangePassword):
+    async def update_password(self, password_change: ChangePassword):
         """Resets the User Password"""
         if self.user.auth_method == AuthMethod.LDAP:
             raise HTTPException(
@@ -51,9 +52,12 @@ class UserController(BaseUserController):
                 status.HTTP_400_BAD_REQUEST, ErrorResponse.respond(self.t("user.invalid-current-password"))
             )
 
-        self.user.password = hash_password(password_change.new_password)
         try:
-            self.repos.users.update_password(self.user.id, self.user.password)
+            updated = await TortoiseUserRepository().update_password(
+                self.user.id, hash_password(password_change.new_password)
+            )
+            if updated is None:
+                raise ValueError("User no longer exists")
         except Exception as e:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

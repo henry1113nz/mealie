@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from mealie.core.config import get_app_settings
-from mealie.repos.all_repositories import get_repositories
+from mealie.db.tortoise_setup import require_tortoise_ready
 from mealie.routes._base import BasePublicController, controller
 from mealie.schema.response import ErrorResponse
 from mealie.schema.user.registration import CreateUserRegistration
 from mealie.schema.user.user import UserOut
 from mealie.services.event_bus_service.event_bus_service import EventBusService
 from mealie.services.event_bus_service.event_types import EventTypes, EventUserSignupData
-from mealie.services.user_services.registration_service import RegistrationService
+from mealie.services.user_services.tortoise_registration_service import TortoiseRegistrationService
 
 router = APIRouter(prefix="/register")
 
@@ -18,7 +18,7 @@ class RegistrationController(BasePublicController):
     event_bus: EventBusService = Depends(EventBusService.as_dependency)
 
     @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-    def register_new_user(self, data: CreateUserRegistration):
+    async def register_new_user(self, data: CreateUserRegistration, _tortoise_ready=Depends(require_tortoise_ready)):
         settings = get_app_settings()
 
         if not settings.ALLOW_SIGNUP and data.group_token is None or data.group_token == "":
@@ -27,13 +27,9 @@ class RegistrationController(BasePublicController):
                 detail=ErrorResponse.respond("User Registration is Disabled"),
             )
 
-        registration_service = RegistrationService(
-            self.logger,
-            get_repositories(self.session, group_id=None, household_id=None),
-            self.translator,
-        )
+        registration_service = TortoiseRegistrationService(self.translator)
 
-        result = registration_service.register_user(data)
+        result = await registration_service.register_user(data)
 
         self.event_bus.dispatch(
             integration_id="registration",
